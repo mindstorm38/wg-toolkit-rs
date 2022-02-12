@@ -1,0 +1,42 @@
+//! Compiled Space module
+//!
+//! Credits to SkepticalFox at https://bitbucket.org/SkepticalFox/wot-space.bin-utils/src/master/
+
+pub mod section;
+
+use std::io::{self, Read, Seek, SeekFrom};
+use std::collections::HashMap;
+
+use section::{Section, SectionId, BWTB};
+
+
+/// A structure representing a full compiled space.
+pub struct CompiledSpace<R> {
+    pub inner: R,
+    pub bwtb: BWTB,
+}
+
+impl<R: Read + Seek> CompiledSpace<R> {
+
+    /// Create a new lazy compiled space from a seekable read implementor.
+    /// This function will only read the BWTB header section  before
+    /// actually returning the object.
+    pub fn new(mut inner: R) -> io::Result<Self> {
+
+        let bwtb = BWTB::decode(&mut inner)?;
+
+        Ok(CompiledSpace {
+            inner,
+            bwtb,
+        })
+
+    }
+
+    /// Decode a section from this compiled space.
+    pub fn decode_section<S: Section>(&mut self) -> Option<S> {
+        let meta = self.bwtb.get_section_meta(S::ID)?;
+        self.inner.seek(SeekFrom::Start(meta.off as u64)).ok()?;
+        Some(S::decode(&mut self.inner).unwrap())
+    }
+
+}
