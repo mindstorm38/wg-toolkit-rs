@@ -1,13 +1,13 @@
-use wgtk::space::CompiledSpace;
-use wgtk::space::section::{BWST, BWAL, BWCS, BWSG, BWT2};
-
 use std::fs::File;
 use std::env;
+
+use wgtk::space::CompiledSpace;
+use wgtk::space::section::{BWST, BWAL, BWCS, BWSG, BWT2};
 
 
 fn main() {
 
-    let path = env::var("WGT_EX_SPACE_PATH").unwrap();
+    let path = env::var("WGT_SPACE_PATH").unwrap();
     let file = File::open(path).unwrap();
 
     let mut space = CompiledSpace::new(file).unwrap();
