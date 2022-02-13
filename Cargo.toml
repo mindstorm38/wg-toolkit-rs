@@ -1,8 +1,10 @@
 [package]
 name = "wg-toolkit"
 version = "0.1.0"
+authors = ["Théo Rozier <contact@theorozier.fr>"]
 edition = "2021"
 description = "Toolkit for various binary and text formats distributed by Wargaming.net (BigWorld, Core engine)."
+categories = ["toolkit", "wargaming", "wot"]
 
 [dependencies]
 byteorder = "1.4.3"
