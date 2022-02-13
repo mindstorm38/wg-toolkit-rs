@@ -7,7 +7,7 @@ use super::{Section, SectionId, ReadSectionExt};
 
 #[derive(Debug)]
 pub struct BWAL {
-    assets: Vec<AssetInfo>
+    pub assets: Vec<AssetInfo>
 }
 
 impl Section for BWAL {
@@ -42,8 +42,8 @@ impl Section for BWAL {
 
 #[derive(Debug)]
 pub struct AssetInfo {
-    asset_type: AssetType,
-    string_fnv: u32
+    pub asset_type: AssetType,
+    pub string_fnv: u32
 }
 
 #[derive(Debug)]

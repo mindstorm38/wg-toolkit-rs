@@ -1,17 +1,14 @@
 //! Implementation of Fowler/Noll/Vo hash algorithm.
 
-use std::ops::{Mul, BitAnd, BitXor};
-
-
 const FNV_32_PRIME: u64 = 0x01000193;
 const FNV_64_PRIME: u64 = 0x100000001b3;
 
 const FNV0_32_INIT: u64 = 0;
 const FNV0_64_INIT: u64 = 0;
 const FNV1_32_INIT: u64 = 0x811c9dc5;
-const FNV1_32A_INIT: u64 = FNV1_32_INIT;
+const FNV1A_32_INIT: u64 = FNV1_32_INIT;
 const FNV1_64_INIT: u64 = 0xcbf29ce484222325;
-const FNV1_64A_INIT: u64 = FNV1_64_INIT;
+const FNV1A_64_INIT: u64 = FNV1_64_INIT;
 
 
 /// Core FNV hash algorithm used in FNV0 and FNV1.
@@ -44,7 +41,7 @@ pub fn fnv1_32(data: &[u8]) -> u32 {
 
 /// Returns the 32 bit FNV-1a hash value for the given data.
 pub fn fnv1a_32(data: &[u8]) -> u32 {
-    fnva(data, FNV1_32_INIT, FNV_32_PRIME, u32::MAX as u64) as u32
+    fnva(data, FNV1A_32_INIT, FNV_32_PRIME, u32::MAX as u64) as u32
 }
 
 /// Returns the 64 bit FNV-0 hash value for the given data.
@@ -59,5 +56,5 @@ pub fn fnv1_64(data: &[u8]) -> u64 {
 
 /// Returns the 64 bit FNV-0 hash value for the given data.
 pub fn fnv1a_64(data: &[u8]) -> u64 {
-    fnva(data, FNV1_64_INIT, FNV_64_PRIME, u64::MAX)
+    fnva(data, FNV1A_64_INIT, FNV_64_PRIME, u64::MAX)
 }

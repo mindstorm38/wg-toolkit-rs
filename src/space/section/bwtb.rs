@@ -1,8 +1,8 @@
-use std::io::{ Read, Seek, SeekFrom};
 use std::fmt::{self, Formatter};
 use std::collections::HashMap;
+use std::io::Read;
 
-use super::{Section, SectionId, ReadSectionExt};
+use super::{SectionId, ReadSectionExt};
 
 
 /// Header section, defining all offsets for real sections. This section is a fake section

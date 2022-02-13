@@ -53,21 +53,21 @@ impl Section for BWSG {
 
 #[derive(Debug)]
 pub struct ModelInfo {
-    vertices_fnv: u32,
-    id_from: u32,
-    id_to: u32,
-    vertices_count: u32,
-    vertices_type_fnv: u32
+    pub vertices_fnv: u32,
+    pub id_from: u32,
+    pub id_to: u32,
+    pub vertices_count: u32,
+    pub vertices_type_fnv: u32
 }
 
 
 #[derive(Debug)]
 pub struct PositionInfo {
-    typ: u64,
+    pub typ: u64,
     /// Size of vertices block from .primitives
-    size: u32,
+    pub size: u32,
     /// Index data_sizes
-    data_sizes_id: u32,
+    pub data_sizes_id: u32,
     /// Start position in `BSGD`
-    position: u32
+    pub position: u32
 }

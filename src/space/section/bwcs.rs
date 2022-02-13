@@ -6,7 +6,7 @@ use super::{Section, SectionId, ReadSectionExt};
 
 #[derive(Debug)]
 pub struct BWCS {
-    values: [f32; 6]
+    pub values: [f32; 6]
 }
 
 impl Section for BWCS {

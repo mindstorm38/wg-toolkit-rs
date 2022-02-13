@@ -3,9 +3,8 @@
 pub mod section;
 
 use std::io::{self, Read, Seek, SeekFrom};
-use std::collections::HashMap;
 
-use section::{Section, SectionId, BWTB};
+use section::{Section, BWTB};
 
 
 /// A structure representing a full compiled space.
