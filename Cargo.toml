@@ -1,9 +1,11 @@
 [package]
-name = "wg-tools"
+name = "wg-toolkit"
 version = "0.1.0"
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+description = "Toolkit for various binary and text formats distributed by Wargaming.net (BigWorld, Core engine)."
 
 [dependencies]
 byteorder = "1.4.3"
+
+[lib]
+name = "wgtk"

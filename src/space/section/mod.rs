@@ -34,12 +34,34 @@ pub trait Section: Sized {
 
 pub trait ReadSectionExt: Read {
 
+    fn skip<const N: usize>(&mut self) -> io::Result<()> {
+        let mut buf = [0; N];
+        self.read_exact(&mut buf)?;
+        Ok(())
+    }
+
+    fn read_u16(&mut self) -> io::Result<u16> {
+        ReadBytesExt::read_u16::<LittleEndian>(self)
+    }
+
+    fn read_i16(&mut self) -> io::Result<i16> {
+        ReadBytesExt::read_i16::<LittleEndian>(self)
+    }
+
     fn read_u32(&mut self) -> io::Result<u32> {
         ReadBytesExt::read_u32::<LittleEndian>(self)
     }
 
+    fn read_i32(&mut self) -> io::Result<i32> {
+        ReadBytesExt::read_i32::<LittleEndian>(self)
+    }
+
     fn read_u64(&mut self) -> io::Result<u64> {
         ReadBytesExt::read_u64::<LittleEndian>(self)
+    }
+
+    fn read_i64(&mut self) -> io::Result<i64> {
+        ReadBytesExt::read_i64::<LittleEndian>(self)
     }
 
     fn read_f32(&mut self) -> io::Result<f32> {

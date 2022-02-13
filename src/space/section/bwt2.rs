@@ -7,12 +7,12 @@ use super::{Section, SectionId, ReadSectionExt};
 
 #[derive(Debug)]
 pub struct BWT2 {
-    settings1: TerrainSettings1,
-    settings2: TerrainSettings2,
-    cdata: Vec<TerrainChunk>,
-    lod_distances: Vec<f32>,
-    outland_cascades: Vec<OutlandCascade>,
-    tiles_fnv: Vec<u32>
+    pub settings1: TerrainSettings1,
+    pub settings2: TerrainSettings2,
+    pub chunks: Vec<TerrainChunk>,
+    pub lod_distances: Vec<f32>,
+    pub outland_cascades: Vec<OutlandCascade>,
+    pub tiles_fnv: Vec<u32>
 }
 
 impl Section for BWT2 {
@@ -20,7 +20,110 @@ impl Section for BWT2 {
     const ID: &'static SectionId = b"BWT2";
 
     fn decode<R: Read + Seek>(read: &mut R) -> std::io::Result<Self> {
-        todo!()
+
+        let settings1_size = read.read_single_head()?;
+        assert_eq!(settings1_size, 32);
+        let settings1 = TerrainSettings1 {
+            chunk_size: read.read_f32()?,
+            min_x: read.read_i32()?,
+            max_x: read.read_i32()?,
+            min_y: read.read_i32()?,
+            max_y: read.read_i32()?,
+            normal_map_fnv: read.read_u32()?,
+            global_map_fnv: read.read_u32()?,
+            noise_texture_fnv: read.read_u32()?
+        };
+
+        let chunks = read.read_vector(|buf| {
+            Ok(TerrainChunk {
+                resource_fnv: buf.read_u32()?,
+                loc_x: buf.read_i16()?,
+                loc_y: buf.read_i16()?
+            })
+        })?;
+
+        // currently unused
+        let _3 = read.read_vector(|buf| buf.read_u32())?;
+
+        let settings2_size = read.read_single_head()?;
+        assert_eq!(settings2_size, 128);
+        let terrain_version = read.read_u32()?;
+        let terrain_flags = read.read_u32()?;
+        let settings2 = TerrainSettings2 {
+            terrain_version,
+            blend_map_caching: terrain_flags & 0x1 != 0,
+            normal_map_caching: terrain_flags & 0x2 != 0,
+            enable_auto_rebuild_normal_map: terrain_flags & 0x8 != 0,
+            enable_auto_rebuild_water_geometry: terrain_flags & 0x20 != 0,
+            height_map_size: read.read_u32()?,
+            normal_map_size: read.read_u32()?,
+            hole_map_size: read.read_u32()?,
+            shadow_map_size: read.read_u32()?,
+            blend_map_size: read.read_u32()?,
+            lod_texture_distance: read.read_f32()?,
+            macro_lod_start: read.read_f32()?,
+            start_bias: { read.skip::<4>()?; read.read_f32()? },
+            end_bias: read.read_f32()?,
+            direct_occlusion: read.read_f32()?,
+            reverb_occlusion: read.read_f32()?,
+            wrap_u: read.read_f32()?,
+            wrap_v: read.read_f32()?,
+            blend_macro_influence: {
+                read.skip::<16>()?;
+                read.read_f32()?
+            },
+            blend_global_threshold: read.read_f32()?,
+            blend_height: read.read_f32()?,
+            disabled_blend_height: read.read_f32()?,
+            vt_lod_params: [
+                read.read_f32()?,
+                read.read_f32()?,
+                read.read_f32()?,
+                read.read_f32()?,
+            ],
+            bounding_box: [
+                read.read_f32()?,
+                read.read_f32()?,
+                read.read_f32()?,
+                read.read_f32()?,
+            ]
+        };
+
+        let lod_distances = read.read_vector(|buf| buf.read_f32())?;
+
+        // currently unused
+        let _6 = read.read_vector(|buf| { buf.read_u32()?; buf.read_u32() })?;
+
+        let outland_cascades = read.read_vector(|buf| {
+            Ok(OutlandCascade {
+                extent_min: [
+                    buf.read_f32()?,
+                    buf.read_f32()?,
+                    buf.read_f32()?,
+                ],
+                extent_max: [
+                    buf.read_f32()?,
+                    buf.read_f32()?,
+                    buf.read_f32()?,
+                ],
+                height_map_fnv: buf.read_u32()?,
+                normal_map_fnv: buf.read_u32()?,
+                tile_map_fnv: buf.read_u32()?,
+                tile_scale: buf.read_f32()?
+            })
+        })?;
+
+        let tiles_fnv = read.read_vector(|buf| buf.read_u32())?;
+
+        Ok(BWT2 {
+            settings1,
+            settings2,
+            chunks,
+            lod_distances,
+            outland_cascades,
+            tiles_fnv
+        })
+
     }
 
 }
@@ -29,88 +132,88 @@ impl Section for BWT2 {
 #[derive(Debug)]
 pub struct TerrainSettings1 {
     /// space.settings/chunkSize or 100.0 by default
-    chunk_size: f32,
+    pub chunk_size: f32,
     /// space.settings/bounds
-    min_x: i32,
+    pub min_x: i32,
     /// space.settings/bounds
-    max_x: i32,
+    pub max_x: i32,
     /// space.settings/bounds
-    min_y: i32,
+    pub min_y: i32,
     /// space.settings/bounds
-    max_y: i32,
-    normal_map_fnv: u32,
+    pub max_y: i32,
+    pub normal_map_fnv: u32,
     /// global_AM.dds, maybe tintTexture - global terrain albedo map
-    global_map_fnv: u32,
-    noise_texture_fnv: u32
+    pub global_map_fnv: u32,
+    pub noise_texture_fnv: u32
 }
 
 
 #[derive(Debug)]
 pub struct TerrainChunk {
-    resource_fnv: u32,
-    loc_x: i16,
-    loc_y: i16
+    pub resource_fnv: u32,
+    pub loc_x: i16,
+    pub loc_y: i16
 }
 
 
 #[derive(Debug)]
 pub struct TerrainSettings2 {
     /// space.settings/terrain/version
-    terrain_version: u32,
+    pub terrain_version: u32,
     /// terrain/blendMapCaching
-    blend_map_caching: bool,
+    pub blend_map_caching: bool,
     /// terrain/normalMapCaching
-    normal_map_caching: bool,
+    pub normal_map_caching: bool,
     /// terrain/editor/enableAutoRebuildNormalMap
-    enable_auto_rebuild_normal_map: bool,
+    pub enable_auto_rebuild_normal_map: bool,
     /// terrain/editor/enableAutoRebuildWaterGeometry
-    enable_auto_rebuild_water_geometry: bool,
+    pub enable_auto_rebuild_water_geometry: bool,
     /// terrain/heightMapSize
-    height_map_size: u32,
+    pub height_map_size: u32,
     /// terrain/normalMapSize
-    normal_map_size: u32,
+    pub normal_map_size: u32,
     /// terrain/holeMapSize
-    hole_map_size: u32,
+    pub hole_map_size: u32,
     /// terrain/shadowMapSize
-    shadow_map_size: u32,
+    pub shadow_map_size: u32,
     /// terrain/blendMapSize
-    blend_map_size: u32,
+    pub blend_map_size: u32,
     /// terrain/lodInfo/lodTextureDistance
-    lod_texture_distance: f32,
+    pub lod_texture_distance: f32,
     /// terrain/lodInfo/macroLODStart
-    macro_lod_start: f32,
+    pub macro_lod_start: f32,
     /// terrain/lodInfo/startBias
-    start_bias: f32,
+    pub start_bias: f32,
     /// terrain/lodInfo/endBias
-    end_bias: f32,
+    pub end_bias: f32,
     /// terrain/soundOcclusion/directOcclusion
-    direct_occlusion: f32,
+    pub direct_occlusion: f32,
     /// terrain/soundOcclusion/reverbOcclusion
-    reverb_occlusion: f32,
+    pub reverb_occlusion: f32,
     /// terrain/detailNormal/wrapU
-    wrap_u: f32,
+    pub wrap_u: f32,
     /// terrain/detailNormal/wrapV
-    wrap_v: f32,
+    pub wrap_v: f32,
     /// terrain/blendMacroInfluence
-    blend_macro_influence: f32,
+    pub blend_macro_influence: f32,
     /// terrain/blendGlobalThreshold
-    blend_global_threshold: f32,
+    pub blend_global_threshold: f32,
     /// terrain/blendHeight
-    blend_height: f32,
+    pub blend_height: f32,
     /// terrain/disabledBlendHeight
-    disabled_blend_height: f32,
+    pub disabled_blend_height: f32,
     /// terrain/VTLodParams
-    vt_lod_params: [f32; 4],
-    bounding_box: [f32; 4],
+    pub vt_lod_params: [f32; 4],
+    pub bounding_box: [f32; 4],
 }
 
 
 #[derive(Debug)]
 pub struct OutlandCascade {
-    extent_min: [f32; 3],
-    extent_max: [f32; 3],
-    height_map_fnv: u32,
-    normal_map_fnv: u32,
-    tile_map_fnv: u32,
-    tile_scale: f32,
+    pub extent_min: [f32; 3],
+    pub extent_max: [f32; 3],
+    pub height_map_fnv: u32,
+    pub normal_map_fnv: u32,
+    pub tile_map_fnv: u32,
+    pub tile_scale: f32,
 }

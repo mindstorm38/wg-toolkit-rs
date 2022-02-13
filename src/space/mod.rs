@@ -1,6 +1,4 @@
 //! Compiled Space module
-//!
-//! Credits to SkepticalFox at https://bitbucket.org/SkepticalFox/wot-space.bin-utils/src/master/
 
 pub mod section;
 

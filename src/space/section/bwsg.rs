@@ -1,12 +1,13 @@
 //! Module for `StaticGeometry` section.
 
+use std::collections::HashMap;
 use std::io::{Read, Seek};
 use super::{Section, SectionId, ReadSectionExt, BWST};
 
 
 #[derive(Debug)]
 pub struct BWSG {
-    pub strings: Vec<String>,
+    pub strings: HashMap<u32, String>,
     pub models: Vec<ModelInfo>,
     pub positions: Vec<PositionInfo>,
 }
