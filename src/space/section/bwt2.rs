@@ -1,10 +1,10 @@
-//! Module for `Terrain2SceneFeature`.
-
 use std::io::{Read, Seek};
 
 use super::{Section, SectionId, ReadSectionExt};
 
 
+/// Terrain2 section, providing many information about `cdata_processed` files and many
+/// settings for the terrain.
 #[derive(Debug)]
 pub struct BWT2 {
     pub settings1: TerrainSettings1,
@@ -129,6 +129,8 @@ impl Section for BWT2 {
 }
 
 
+/// Terrain settings v1.
+/// Decoded by [BWT2] section.
 #[derive(Debug)]
 pub struct TerrainSettings1 {
     /// space.settings/chunkSize or 100.0 by default
@@ -148,14 +150,21 @@ pub struct TerrainSettings1 {
 }
 
 
+/// Terrain chunk definition, each chunk has its own `cdata_processed` archive.
+/// Each chunk has a size defined by [chunk_size](TerrainSettings1.chunk_size).
+/// Decoded by [BWT2] section.
 #[derive(Debug)]
 pub struct TerrainChunk {
+    /// Resource FNV hash, you can find the path to the `cdata_processed` archive by resolving
+    /// this hash in the [BWST](super::BWST) section.
     pub resource_fnv: u32,
     pub loc_x: i16,
     pub loc_y: i16
 }
 
 
+/// Terrain settings v2.
+/// Decoded by [BWT2] section.
 #[derive(Debug)]
 pub struct TerrainSettings2 {
     /// space.settings/terrain/version
@@ -208,6 +217,8 @@ pub struct TerrainSettings2 {
 }
 
 
+/// Definition of a cascade in the terrain.
+/// Decoded by [BWT2] section.
 #[derive(Debug)]
 pub struct OutlandCascade {
     pub extent_min: [f32; 3],

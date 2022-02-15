@@ -4,19 +4,19 @@ use std::fmt::Write;
 use byteorder::{ReadBytesExt, LittleEndian};
 use xmltree::{self, Element, XMLNode};
 
-use super::PACKED_HEADER;
+use super::PACKED_SIGNATURE;
 
 
-/// Unpack or parse XML from an input `Read` implementor.
+/// Unpack or parse XML from an input `Read` implementor. This function will
+/// simply parse the input if it happen to be an already unpacked XML.
 pub fn unpack_xml<R: Read + Seek>(read: &mut R) -> Result<Element, XmlError> {
 
     let pos = read.stream_position()?;
 
     let mut buf = [0; 4];
     read.read_exact(&mut buf)?;
-    let packed = &buf == PACKED_HEADER;
 
-    if !packed {
+    if &buf != PACKED_SIGNATURE {
         read.seek(SeekFrom::Start(pos))?;
         Ok(Element::parse(read)?)
     } else {

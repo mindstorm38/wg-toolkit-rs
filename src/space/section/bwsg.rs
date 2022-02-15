@@ -1,10 +1,10 @@
-//! Module for `StaticGeometry` section.
-
 use std::collections::HashMap;
 use std::io::{Read, Seek};
+
 use super::{Section, SectionId, ReadSectionExt, BWST};
 
 
+/// StaticGeometry section, defines models and positions.
 #[derive(Debug)]
 pub struct BWSG {
     pub strings: HashMap<u32, String>,
@@ -51,6 +51,8 @@ impl Section for BWSG {
 }
 
 
+/// A model information with its resources.
+/// Decoded by [BWSG] section.
 #[derive(Debug)]
 pub struct ModelInfo {
     pub vertices_fnv: u32,
@@ -61,6 +63,8 @@ pub struct ModelInfo {
 }
 
 
+/// A position information.
+/// Decoded by [BWSG] section.
 #[derive(Debug)]
 pub struct PositionInfo {
     pub typ: u64,

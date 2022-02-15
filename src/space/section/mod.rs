@@ -1,7 +1,7 @@
+//! Compiled space sections structures definitions.
+
 use byteorder::{ReadBytesExt, LittleEndian};
 use std::io::{self, Cursor, Read, Seek};
-
-// use crate::util::SubCursor;
 
 
 mod bwtb;
@@ -19,6 +19,7 @@ pub use bwsg::*;
 pub use bwt2::*;
 
 
+/// Alias for 4-bytes array, which is used to identify sections in a compiled space.
 pub type SectionId = [u8; 4];
 
 
@@ -32,6 +33,7 @@ pub trait Section: Sized {
 }
 
 
+/// An extension to the `Read` trait specifically used to decode compiled space's sections.
 pub trait ReadSectionExt: Read {
 
     fn skip<const N: usize>(&mut self) -> io::Result<()> {

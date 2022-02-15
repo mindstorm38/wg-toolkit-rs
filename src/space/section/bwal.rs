@@ -1,10 +1,9 @@
-//! Module for `AssetList` section.
-
 use std::io::{Read, Seek};
 
 use super::{Section, SectionId, ReadSectionExt};
 
 
+/// AssetList section, defines a list of assets for this space.
 #[derive(Debug)]
 pub struct BWAL {
     pub assets: Vec<AssetInfo>
@@ -40,12 +39,17 @@ impl Section for BWAL {
 }
 
 
+/// An compiled space asset info.
+/// Decoded by [BWAL] section.
 #[derive(Debug)]
 pub struct AssetInfo {
     pub asset_type: AssetType,
     pub string_fnv: u32
 }
 
+
+/// An asset type for an [AssetInfo].
+/// Decoded by [BWAL] section.
 #[derive(Debug)]
 pub enum AssetType {
     ParticlesResource,

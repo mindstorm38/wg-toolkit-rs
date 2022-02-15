@@ -1,5 +1,3 @@
-//! Module for `StringTable` section.
-
 use std::io::{Read, Seek, SeekFrom};
 use std::collections::HashMap;
 
@@ -7,6 +5,7 @@ use super::{Section, SectionId, ReadSectionExt};
 use crate::fnv::fnv1a_64;
 
 
+/// StringTable section, providing a mapping from strings' FNV hashes to strings.
 #[derive(Debug)]
 pub struct BWST {
     pub strings: HashMap<u32, String>
@@ -47,6 +46,7 @@ impl Section for BWST {
 
 impl BWST {
 
+    /// Try to get a string from its hash.
     pub fn get_string(&self, hash: u32) -> Option<&str> {
         Some(self.strings.get(&hash)?.as_str())
     }
@@ -54,12 +54,12 @@ impl BWST {
 }
 
 
-/// Get FNV hash for given data.
+/// Get compiled space's FNV hash section for given bytes.
 pub fn get_hash(data: &[u8]) -> u32 {
     (fnv1a_64(data) & 0xFFFFFFFF) as u32
 }
 
-/// Get FNV hash for given string.
+/// Get compiled space's FNV hash section for given string.
 pub fn get_hash_from_str(string: &str) -> u32 {
     get_hash(string.as_bytes())
 }

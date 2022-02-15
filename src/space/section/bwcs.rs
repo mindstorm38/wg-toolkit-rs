@@ -1,9 +1,9 @@
-//! Module for `CompiledSpaceSettings` section.
-
 use std::io::{Read, Seek};
+
 use super::{Section, SectionId, ReadSectionExt};
 
 
+/// CompiledSpaceSettings section.
 #[derive(Debug)]
 pub struct BWCS {
     pub values: [f32; 6]

@@ -49,12 +49,12 @@ pub fn fnv0_64(data: &[u8]) -> u64 {
     fnva(data, FNV0_64_INIT, FNV_64_PRIME, u64::MAX)
 }
 
-/// Returns the 64 bit FNV-0 hash value for the given data.
+/// Returns the 64 bit FNV-1 hash value for the given data.
 pub fn fnv1_64(data: &[u8]) -> u64 {
     fnva(data, FNV1_64_INIT, FNV_64_PRIME, u64::MAX)
 }
 
-/// Returns the 64 bit FNV-0 hash value for the given data.
+/// Returns the 64 bit FNV-1a hash value for the given data.
 pub fn fnv1a_64(data: &[u8]) -> u64 {
     fnva(data, FNV1A_64_INIT, FNV_64_PRIME, u64::MAX)
 }

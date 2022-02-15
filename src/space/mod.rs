@@ -1,4 +1,4 @@
-//! Compiled Space module
+//! Compiled space codec, use it to open and read sections of a compiled space binaries.
 
 pub mod section;
 

@@ -6,7 +6,7 @@ use super::{SectionId, ReadSectionExt};
 
 
 /// Header section, defining all offsets for real sections. This section is a fake section
-/// and doesn't implement the `Section` trait.
+/// and doesn't implement the [Section](super::Section) trait.
 pub struct BWTB {
     pub root: SectionMeta,
     pub sections: Vec<SectionMeta>,
@@ -36,6 +36,7 @@ impl BWTB {
 
     }
 
+    /// Get section metadata from its identifier.
     pub fn get_section_meta(&self, id: &SectionId) -> Option<&SectionMeta> {
         self.sections.get(*self.sections_from_id.get(id)?)
     }
@@ -44,7 +45,7 @@ impl BWTB {
 
 
 /// Metadata for section, its offset and length. Sections count is an internal value only
-/// used by the fake BWTB header section.
+/// used by the fake [BWTB] header section.
 pub struct SectionMeta {
     pub id: SectionId,
     pub off: usize,
