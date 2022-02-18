@@ -15,6 +15,7 @@ xmltree = "0.10.3"
 base64 = "0.13.0"
 rsa = "0.5.0"
 rand = "0.8.5"
+sha-1 = "0.9.8"
 
 [lib]
 name = "wgtk"
