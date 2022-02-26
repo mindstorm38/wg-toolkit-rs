@@ -11,7 +11,7 @@ use sha1::Sha1;
 
 // LOGIN PACKET FORMAT:
 // (???) [?*20, data*256*n, 2, 0]
-// (???)
+// data: [0x01, <string(conn_data_json)>, <string(passwd)>, ?*?, <string(client_ctx_json)>, ?*?]
 
 // STRING FORMAT:
 // [len, data*len]
