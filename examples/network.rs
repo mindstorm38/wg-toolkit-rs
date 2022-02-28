@@ -6,8 +6,35 @@ use rsa::{RsaPrivateKey, RsaPublicKey, pkcs8::{FromPublicKey, FromPrivateKey}, P
 use sha1::Sha1;
 
 
-// PING PACKET FORMAT:
-// (016) [?, ?, ?, ?, ?, 0, 2, ?, 106, 0, 0, 0, 0, retry_index, ?, ?]
+// PACKET:
+//   HEADER
+//   MESSAGE_HEADER | REQUEST_HEADER
+//
+
+// MESSAGE_HEADER:
+//   MESSAGE_ID
+
+// REQUEST_HEADER:
+//   MESSAGE_ID     // 1
+//   IE_LEN<ie>     // 2
+//   REPLY_ID       // 4
+//   PACKET_OFFSET  // 2
+//
+
+// IE_LEN<$ie>:
+//   [if ie.lengthType == isVarLen]
+//     VAR_LEN<ie.lengthParam> => msg_len
+//   [else]
+//     $<ie.lengthParam> => msg_len
+
+// HEADER: u16
+// MESSAGE_ID: u8
+// REPLY_ID: i32
+// PACKET_OFFSET: u16
+// VAR_LEN<$len>: u8*$len
+
+// Known interface elements:
+// {id: 0, name: "login", lengthStyle: VARIABLE, lengthParam: 2, handler: NULL}
 
 // LOGIN PACKET FORMAT:
 // (???) [?*20, data*256*n, 2, 0]
