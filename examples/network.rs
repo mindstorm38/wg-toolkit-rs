@@ -34,7 +34,11 @@ use sha1::Sha1;
 // VAR_LEN<$len>: u8*$len
 
 // Known interface elements:
-// {id: 0, name: "login", lengthStyle: VARIABLE, lengthParam: 2, handler: NULL}
+// {id: 0x00, name: "login", style: VAR, length: 2}
+// {id: 0x01, name: "authenticate", style: FIXED, length: 4}
+// {id: 0x02, name: "ping", style: FIXED, length: 1}
+// {id: 0x13, name: "tickSync", style: FIXED, length: 1, handler: 0x1428F57E8i64}
+// {id: 0x46, name: "resourceFragment", style: VAR, length: 2, handler: 0x1428F65A0i64}
 
 // LOGIN PACKET FORMAT:
 // (???) [?*20, data*256*n, 2, 0]
