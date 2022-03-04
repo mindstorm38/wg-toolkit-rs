@@ -152,9 +152,9 @@ pub struct Packet {
     seq: u32,
     /// Enable or disable checksum.
     has_checksum: bool,
-    /// The current element's offset.
+    /// The current element's offset. TODO: Remove this and use local function's variable in add_element.
     elt_offset: usize,
-    /// Length of the element's header (element id + length).
+    /// Length of the element's header (element id + length). TODO: Remove this and use local function's variable in add_element.
     elt_header_len: usize,
 }
 
@@ -183,11 +183,6 @@ impl Packet {
         self.data.len() - self.len - 50  // TODO: Change -50 by a more accurate maximum footer size.
     }
 
-    /// Returns the current element's length.
-    pub fn element_len(&self) -> usize {
-        self.len - self.elt_offset - self.elt_header_len
-    }
-
     /// Internal method used to increment the cursor's offset and return a mutable
     /// slice to the reserved data.
     pub fn reserve_unchecked(&mut self, len: usize) -> &mut [u8] {
@@ -209,7 +204,7 @@ impl Packet {
 
     // Requests
 
-    /// Enable requests flag on this packet and add the request.
+    /// Add the request.
     pub fn add_request(&mut self, offset: usize, link_offset: usize) {
         if self.request_first_offset == 0 {
             self.request_first_offset = offset;
