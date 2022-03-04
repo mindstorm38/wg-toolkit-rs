@@ -5,6 +5,9 @@ use std::io::Write;
 use rsa::{RsaPrivateKey, RsaPublicKey, pkcs8::{FromPublicKey, FromPrivateKey}, PublicKeyParts, PaddingScheme};
 use sha1::Sha1;
 
+use wgtk::net::element::{ElementRegistry, ElementDef, ElementLength};
+use wgtk::net::packet::Packet;
+
 
 // PACKET:
 //   HEADER
@@ -47,6 +50,7 @@ use sha1::Sha1;
 // STRING FORMAT:
 // [len, data*len]
 
+
 fn main() {
 
     let pubkey_path = env::var("WGT_PUBKEY_PATH").unwrap();
@@ -57,6 +61,12 @@ fn main() {
     let pubkey = RsaPublicKey::from_public_key_pem(pubkey_content.as_str()).unwrap();
     let privkey = RsaPrivateKey::from_pkcs8_pem(privkey_content.as_str()).unwrap();
 
+    let mut elements = ElementRegistry::new();
+    elements.register(0x00, ElementDef::new("login", ElementLength::Variable16));
+    elements.register(0x01, ElementDef::new("authenticate", ElementLength::Fixed(4)));
+    elements.register(0x02, ElementDef::new("ping", ElementLength::Fixed(1)));
+    elements.register(0xFF, ElementDef::new("reply", ElementLength::Variable32));
+
     println!("PUB RSA {} {:?}", pubkey.size() * 8, pubkey);
     println!("PRIV RSA {} {:?}", privkey.size() * 8, privkey);
 
@@ -65,12 +75,13 @@ fn main() {
     rng.fill_bytes(&mut clear_data);
     let data = pubkey.encrypt(&mut rng, PaddingScheme::new_pkcs1v15_encrypt(), &clear_data).unwrap();
     println!("({}) {:?}", data.len(), data);*/
-    serv(&privkey);
+
+    serv(&elements);
 
 }
 
 
-fn serv(privkey: &RsaPrivateKey) {
+fn serv(elements: &ElementRegistry) {
 
     let sock = UdpSocket::bind("127.0.0.1:9788").unwrap();
 
@@ -80,9 +91,12 @@ fn serv(privkey: &RsaPrivateKey) {
 
         std::io::stdout().flush().unwrap();
         let (len, addr) = sock.recv_from(&mut buf).unwrap();
-        let data = &buf[..len];
 
-        println!("[{:?}]", addr);
+        for packet_element in Packet::new(&buf[4..len], &elements) {
+            println!("{:?}", packet_element);
+        }
+
+        /*println!("[{:?}]", addr);
         println!("<R> ({:03}) {:?}", len, data);
 
         if len > 20 {
@@ -119,7 +133,7 @@ fn serv(privkey: &RsaPrivateKey) {
 
             println!("<F> ({:03}) {:?}", footer_size, footer_data);
 
-        }
+        }*/
 
         /*let clear_data = privkey.decrypt(PaddingScheme::OAEP {
             digest: Box::new(()),
