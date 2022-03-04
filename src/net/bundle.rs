@@ -1,5 +1,6 @@
 use std::io::{Write, Seek, SeekFrom, Cursor};
-use byteorder::{WriteBytesExt, LittleEndian};
+
+use byteorder::{WriteBytesExt, LittleEndian, ReadBytesExt};
 
 use super::element::ElementCodec;
 use super::PacketFlags;
@@ -8,11 +9,11 @@ use super::PacketFlags;
 const PACKET_MAX_SIZE: usize = 1472;
 
 
-/// A elements bundle, used to pack elements and send them on an interface.
+/// A elements bundle, used to pack elements and encode them.
 pub struct Bundle {
     /// Chain of packets.
-    packets: Vec<BundlePacket>,
-    /// Available length on the tail packet.
+    packets: Vec<Packet>,
+    /// Available length on the last packet.
     available_len: usize,
 }
 
@@ -33,7 +34,7 @@ impl Bundle {
             self.add_packet();
         }
 
-        // Allocate element's header, +1 for element's ID.
+        // Allocate element's header, +1 for element's ID, +6 reply_id and link offset.
         let header_len = E::LEN.header_len() + 1 + if request { 6 } else { 0 };
         self.reserve_exact(header_len)[0] = E::ID;
 
@@ -41,11 +42,11 @@ impl Bundle {
         let first_packet_idx = self.packets.len() - 1;
         let first_packet = &mut self.packets[first_packet_idx];
         if request {
-            let cursor = first_packet.elt_cursor;
+            let cursor = first_packet.len;
             // -2 because link offset is encoded on two bytes (u16).
             first_packet.add_request(cursor, cursor + header_len - 2);
         }
-        first_packet.elt_cursor += header_len;
+        first_packet.len += header_len;
         first_packet.elt_header_len = header_len;
 
         // Write the actual element's content.
@@ -60,7 +61,7 @@ impl Bundle {
 
         // Finally, we update the last packet's next element offset.
         let last_packet = self.packets.last_mut().unwrap();
-        last_packet.elt_offset = last_packet.elt_cursor;
+        last_packet.elt_offset = last_packet.len;
         last_packet.elt_header_len = 0;
 
     }
@@ -69,67 +70,24 @@ impl Bundle {
     pub fn finalize(&mut self, seq_id: &mut u32) {
 
         let multi_packet = self.packets.len() > 1;
-
-        let first_seq;
-        let last_seq;
-        let mut current_seq = 0;
-
-        if multi_packet {
-            first_seq = *seq_id;
-            current_seq = first_seq;
-            *seq_id += self.packets.len() as usize;
-            last_seq = *seq_id - 1;
-        } else {
-            first_seq = 0;
-            last_seq = 0;
-        }
+        let seq_first = *seq_id;
+        let seq_last = seq_first + self.packets.len() as u32;
 
         for packet in &mut self.packets {
-
-            if packet.elt_footer_offset != 0 {
-                // If the footer has already been written, reset the cursor to the footer offset.
-                packet.elt_cursor = packet.elt_footer_offset;
+            if multi_packet {
+                packet.set_seq(seq_first, seq_last, *seq_id);
+                *seq_id += 1;
             } else {
-                // Else, set the footer offset to the cursor.
-                packet.elt_footer_offset = packet.elt_offset;
+                packet.clear_seq();
             }
-
-            let mut footer = Cursor::new(&mut packet.data[packet.elt_cursor..]);
-
-            if multi_packet {
-                packet.flags.enable(PacketFlags::IS_FRAGMENT);
-                packet.flags.enable(PacketFlags::HAS_SEQUENCE_NUMBER);
-                footer.write_u32::<LittleEndian>(first_seq).unwrap();
-                footer.write_u32::<LittleEndian>(last_seq).unwrap();
-            }
-
-            if !packet.requests.is_empty() {
-                packet.flags.enable(PacketFlags::HAS_REQUESTS);
-                let mut last_link_offset = 0;
-                for &(offset, link_offset) in &packet.requests {
-                    if last_link_offset != 0 {
-                        Cursor::new(&mut packet.data[last_link_offset..])
-                            .write_u16::<LittleEndian>(offset as u16).unwrap();
-                    }
-                    last_link_offset = link_offset;
-                }
-                footer.write_u16::<LittleEndian>(packet.requests[0].0 as u16).unwrap();
-            }
-
-            if multi_packet {
-                footer.write_u32::<LittleEndian>(current_seq).unwrap();
-                current_seq += 1;
-            }
-
-            todo!()
-
+            packet.finalize();
         }
 
     }
 
     /// Internal method to add a new packet at the end of the chain.
     fn add_packet(&mut self) {
-        self.packets.push(BundlePacket::new());
+        self.packets.push(Packet::new());
     }
 
     /// Reserve exactly the given length in the current packet or a new one if
@@ -166,68 +124,268 @@ impl Bundle {
 
 }
 
-pub struct BundlePacket {
-    /// Flags of the packet, only in-sync with the raw data after finalization.
-    flags: PacketFlags,
+
+pub struct Packet {
     /// Raw data of the packet, header and footer data is not valid until
     /// finalization of the packet.
     data: [u8; PACKET_MAX_SIZE],
-    /// All requests in this bundle (offset, link_offset).
-    requests: Vec<(usize, usize)>,
+    /// Length of data currently used in the data array, this also includes the
+    /// packet's header (flags) and footer (when finalized).
+    len: usize,
+    /// Offset of the footer when the packet is finalized (0 if not).
+    footer_offset: usize,
+    /// The first request's offset in the packet.
+    request_first_offset: usize,
+    /// The previous request's offset to the "next link" field.
+    /// Only used and valid when writing elements to a packet.
+    request_previous_link_offset: usize,
+    /// Sequence number of the first packet of the chain where the owning packet is.
+    seq_first: u32,
+    /// Sequence number of the last packet of the chain where the owning packet is.
+    ///
+    /// If it is equal to 0, this means that the owning packet has no sequence ID.
+    /// This is the only determinant field for this because at least 2 packets must
+    /// be in a sequence, and if `seq_first == 0` (which is the smallest sequence
+    /// number), then `seq_last` must be at least `== 1`.
+    seq_last: u32,
+    /// Sequence number of the owning packet.
+    seq: u32,
+    /// Enable or disable checksum.
+    has_checksum: bool,
     /// The current element's offset.
     elt_offset: usize,
-    /// The current element's cursor used for writing.
-    /// Like the offset, this cursor should never get higher than reserved footer
-    /// while writing message data, however footer data can grow the cursor.
-    elt_cursor: usize,
     /// Length of the element's header (element id + length).
     elt_header_len: usize,
-    /// Offset of the footer when the packet is finalized (0 if not).
-    elt_footer_offset: usize
-    /*/// Offset of the first "request element" in this packet.
-    /// Special value 0 means no request is currently in the packet.
-    /// This value is written in the packet's footer on finalization.
-    first_request_elt_offset: usize,
-    /// Offset of the last request packet, it's used when adding a new request
-    /// to update the "next request offset" field in the last request's element.
-    last_request_elt_link_offset: usize*/
 }
 
-impl BundlePacket {
+impl Packet {
 
     pub fn new() -> Self {
         Self {
-            flags: PacketFlags(0),
             data: [0; PACKET_MAX_SIZE],
-            requests: Vec::new(),
-            elt_offset: 2, // Size of flags
-            elt_cursor: 2,
+            len: 2, // Size of flags
+            footer_offset: 0,
+            request_first_offset: 0,
+            request_previous_link_offset: 0,
+            seq_first: 0,
+            seq_last: 0,
+            seq: 0,
+            has_checksum: false,
+            elt_offset: 2,
             elt_header_len: 0,
-            elt_footer_offset: 0
         }
     }
 
-    /// Returns the free length available in this packet after the current cursor.
+    // Memory management
+
+    /// Returns the free length available in this packet.
     pub fn available_len(&self) -> usize {
-        self.data.len() - self.elt_cursor - 50  // TODO: Change -50 by a more accurate maximum footer size.
+        self.data.len() - self.len - 50  // TODO: Change -50 by a more accurate maximum footer size.
     }
 
-    /// Returns the current length used by the current element.
+    /// Returns the current element's length.
     pub fn element_len(&self) -> usize {
-        self.elt_cursor - (self.elt_offset + self.elt_header_len)
-    }
-
-    /// Enable requests flag on this packet and add the request.
-    pub fn add_request(&mut self, offset: usize, link_offset: usize) {
-        self.requests.push((offset, link_offset));
+        self.len - self.elt_offset - self.elt_header_len
     }
 
     /// Internal method used to increment the cursor's offset and return a mutable
     /// slice to the reserved data.
-    fn reserve_unchecked(&mut self, len: usize) -> &mut [u8] {
-        let ptr = &mut self.data[self.elt_cursor..][..len];
-        self.elt_cursor += 1;
+    pub fn reserve_unchecked(&mut self, len: usize) -> &mut [u8] {
+        debug_assert!(self.len + len <= self.data.len(), "Reserve overflow.");
+        let ptr = &mut self.data[self.len..][..len];
+        self.len += len;
         ptr
+    }
+
+    /// Get the internal data.
+    pub fn as_data(&self) -> &[u8] {
+        &self.data
+    }
+
+    /// Get the internal data mutably.
+    pub fn as_data_mut(&mut self) -> &mut [u8] {
+        &mut self.data
+    }
+
+    // Requests
+
+    /// Enable requests flag on this packet and add the request.
+    pub fn add_request(&mut self, offset: usize, link_offset: usize) {
+        if self.request_first_offset == 0 {
+            self.request_first_offset = offset;
+        } else {
+            assert_ne!(self.request_previous_link_offset, 0, "No previous link offset.");
+            Cursor::new(&mut self.data[self.request_previous_link_offset..])
+                .write_u16::<LittleEndian>(offset as u16).unwrap();
+        }
+        self.request_previous_link_offset = link_offset;
+    }
+
+    /// Clear requests.
+    pub fn clear_requests(&mut self) {
+        self.request_first_offset = 0;
+    }
+
+    pub fn has_requests(&self) -> bool {
+        self.request_first_offset != 0
+    }
+
+    // Sequences
+
+    /// Clear sequence number for this packet.
+    pub fn clear_seq(&mut self) {
+        self.seq_last = 0;
+    }
+
+    /// Returns `true` if this packet has sequence number.
+    pub fn has_seq(&self) -> bool {
+        self.seq_last != 0
+    }
+
+    /// Set a sequence number for this packet.
+    pub fn set_seq(&mut self, seq_first: u32, seq_last: u32, seq: u32) {
+        debug_assert!(seq_first < seq_last, "At least to packet must be in the sequence range.");
+        debug_assert!(seq >= seq_first && seq <= seq_last, "The given sequence number is not in the sequence range.");
+        self.seq_first = seq_first;
+        self.seq_last = seq_last;
+        self.seq = seq;
+    }
+
+    // Checksum
+
+    pub fn has_checksum(&self) -> bool {
+        self.has_checksum
+    }
+
+    pub fn set_checksum(&mut self, enabled: bool) {
+        self.has_checksum = enabled;
+    }
+
+    // Save and loading
+
+    /// Finalize this packet, write footer.
+    /// This can be called multiple times, the result is stable.
+    pub fn finalize(&mut self) {
+
+        if self.footer_offset == 0 {
+            // If the footer is not already set, set offset to current length.
+            self.footer_offset = self.len;
+        } else {
+            // If the footer is already set, reset the length to it.
+            self.len = self.footer_offset;
+        }
+
+        let has_seq = self.has_seq();
+
+        let mut cursor = Cursor::new(&mut self.data[..]);
+        cursor.set_position(self.len as u64);
+
+        let mut flags = 0u16;
+
+        if has_seq {
+            flags |= PacketFlags::IS_FRAGMENT;
+            flags |= PacketFlags::HAS_SEQUENCE_NUMBER;
+            cursor.write_u32::<LittleEndian>(self.seq_first).unwrap();
+            cursor.write_u32::<LittleEndian>(self.seq_last).unwrap();
+        }
+
+        if self.request_first_offset != 0 {
+            flags |= PacketFlags::HAS_REQUESTS;
+            cursor.write_u16::<LittleEndian>(self.request_first_offset as u16).unwrap();
+        }
+
+        if has_seq {
+            cursor.write_u32::<LittleEndian>(self.seq).unwrap();
+        }
+
+        // TODO: Acks
+
+        // Set the length, just before the checksum if enabled.
+        self.len = cursor.position() as usize;
+
+        if self.has_checksum {
+            flags |= PacketFlags::HAS_CHECKSUM;
+        }
+
+        // Finally, write flags.
+        cursor.set_position(0);
+        cursor.write_u16::<LittleEndian>(flags).unwrap();
+
+        // Calculate checksum and write it if enabled.
+        // Placed here to take flags into checksum.
+        if self.has_checksum {
+            cursor.set_position(0);
+            let mut checksum = 0;
+            loop {
+                checksum ^= cursor.read_u32::<LittleEndian>().unwrap();
+                if cursor.position() >= self.len as u64 {
+                    break;
+                }
+            }
+            cursor.set_position(self.len as u64);
+            cursor.write_u32::<LittleEndian>(checksum).unwrap();
+            self.len += 4;
+        }
+
+    }
+
+    /// Finalize this packet, write footer.
+    /// This can be called multiple times, the result is stable.
+    pub fn load(&mut self, len: usize) {
+
+        let mut cursor = Cursor::new(&mut self.data[..]);
+        let flags = cursor.read_u16::<LittleEndian>().unwrap();
+
+        self.has_checksum = (flags & PacketFlags::HAS_CHECKSUM != 0);
+        let has_seq = (flags & PacketFlags::HAS_SEQUENCE_NUMBER != 0);
+        let has_requests = (flags & PacketFlags::HAS_REQUESTS != 0);
+
+        if has_seq {
+            debug_assert_eq!(flags & PacketFlags::IS_FRAGMENT, 0,
+                             "A packet that has sequence number should also be a fragment.");
+        }
+
+        // Reset this, because we have no clue of where elements are in this packet
+        // when loading.
+        self.elt_header_len = 0;
+        self.elt_offset = 2;  // Default size of flags.
+        self.len = len;
+
+        let mut footer_len =
+            if self.has_checksum { 4 } else { 0 } +
+            if has_seq { 12 } else { 0 } +
+            if has_requests { 2 } else { 0 };
+
+        self.footer_offset = len - footer_len;
+        cursor.set_position(self.footer_offset as u64);
+
+        if has_seq {
+            self.seq_first = cursor.read_u32::<LittleEndian>().unwrap();
+            self.seq_last = cursor.read_u32::<LittleEndian>().unwrap();
+        } else {
+            self.seq_last = 0;  // Clear sequence number.
+        }
+
+        self.request_previous_link_offset = 0;
+        if has_requests {
+            self.request_first_offset = cursor.read_u16::<LittleEndian>().unwrap() as usize;
+        } else {
+            self.request_first_offset = 0;  // Clear requests.
+        }
+
+        if has_seq {
+            self.seq = cursor.read_u32::<LittleEndian>().unwrap();
+        }
+
+        // TODO: Acks
+
+        if self.has_checksum {
+            let checksum = cursor.read_u32::<LittleEndian>().unwrap();
+            todo!()
+        }
+
+        debug_assert_eq!(cursor.position(), len as u64);
+
     }
 
 }
@@ -255,7 +413,7 @@ impl<'a> Write for BundleWriter<'a> {
         let slice = self.bundle.reserve(buf.len());
         slice.copy_from_slice(&buf[..slice.len()]);
         self.len += slice.len();
-        Ok(len)
+        Ok(slice.len())
     }
 
     fn flush(&mut self) -> std::io::Result<()> {

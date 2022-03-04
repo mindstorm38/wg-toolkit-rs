@@ -3,6 +3,7 @@
 pub mod packet;
 pub mod element;
 pub mod bundle;
+pub mod interface;
 
 
 /// Packet's flags.

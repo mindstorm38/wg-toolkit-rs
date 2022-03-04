@@ -29,7 +29,7 @@ impl ElementLength {
 
     pub fn write<W: Write>(&self, writer: &mut W, len: u32) -> std::io::Result<()> {
         match self {
-            Self::Fixed(len) => { assert!(len, *len); Ok(()) },
+            Self::Fixed(fixed_len) => { assert_eq!(*fixed_len, len); Ok(()) },
             Self::Variable8 => writer.write_u8(len as u8),
             Self::Variable16 => writer.write_u16::<LittleEndian>(len as u16),
             Self::Variable24 => writer.write_u24::<LittleEndian>(len),
@@ -53,7 +53,7 @@ impl ElementLength {
 /// A codec implemented on a particular element, this is used when writing
 /// an element on a bundle or when adding receive handlers for particular
 /// elements.
-pub trait ElementCodec {
+pub trait ElementCodec: Sized {
 
     /// Type of length used by this element.
     const LEN: ElementLength;
