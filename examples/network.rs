@@ -92,9 +92,9 @@ fn serv(elements: &ElementRegistry) {
         std::io::stdout().flush().unwrap();
         let (len, addr) = sock.recv_from(&mut buf).unwrap();
 
-        for packet_element in Packet::new(&buf[4..len], &elements) {
+        /*for packet_element in Packet::new(&buf[4..len], &elements) {
             println!("{:?}", packet_element);
-        }
+        }*/
 
         /*println!("[{:?}]", addr);
         println!("<R> ({:03}) {:?}", len, data);

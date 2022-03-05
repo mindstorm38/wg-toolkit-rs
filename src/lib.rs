@@ -7,5 +7,3 @@ pub mod space;
 pub mod xml;
 pub mod fnv;
 pub mod net;
-
-mod util;
