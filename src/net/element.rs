@@ -62,9 +62,11 @@ pub trait ElementCodec: Sized {
     const ID: u8;
 
     /// Encode the element in the given writer.
+    /// IO errors should only be returned if operations on the output fails.
     fn encode<W: Write>(&self, out: &mut W) -> io::Result<()>;
 
     /// Decode the element from the given reader.
+    /// IO errors should only be returned if operations on the input fails.
     fn decode<R: Read>(input: &mut R) -> io::Result<Self>;
 
 }

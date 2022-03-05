@@ -1,4 +1,4 @@
-use std::io::{Write, Seek, SeekFrom, Cursor};
+use std::io::{Write, Cursor, Read};
 
 use byteorder::{WriteBytesExt, LittleEndian, ReadBytesExt};
 
@@ -46,27 +46,25 @@ impl Bundle {
             // -2 because link offset is encoded on two bytes (u16).
             first_packet.add_request(cursor, cursor + header_len - 2);
         }
+        let first_packet_elt_offset = first_packet.len;
         first_packet.len += header_len;
-        first_packet.elt_header_len = header_len;
 
         // Write the actual element's content.
         let mut writer = BundleWriter::new(self);
-        elt.encode(&mut writer);
+        // For now we just unwrap the encode result, because no IO error should be produced by a BundleWriter.
+        elt.encode(&mut writer).unwrap();
         let length = writer.len as u32;
 
         // Finally write length.
         let first_packet = &mut self.packets[first_packet_idx];
-        let first_len_slice = &mut first_packet.data[first_packet.elt_offset + 1..][..header_len];
-        E::LEN.write(&mut Cursor::new(first_len_slice), length);
-
-        // Finally, we update the last packet's next element offset.
-        let last_packet = self.packets.last_mut().unwrap();
-        last_packet.elt_offset = last_packet.len;
-        last_packet.elt_header_len = 0;
+        let first_len_slice = &mut first_packet.data[first_packet_elt_offset + 1..];
+        // Unwrap because we now there is enough space at the given position.
+        E::LEN.write(&mut Cursor::new(first_len_slice), length).unwrap();
 
     }
 
-    /// Finalize the bundle. This method can be called many times.
+    /// Finalize the bundle by finalizing all packets in it and setting their sequence id.
+    /// This can be called multiple times, the result is stable.
     pub fn finalize(&mut self, seq_id: &mut u32) {
 
         let multi_packet = self.packets.len() > 1;
@@ -91,9 +89,10 @@ impl Bundle {
     }
 
     /// Reserve exactly the given length in the current packet or a new one if
-    /// this such space is not available in the current packet.
+    /// this such space is not available in the current packet. An exact
+    /// reservation must not exceed maximum packet size.
     fn reserve_exact(&mut self, len: usize) -> &mut [u8] {
-        let new_packet = (self.available_len < len);
+        let new_packet = self.available_len < len;
         if new_packet {
             self.add_packet();
         }
@@ -109,7 +108,7 @@ impl Bundle {
     /// available in the current packet, a new packet is created. The final
     /// reserved length is the size of the returned slice.
     fn reserve(&mut self, len: usize) -> &mut [u8] {
-        let new_packet = (self.available_len == 0);
+        let new_packet = self.available_len == 0;
         if new_packet {
             self.add_packet();
         }
@@ -132,7 +131,7 @@ pub struct Packet {
     /// Length of data currently used in the data array, this also includes the
     /// packet's header (flags) and footer (when finalized).
     len: usize,
-    /// Offset of the footer when the packet is finalized (0 if not).
+    /// Offset of the footer when the packet is finalized or loaded.
     footer_offset: usize,
     /// The first request's offset in the packet.
     request_first_offset: usize,
@@ -152,10 +151,10 @@ pub struct Packet {
     seq: u32,
     /// Enable or disable checksum.
     has_checksum: bool,
-    /// The current element's offset. TODO: Remove this and use local function's variable in add_element.
+    /*/// The current element's offset. TODO: Remove this and use local function's variable in add_element.
     elt_offset: usize,
     /// Length of the element's header (element id + length). TODO: Remove this and use local function's variable in add_element.
-    elt_header_len: usize,
+    elt_header_len: usize,*/
 }
 
 impl Packet {
@@ -171,8 +170,8 @@ impl Packet {
             seq_last: 0,
             seq: 0,
             has_checksum: false,
-            elt_offset: 2,
-            elt_header_len: 0,
+            // elt_offset: 2,
+            // elt_header_len: 0,
         }
     }
 
@@ -256,6 +255,16 @@ impl Packet {
         self.has_checksum = enabled;
     }
 
+    /// Generic function to calculate the checksum from a reader and for the given number of
+    fn calc_checksum<R: Read>(reader: &mut R, mut len: u64) -> u32 {
+        let mut checksum = 0;
+        while len >= 4 {
+            checksum ^= reader.read_u32::<LittleEndian>().unwrap();
+            len -= 4;
+        }
+        checksum
+    }
+
     // Save and loading
 
     /// Finalize this packet, write footer.
@@ -310,14 +319,7 @@ impl Packet {
         // Placed here to take flags into checksum.
         if self.has_checksum {
             cursor.set_position(0);
-            let mut checksum = 0;
-            loop {
-                checksum ^= cursor.read_u32::<LittleEndian>().unwrap();
-                if cursor.position() >= self.len as u64 {
-                    break;
-                }
-            }
-            cursor.set_position(self.len as u64);
+            let checksum = Self::calc_checksum(&mut cursor, self.len as u64);
             cursor.write_u32::<LittleEndian>(checksum).unwrap();
             self.len += 4;
         }
@@ -326,30 +328,45 @@ impl Packet {
 
     /// Finalize this packet, write footer.
     /// This can be called multiple times, the result is stable.
-    pub fn load(&mut self, len: usize) {
+    ///
+    /// If this function returns an error, the integrity of the internal state is not guaranteed.
+    pub fn load(&mut self, len: usize) -> Result<(), PacketLoadError> {
 
         let mut cursor = Cursor::new(&mut self.data[..]);
         let flags = cursor.read_u16::<LittleEndian>().unwrap();
 
-        self.has_checksum = (flags & PacketFlags::HAS_CHECKSUM != 0);
-        let has_seq = (flags & PacketFlags::HAS_SEQUENCE_NUMBER != 0);
-        let has_requests = (flags & PacketFlags::HAS_REQUESTS != 0);
+        const KNOWN_FLAGS: u16 =
+            PacketFlags::HAS_CHECKSUM |
+            PacketFlags::HAS_SEQUENCE_NUMBER |
+            PacketFlags::HAS_REQUESTS |
+            PacketFlags::IS_FRAGMENT;
 
-        if has_seq {
-            debug_assert_eq!(flags & PacketFlags::IS_FRAGMENT, 0,
-                             "A packet that has sequence number should also be a fragment.");
+        if flags & !KNOWN_FLAGS != 0 {
+            return Err(PacketLoadError::UnknownFlags(flags & !KNOWN_FLAGS));
+        }
+
+        self.has_checksum = flags & PacketFlags::HAS_CHECKSUM != 0;
+        let has_seq = flags & PacketFlags::HAS_SEQUENCE_NUMBER != 0;
+        let has_requests = flags & PacketFlags::HAS_REQUESTS != 0;
+
+        if has_seq && flags & PacketFlags::IS_FRAGMENT == 0 {
+            return Err(PacketLoadError::MissingFragmentFlag);
         }
 
         // Reset this, because we have no clue of where elements are in this packet
         // when loading.
-        self.elt_header_len = 0;
-        self.elt_offset = 2;  // Default size of flags.
+        // self.elt_header_len = 0;
+        // self.elt_offset = 2;  // Default size of flags.
         self.len = len;
 
-        let mut footer_len =
+        let footer_len =
             if self.has_checksum { 4 } else { 0 } +
             if has_seq { 12 } else { 0 } +
             if has_requests { 2 } else { 0 };
+
+        if len < footer_len + 2 { // +2 is flags size.
+            return Err(PacketLoadError::TooShort);
+        }
 
         self.footer_offset = len - footer_len;
         cursor.set_position(self.footer_offset as u64);
@@ -375,11 +392,18 @@ impl Packet {
         // TODO: Acks
 
         if self.has_checksum {
+            let pos = cursor.position();
             let checksum = cursor.read_u32::<LittleEndian>().unwrap();
-            todo!()
+            cursor.set_position(0);
+            let real_checksum = Self::calc_checksum(&mut cursor, pos);
+            if checksum != real_checksum {
+                return Err(PacketLoadError::InvalidChecksum);
+            }
+            cursor.set_position(pos);
         }
 
-        debug_assert_eq!(cursor.position(), len as u64);
+        debug_assert_eq!(cursor.position(), len as u64, "Wrong calculated footer size.");
+        Ok(())
 
     }
 
@@ -415,4 +439,19 @@ impl<'a> Write for BundleWriter<'a> {
         Ok(())
     }
 
+}
+
+
+/// Packet loading error.
+#[derive(Debug)]
+pub enum PacketLoadError {
+    /// Unknown flags are used, the packet can't be decoded because this usually
+    /// increase length of the footer.
+    UnknownFlags(u16),
+    /// The packet has sequence number but is not is missing fragment flag.
+    MissingFragmentFlag,
+    /// Not enough length available to decode this packet's footers correctly.
+    TooShort,
+    /// The packet has checksum and the calculated checksum doesn't correspond.
+    InvalidChecksum
 }
