@@ -17,30 +17,35 @@ pub struct Bundle {
     packets: Vec<Box<Packet>>,
     /// Available length on the last packet.
     available_len: usize,
+    /// If packets in this bundle has a prefix.
+    has_prefix: bool
 }
 
 impl Bundle {
 
-    pub fn new() -> Bundle {
+    pub fn new(has_prefix: bool) -> Bundle {
         Bundle {
             packets: Vec::new(),
-            available_len: 0
+            available_len: 0,
+            has_prefix
         }
     }
 
     /// Create a new bundle with one packet.
-    pub fn from_single(packet: Box<Packet>) -> Self {
+    pub fn from_single(packet: Box<Packet>, has_prefix: bool) -> Self {
         Bundle {
             available_len: packet.available_len(),
-            packets: vec![packet]
+            packets: vec![packet],
+            has_prefix
         }
     }
 
-    pub fn from_packets(packets: Vec<Box<Packet>>) -> Self {
+    pub fn from_packets(packets: Vec<Box<Packet>>, has_prefix: bool) -> Self {
         debug_assert!(!packets.is_empty());
         Bundle {
             available_len: packets.last().unwrap().available_len(),
-            packets
+            packets,
+            has_prefix
         }
     }
 
@@ -101,9 +106,21 @@ impl Bundle {
 
     }
 
+    pub fn len(&self) -> usize {
+        self.packets.len()
+    }
+
+    pub fn iter_elements(&self) -> BundleElementIter {
+        BundleElementIter {
+            bundle: self,
+            packet_index: 0,
+            element_offset: 0
+        }
+    }
+
     /// Internal method to add a new packet at the end of the chain.
     fn add_packet(&mut self) {
-        self.packets.push(Box::new(Packet::new()));
+        self.packets.push(Box::new(Packet::new(self.has_prefix)));
     }
 
     /// Reserve exactly the given length in the current packet or a new one if
@@ -174,11 +191,31 @@ impl<'a> Write for BundleWriter<'a> {
 }
 
 
+pub struct BundleElementIter<'a> {
+    bundle: &'a Bundle,
+    packet_index: usize,
+    element_offset: usize
+}
+
+impl<'a> Iterator for BundleElementIter<'a> {
+
+    type Item = ();
+
+    fn next(&mut self) -> Option<Self::Item> {
+        todo!()
+    }
+
+}
+
+
 /// A structure that reassemble received bundles' fragments. You can provide an
 /// additional key type `O` to be used to identify fragments' origin. For example
 /// it can be a client address.
 pub struct BundleAssembler<O = ()> {
-    fragments: HashMap<(O, u32), BundleFragments>
+    /// Fragments tracker.
+    fragments: HashMap<(O, u32), BundleFragments>,
+    /// If packets in this bundle has a prefix.
+    has_prefix: bool
 }
 
 impl<O> BundleAssembler<O>
@@ -186,9 +223,10 @@ where
     O: Hash + Eq
 {
 
-    pub fn new() -> Self {
+    pub fn new(has_prefix: bool) -> Self {
         Self {
-            fragments: HashMap::new()
+            fragments: HashMap::new(),
+            has_prefix
         }
     }
 
@@ -205,7 +243,7 @@ where
                     }
                     o.get_mut().set(seq, packet);
                     if o.get().is_full() {
-                        Some(o.remove().into_bundle())
+                        Some(o.remove().into_bundle(self.has_prefix))
                     } else {
                         None
                     }
@@ -216,7 +254,7 @@ where
                 }
             }
         } else {
-            Some(Bundle::from_single(packet))
+            Some(Bundle::from_single(packet, self.has_prefix))
         }
     }
 
@@ -273,12 +311,12 @@ impl BundleFragments {
     }
 
     /// Convert this structure to a bundle, **safe to call only if `is_full() == true`**.
-    fn into_bundle(self) -> Bundle {
+    fn into_bundle(self, has_prefix: bool) -> Bundle {
         debug_assert!(self.is_full(), "You must call this only if the ");
         let packets = self.fragments.into_iter()
             .map(|o| o.unwrap())
             .collect();
-        Bundle::from_packets(packets)
+        Bundle::from_packets(packets, has_prefix)
     }
 
 }

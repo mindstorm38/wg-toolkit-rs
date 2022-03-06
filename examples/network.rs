@@ -1,9 +1,7 @@
 use std::net::UdpSocket;
 use std::env;
-use std::io::Write;
 
-use rsa::{RsaPrivateKey, RsaPublicKey, pkcs8::{FromPublicKey, FromPrivateKey}, PublicKeyParts, PaddingScheme};
-use sha1::Sha1;
+use rsa::{RsaPrivateKey, RsaPublicKey, pkcs8::{FromPublicKey, FromPrivateKey}, PublicKeyParts};
 
 use wgtk::net::element::{ElementRegistry, ElementDef, ElementLength};
 use wgtk::net::bundle::BundleAssembler;
@@ -82,23 +80,23 @@ fn main() {
 }
 
 
-fn serv(elements: &ElementRegistry) {
+fn serv(_elements: &ElementRegistry) {
 
     let sock = UdpSocket::bind("127.0.0.1:9788").unwrap();
 
-    let mut bundle_asm = BundleAssembler::new();
+    let mut bundle_asm = BundleAssembler::new(true);
 
     loop {
 
-        let mut packet = Box::new(Packet::new());
+        let mut packet = Box::new(Packet::new(true));
         let (len, addr) = sock.recv_from(&mut packet.data).unwrap();
         print!("[{}] Received {} bytes... ", addr, len);
 
-        if let Err(e) = packet.load(len) {
+        if let Err(e) = packet.load(len, true) {
             println!("Failed to decode: {:?}", e);
         } else {
-            if let Some(_bundle) = bundle_asm.try_assemble(addr, packet) {
-                println!("Completed a bundle.");
+            if let Some(bundle) = bundle_asm.try_assemble(addr, packet) {
+                println!("Completed a bundle: {}.", bundle.len());
             } else {
                 println!("Just a fragment.");
             }

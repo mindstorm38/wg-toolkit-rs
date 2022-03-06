@@ -4,9 +4,15 @@ use std::io::{Cursor, Read};
 use super::PacketFlags;
 
 
+/// According to disassembly of WoT, outside of a channel, the max size if always
+/// `1500 - 28 = 1472`, this includes the 4-bytes prefix.
 pub const PACKET_MAX_LEN: usize = 1472;
-pub const PACKET_MAX_FOOTER_LEN: usize = 50;
+/// According to disassembly of WoT's `Packet::freeSpace` function.
+pub const PACKET_MAX_FOOTER_LEN: usize = 35;
+/// Flags are u16.
 pub const PACKET_FLAGS_LEN: usize = 2;
+/// The length of the unknown 4-byte prefix.
+pub const PACKET_PREFIX_LEN: usize = 4;
 
 
 pub struct Packet {
@@ -16,6 +22,8 @@ pub struct Packet {
     /// Length of data currently used in the data array, this also includes the
     /// packet's header (flags) and footer (when finalized).
     pub len: usize,
+    /// If the data contains a 4-bytes prefix.
+    has_prefix: bool,
     /// Offset of the footer when the packet is finalized or loaded.
     footer_offset: usize,
     /// The first request's offset in the packet.
@@ -27,27 +35,22 @@ pub struct Packet {
     seq_first: u32,
     /// Sequence number of the last packet of the chain where the owning packet is.
     ///
-    /// If it is equal to 0, this means that the owning packet has no sequence ID.
-    /// This is the only determinant field for this because at least 2 packets must
-    /// be in a sequence, and if `seq_first == 0` (which is the smallest sequence
-    /// number), then `seq_last` must be at least `== 1`.
+    /// If it is less or equals to `seq_first` then
     seq_last: u32,
     /// Sequence number of the owning packet.
     seq: u32,
     /// Enable or disable checksum.
     has_checksum: bool,
-    /*/// The current element's offset. TODO: Remove this and use local function's variable in add_element.
-    elt_offset: usize,
-    /// Length of the element's header (element id + length). TODO: Remove this and use local function's variable in add_element.
-    elt_header_len: usize,*/
 }
 
 impl Packet {
 
-    pub fn new() -> Self {
+    pub fn new(has_prefix: bool) -> Self {
+        let prefix_len = if has_prefix { PACKET_PREFIX_LEN } else { 0 };
         Self {
             data: [0; PACKET_MAX_LEN],
-            len: PACKET_FLAGS_LEN, // Size of flags
+            len: PACKET_FLAGS_LEN + prefix_len, // Size of flags
+            has_prefix,
             footer_offset: 0,
             request_first_offset: 0,
             request_previous_link_offset: 0,
@@ -55,8 +58,6 @@ impl Packet {
             seq_last: 0,
             seq: 0,
             has_checksum: false,
-            // elt_offset: 2,
-            // elt_header_len: 0,
         }
     }
 
@@ -64,7 +65,7 @@ impl Packet {
 
     /// Returns the free length available in this packet.
     pub fn available_len(&self) -> usize {
-        self.data.len() - self.len - PACKET_MAX_FOOTER_LEN  // TODO: Change -50 by a more accurate maximum footer size.
+        self.data.len() - self.len - PACKET_MAX_FOOTER_LEN
     }
 
     /// Internal method used to increment the cursor's offset and return a mutable
@@ -192,14 +193,16 @@ impl Packet {
             flags |= PacketFlags::HAS_CHECKSUM;
         }
 
+        let prefix_len = if self.has_prefix { PACKET_PREFIX_LEN as u64 } else { 0 };
+
         // Finally, write flags.
-        cursor.set_position(0);
+        cursor.set_position(prefix_len);
         cursor.write_u16::<LittleEndian>(flags).unwrap();
 
         // Calculate checksum and write it if enabled.
         // Placed here to take flags into checksum.
         if self.has_checksum {
-            cursor.set_position(0);
+            cursor.set_position(prefix_len);
             let checksum = Self::calc_checksum(&mut cursor, self.len as u64);
             cursor.write_u32::<LittleEndian>(checksum).unwrap();
             self.len += 4;
@@ -207,20 +210,25 @@ impl Packet {
 
     }
 
-    /// Finalize this packet, write footer.
+    /// Load this the packet from internal of the given length. You can specify if the data
+    /// has the 4-byte prefix that should be ignored (for now, until this is understood).
     /// This can be called multiple times, the result is stable.
     ///
     /// If this function returns an error, the integrity of the internal state is not guaranteed.
-    pub fn load(&mut self, len: usize) -> Result<(), PacketLoadError> {
+    pub fn load(&mut self, len: usize, has_prefix: bool) -> Result<(), PacketLoadError> {
 
         let mut cursor = Cursor::new(&mut self.data[..]);
+
+        let prefix_len = if has_prefix { PACKET_PREFIX_LEN } else { 0 };
+        cursor.set_position(prefix_len as u64);
+
         let flags = cursor.read_u16::<LittleEndian>().unwrap();
 
         const KNOWN_FLAGS: u16 =
             PacketFlags::HAS_CHECKSUM |
-                PacketFlags::HAS_SEQUENCE_NUMBER |
-                PacketFlags::HAS_REQUESTS |
-                PacketFlags::IS_FRAGMENT;
+            PacketFlags::HAS_SEQUENCE_NUMBER |
+            PacketFlags::HAS_REQUESTS |
+            PacketFlags::IS_FRAGMENT;
 
         if flags & !KNOWN_FLAGS != 0 {
             return Err(PacketLoadError::UnknownFlags(flags & !KNOWN_FLAGS));
@@ -239,13 +247,14 @@ impl Packet {
         // self.elt_header_len = 0;
         // self.elt_offset = 2;  // Default size of flags.
         self.len = len;
+        self.has_prefix = has_prefix;
 
         let footer_len =
             if self.has_checksum { 4 } else { 0 } +
-                if has_seq { 12 } else { 0 } +
-                if has_requests { 2 } else { 0 };
+            if has_seq { 12 } else { 0 } +
+            if has_requests { 2 } else { 0 };
 
-        if len < footer_len + PACKET_FLAGS_LEN { // +2 is flags size.
+        if len < footer_len + prefix_len + PACKET_FLAGS_LEN { // +2 is flags size.
             return Err(PacketLoadError::TooShort);
         }
 
@@ -275,12 +284,12 @@ impl Packet {
         if self.has_checksum {
             let pos = cursor.position();
             let checksum = cursor.read_u32::<LittleEndian>().unwrap();
-            cursor.set_position(0);
+            cursor.set_position(prefix_len as u64);
             let real_checksum = Self::calc_checksum(&mut cursor, pos);
             if checksum != real_checksum {
                 return Err(PacketLoadError::InvalidChecksum);
             }
-            cursor.set_position(pos);
+            cursor.set_position(pos + 4);
         }
 
         debug_assert_eq!(cursor.position(), len as u64, "Wrong calculated footer size.");
