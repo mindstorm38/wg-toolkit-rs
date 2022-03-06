@@ -88,7 +88,7 @@ fn serv(_elements: &ElementRegistry) {
 
     loop {
 
-        let mut packet = Box::new(Packet::new(true));
+        let mut packet = Packet::new_boxed(true);
         let (len, addr) = sock.recv_from(&mut packet.data).unwrap();
         print!("[{}] Received {} bytes... ", addr, len);
 

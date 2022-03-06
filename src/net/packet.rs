@@ -61,6 +61,10 @@ impl Packet {
         }
     }
 
+    pub fn new_boxed(has_prefix: bool) -> Box<Self> {
+        Box::new(Self::new(has_prefix))
+    }
+
     // Memory management
 
     /// Returns the free length available in this packet.

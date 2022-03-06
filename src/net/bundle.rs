@@ -120,7 +120,7 @@ impl Bundle {
 
     /// Internal method to add a new packet at the end of the chain.
     fn add_packet(&mut self) {
-        self.packets.push(Box::new(Packet::new(self.has_prefix)));
+        self.packets.push(Packet::new_boxed(self.has_prefix));
     }
 
     /// Reserve exactly the given length in the current packet or a new one if
