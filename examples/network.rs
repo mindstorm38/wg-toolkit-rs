@@ -6,6 +6,7 @@ use rsa::{RsaPrivateKey, RsaPublicKey, pkcs8::{FromPublicKey, FromPrivateKey}, P
 use sha1::Sha1;
 
 use wgtk::net::element::{ElementRegistry, ElementDef, ElementLength};
+use wgtk::net::bundle::BundleAssembler;
 use wgtk::net::packet::Packet;
 
 
@@ -85,12 +86,23 @@ fn serv(elements: &ElementRegistry) {
 
     let sock = UdpSocket::bind("127.0.0.1:9788").unwrap();
 
-    let mut buf = [0; 2048];
+    let mut bundle_asm = BundleAssembler::new();
 
     loop {
 
-        std::io::stdout().flush().unwrap();
-        let (len, addr) = sock.recv_from(&mut buf).unwrap();
+        let mut packet = Box::new(Packet::new());
+        let (len, addr) = sock.recv_from(&mut packet.data).unwrap();
+        print!("[{}] Received {} bytes... ", addr, len);
+
+        if let Err(e) = packet.load(len) {
+            println!("Failed to decode: {:?}", e);
+        } else {
+            if let Some(_bundle) = bundle_asm.try_assemble(addr, packet) {
+                println!("Completed a bundle.");
+            } else {
+                println!("Just a fragment.");
+            }
+        }
 
         /*for packet_element in Packet::new(&buf[4..len], &elements) {
             println!("{:?}", packet_element);

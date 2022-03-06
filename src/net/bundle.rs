@@ -230,7 +230,7 @@ where
 
 /// Internal structure to keep fragments from a given sequence.
 struct BundleFragments {
-    fragments: Vec<Option<Box<Packet>>>,
+    fragments: Vec<Option<Box<Packet>>>,  // Using boxes to avoid moving huge structures.
     seq_count: u32,
     last_update: Instant
 }
