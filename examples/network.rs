@@ -92,7 +92,7 @@ fn serv(_elements: &ElementRegistry) {
         let (len, addr) = sock.recv_from(&mut packet.data).unwrap();
         print!("[{}] Received {} bytes... ", addr, len);
 
-        if let Err(e) = packet.load(len, true) {
+        if let Err(e) = packet.sync_state(len, true) {
             println!("Failed to decode: {:?}", e);
         } else {
             if let Some(bundle) = bundle_asm.try_assemble(addr, packet) {

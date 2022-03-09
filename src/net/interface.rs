@@ -26,10 +26,10 @@ impl Interface {
         let mut packet = Packet::new_boxed(self.has_prefix);
         let (len, addr) = self.sock.recv_from(&mut packet.data).unwrap();
 
-        if let Err(e) = packet.load(len, true) {
+        if let Err(e) = packet.sync_state(len, true) {
             todo!("{:?}", e)
         } else if let Some(bundle) = self.bundle_assembler.try_assemble(addr, packet) {
-            bundle.iter_elements()
+            todo!()
         }
 
     }

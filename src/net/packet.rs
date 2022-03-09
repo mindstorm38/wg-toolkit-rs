@@ -13,6 +13,12 @@ pub const PACKET_MAX_FOOTER_LEN: usize = 35;
 pub const PACKET_FLAGS_LEN: usize = 2;
 /// The length of the unknown 4-byte prefix.
 pub const PACKET_PREFIX_LEN: usize = 4;
+/// The theoretical maximum length for the body, if maximum length is used by header + footer.
+pub const PACKET_MAX_BODY_LEN: usize =
+    PACKET_MAX_LEN -
+    PACKET_MAX_FOOTER_LEN -
+    PACKET_FLAGS_LEN -
+    PACKET_PREFIX_LEN;
 
 
 pub struct Packet {
@@ -21,7 +27,7 @@ pub struct Packet {
     pub data: [u8; PACKET_MAX_LEN],
     /// Length of data currently used in the data array, this also includes the
     /// packet's header (flags) and footer (when finalized).
-    pub len: usize,
+    len: usize,
     /// If the data contains a 4-bytes prefix.
     has_prefix: bool,
     /// Offset of the footer when the packet is finalized or loaded.
@@ -46,12 +52,12 @@ pub struct Packet {
 impl Packet {
 
     pub fn new(has_prefix: bool) -> Self {
-        let prefix_len = if has_prefix { PACKET_PREFIX_LEN } else { 0 };
+        let len = PACKET_FLAGS_LEN + if has_prefix { PACKET_PREFIX_LEN } else { 0 };
         Self {
             data: [0; PACKET_MAX_LEN],
-            len: PACKET_FLAGS_LEN + prefix_len, // Size of flags
+            len,
             has_prefix,
-            footer_offset: 0,
+            footer_offset: len,
             request_first_offset: 0,
             request_previous_link_offset: 0,
             seq_first: 0,
@@ -67,9 +73,47 @@ impl Packet {
 
     // Memory management
 
+    /// Return the total used length of data.
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
     /// Returns the free length available in this packet.
+    #[inline]
     pub fn available_len(&self) -> usize {
         self.data.len() - self.len - PACKET_MAX_FOOTER_LEN
+    }
+
+    /// Returns the offset in data to the flags, varying between 0
+    /// and `PACKET_PREFIX_LEN` if the packet has prefix.
+    #[inline]
+    pub fn get_flags_offset(&self) -> usize {
+        if self.has_prefix { PACKET_PREFIX_LEN } else { 0 }
+    }
+
+    /// Returns the offset in data to the body (just after flags).
+    #[inline]
+    pub fn get_body_offset(&self) -> usize {
+        self.get_flags_offset() + PACKET_FLAGS_LEN
+    }
+
+    /// Returns the offset in data to the footer, 0 if not yet defined.
+    #[inline]
+    pub fn get_footer_offset(&self) -> usize {
+        self.footer_offset
+    }
+
+    /// Return the size of the body.
+    #[inline]
+    pub fn get_body_len(&self) -> usize {
+        self.get_footer_offset() - self.get_body_offset()
+    }
+
+    /// Return a slice to the body part of the internal data.
+    #[inline]
+    pub fn get_body_data(&self) -> &[u8] {
+        &self.data[self.get_body_offset()..self.get_footer_offset()]
     }
 
     /// Internal method used to increment the cursor's offset and return a mutable
@@ -78,7 +122,16 @@ impl Packet {
         debug_assert!(self.len + len <= self.data.len(), "Reserve overflow.");
         let ptr = &mut self.data[self.len..][..len];
         self.len += len;
+        self.footer_offset = self.len; // As we may overwrite the footer.
         ptr
+    }
+
+    /// Clear all this packet and restart from after the flags.
+    pub fn clear(&mut self) {
+        self.len = self.get_body_offset();
+        self.footer_offset = self.len;
+        self.clear_seq();
+        self.clear_requests();
     }
 
     // Requests
@@ -100,6 +153,7 @@ impl Packet {
         self.request_first_offset = 0;
     }
 
+    /// Returns `true` if this packet contains any request.
     pub fn has_requests(&self) -> bool {
         self.request_first_offset != 0
     }
@@ -120,7 +174,7 @@ impl Packet {
 
     /// Set a sequence number for this packet.
     pub fn set_seq(&mut self, seq_first: u32, seq_last: u32, seq: u32) {
-        debug_assert!(seq_first < seq_last, "At least to packet must be in the sequence range.");
+        debug_assert!(seq_first < seq_last, "At least two packet must be in the sequence range.");
         debug_assert!(seq >= seq_first && seq <= seq_last, "The given sequence number is not in the sequence range.");
         self.seq_first = seq_first;
         self.seq_last = seq_last;
@@ -141,7 +195,8 @@ impl Packet {
         self.has_checksum = enabled;
     }
 
-    /// Generic function to calculate the checksum from a reader and for the given number of
+    /// Generic function to calculate the checksum from a reader and
+    /// a given number of bytes available.
     fn calc_checksum<R: Read>(reader: &mut R, mut len: u64) -> u32 {
         let mut checksum = 0;
         while len >= 4 {
@@ -151,17 +206,15 @@ impl Packet {
         checksum
     }
 
-    // Save and loading
+    // Data and state synchronization
 
-    /// Finalize this packet, write footer.
+    /// Synchronize internal packet's data from its state.
     /// This can be called multiple times, the result is stable.
-    pub fn finalize(&mut self) {
+    pub fn sync_data(&mut self) {
 
-        if self.footer_offset == 0 {
-            // If the footer is not already set, set offset to current length.
-            self.footer_offset = self.len;
-        } else {
-            // If the footer is already set, reset the length to it.
+        // If footer offset is less than length, then we know that a
+        // footer is already existing so we want to overwrite it.
+        if self.footer_offset < self.len {
             self.len = self.footer_offset;
         }
 
@@ -214,12 +267,11 @@ impl Packet {
 
     }
 
-    /// Load this the packet from internal of the given length. You can specify if the data
-    /// has the 4-byte prefix that should be ignored (for now, until this is understood).
+    /// Synchronize internal packet's state from its data.
     /// This can be called multiple times, the result is stable.
     ///
-    /// If this function returns an error, the integrity of the internal state is not guaranteed.
-    pub fn load(&mut self, len: usize, has_prefix: bool) -> Result<(), PacketLoadError> {
+    /// *If this function returns an error, the integrity of the internal state is not guaranteed.*
+    pub fn sync_state(&mut self, len: usize, has_prefix: bool) -> Result<(), PacketSyncError> {
 
         let mut cursor = Cursor::new(&mut self.data[..]);
 
@@ -235,7 +287,7 @@ impl Packet {
             PacketFlags::IS_FRAGMENT;
 
         if flags & !KNOWN_FLAGS != 0 {
-            return Err(PacketLoadError::UnknownFlags(flags & !KNOWN_FLAGS));
+            return Err(PacketSyncError::UnknownFlags(flags & !KNOWN_FLAGS));
         }
 
         self.has_checksum = flags & PacketFlags::HAS_CHECKSUM != 0;
@@ -243,15 +295,8 @@ impl Packet {
         let has_requests = flags & PacketFlags::HAS_REQUESTS != 0;
 
         if has_seq && flags & PacketFlags::IS_FRAGMENT == 0 {
-            return Err(PacketLoadError::MissingFragmentFlag);
+            return Err(PacketSyncError::MissingFragmentFlag);
         }
-
-        // Reset this, because we have no clue of where elements are in this packet
-        // when loading.
-        // self.elt_header_len = 0;
-        // self.elt_offset = 2;  // Default size of flags.
-        self.len = len;
-        self.has_prefix = has_prefix;
 
         let footer_len =
             if self.has_checksum { 4 } else { 0 } +
@@ -259,10 +304,13 @@ impl Packet {
             if has_requests { 2 } else { 0 };
 
         if len < footer_len + prefix_len + PACKET_FLAGS_LEN { // +2 is flags size.
-            return Err(PacketLoadError::TooShort);
+            return Err(PacketSyncError::TooShort);
         }
 
+        self.len = len;
+        self.has_prefix = has_prefix;
         self.footer_offset = len - footer_len;
+
         cursor.set_position(self.footer_offset as u64);
 
         if has_seq {
@@ -291,7 +339,7 @@ impl Packet {
             cursor.set_position(prefix_len as u64);
             let real_checksum = Self::calc_checksum(&mut cursor, pos);
             if checksum != real_checksum {
-                return Err(PacketLoadError::InvalidChecksum);
+                return Err(PacketSyncError::InvalidChecksum);
             }
             cursor.set_position(pos + 4);
         }
@@ -304,9 +352,9 @@ impl Packet {
 }
 
 
-/// Packet loading error.
+/// Packet synchronization error.
 #[derive(Debug)]
-pub enum PacketLoadError {
+pub enum PacketSyncError {
     /// Unknown flags are used, the packet can't be decoded because this usually
     /// increase length of the footer.
     UnknownFlags(u16),
