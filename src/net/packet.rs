@@ -34,9 +34,6 @@ pub struct Packet {
     footer_offset: usize,
     /// The first request's offset in the packet.
     request_first_offset: usize,
-    /*/// The previous request's offset to the "next link" field.
-    /// Only used and valid when writing elements to a packet.
-    request_previous_link_offset: usize,*/
     /// Sequence number of the first packet of the chain where the owning packet is.
     seq_first: u32,
     /// Sequence number of the last packet of the chain where the owning packet is.
@@ -59,7 +56,6 @@ impl Packet {
             has_prefix,
             footer_offset: len,
             request_first_offset: 0,
-            //request_previous_link_offset: 0,
             seq_first: 0,
             seq_last: 0,
             seq: 0,
@@ -116,6 +112,12 @@ impl Packet {
         &self.data[self.get_body_offset()..self.get_footer_offset()]
     }
 
+    /// Return a slice to the valid portion of data, equivalent to `&data[..len]`.
+    #[inline]
+    pub fn get_valid_data(&self) -> &[u8] {
+        &self.data[..self.len]
+    }
+
     /// Internal method used to increment the cursor's offset and return a mutable
     /// slice to the reserved data.
     pub fn reserve_unchecked(&mut self, len: usize) -> &mut [u8] {
@@ -136,18 +138,6 @@ impl Packet {
 
     // Requests
 
-    /*/// Add the request.
-    pub fn add_request(&mut self, offset: usize, link_offset: usize) {
-        if self.request_first_offset == 0 {
-            self.request_first_offset = offset;
-        } else {
-            assert_ne!(self.request_previous_link_offset, 0, "No previous link offset.");
-            Cursor::new(&mut self.data[self.request_previous_link_offset..])
-                .write_u16::<LittleEndian>(offset as u16).unwrap();
-        }
-        self.request_previous_link_offset = link_offset;
-    }*/
-
     /// Clear requests.
     #[inline]
     pub fn clear_requests(&mut self) {
@@ -158,6 +148,12 @@ impl Packet {
     #[inline]
     pub fn has_requests(&self) -> bool {
         self.request_first_offset != 0
+    }
+
+    #[inline]
+    pub fn set_request_first_offset(&mut self, offset: usize) {
+        debug_assert!(offset <= self.len - 7); // -1 (flag) -6 (request header) = -7
+        self.request_first_offset = offset;
     }
 
     /// Return the offset where the next request message is in this packet.

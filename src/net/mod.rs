@@ -4,6 +4,7 @@ pub mod packet;
 pub mod element;
 pub mod bundle;
 pub mod interface;
+pub mod proxy;
 
 
 /// Packet's flags.

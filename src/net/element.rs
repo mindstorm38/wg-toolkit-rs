@@ -58,8 +58,8 @@ pub trait ElementCodec: Sized {
     /// Type of length used by this element.
     const LEN: ElementLength;
 
-    /// The element's identifier.
-    const ID: u8;
+    /*/// The element's identifier.
+    const ID: u8;*/
 
     /// Encode the element in the given writer.
     /// IO errors should only be returned if operations on the output fails.
