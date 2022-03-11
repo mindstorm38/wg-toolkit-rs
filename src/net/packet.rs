@@ -34,9 +34,9 @@ pub struct Packet {
     footer_offset: usize,
     /// The first request's offset in the packet.
     request_first_offset: usize,
-    /// The previous request's offset to the "next link" field.
+    /*/// The previous request's offset to the "next link" field.
     /// Only used and valid when writing elements to a packet.
-    request_previous_link_offset: usize,
+    request_previous_link_offset: usize,*/
     /// Sequence number of the first packet of the chain where the owning packet is.
     seq_first: u32,
     /// Sequence number of the last packet of the chain where the owning packet is.
@@ -59,7 +59,7 @@ impl Packet {
             has_prefix,
             footer_offset: len,
             request_first_offset: 0,
-            request_previous_link_offset: 0,
+            //request_previous_link_offset: 0,
             seq_first: 0,
             seq_last: 0,
             seq: 0,
@@ -136,7 +136,7 @@ impl Packet {
 
     // Requests
 
-    /// Add the request.
+    /*/// Add the request.
     pub fn add_request(&mut self, offset: usize, link_offset: usize) {
         if self.request_first_offset == 0 {
             self.request_first_offset = offset;
@@ -146,16 +146,25 @@ impl Packet {
                 .write_u16::<LittleEndian>(offset as u16).unwrap();
         }
         self.request_previous_link_offset = link_offset;
-    }
+    }*/
 
     /// Clear requests.
+    #[inline]
     pub fn clear_requests(&mut self) {
         self.request_first_offset = 0;
     }
 
     /// Returns `true` if this packet contains any request.
+    #[inline]
     pub fn has_requests(&self) -> bool {
         self.request_first_offset != 0
+    }
+
+    /// Return the offset where the next request message is in this packet.
+    /// Return `0` if there is no request in this packet.
+    #[inline]
+    pub fn get_request_first_offset(&self) -> usize {
+        self.request_first_offset
     }
 
     // Sequences
@@ -320,7 +329,7 @@ impl Packet {
             self.seq_last = 0;  // Clear sequence number.
         }
 
-        self.request_previous_link_offset = 0;
+        // self.request_previous_link_offset = 0;
         if has_requests {
             self.request_first_offset = cursor.read_u16::<LittleEndian>().unwrap() as usize;
         } else {

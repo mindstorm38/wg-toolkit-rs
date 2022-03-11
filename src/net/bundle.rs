@@ -8,6 +8,7 @@ use byteorder::ReadBytesExt;
 
 use super::packet::{Packet, PACKET_MAX_BODY_LEN};
 use super::element::ElementCodec;
+use crate::util::SubCursor;
 
 
 pub const BUNDLE_FRAGMENT_MAX_AGE: Duration = Duration::from_secs(10);
@@ -20,7 +21,9 @@ pub struct Bundle {
     /// Available length on the last packet.
     available_len: usize,
     /// If packets in this bundle has a prefix.
-    has_prefix: bool
+    has_prefix: bool,
+    /// Offset of the link of the last request, `0` if not request yet.
+    last_request_link_offset: usize
 }
 
 impl Bundle {
@@ -31,7 +34,8 @@ impl Bundle {
         Bundle {
             packets: Vec::new(),
             available_len: 0,
-            has_prefix
+            has_prefix,
+            last_request_link_offset: 0
         }
     }
 
@@ -40,7 +44,8 @@ impl Bundle {
         Bundle {
             available_len: packet.available_len(),
             packets: vec![packet],
-            has_prefix
+            has_prefix,
+            last_request_link_offset: 0
         }
     }
 
@@ -49,11 +54,12 @@ impl Bundle {
         Bundle {
             available_len: packets.last().unwrap().available_len(),
             packets,
-            has_prefix
+            has_prefix,
+            last_request_link_offset: 0
         }
     }
 
-    /// Add a new element to this bundle, everything is manager for the caller,
+    /// Add a new element to this bundle, everything is managed for the caller,
     /// new packets are created if needed and the message can be a request.
     pub fn add_element<E: ElementCodec>(&mut self, elt: &E, request: bool) {
 
@@ -63,17 +69,19 @@ impl Bundle {
 
         // Allocate element's header, +1 for element's ID, +6 reply_id and link offset.
         let header_len = E::LEN.header_len() + 1 + if request { 6 } else { 0 };
-        self.reserve_exact(header_len)[0] = E::ID;
+        let header_slice = self.reserve_exact(header_len);
+        header_slice[0] = E::ID;
 
         // Update the current packet's cursor and header length.
-        let first_packet_idx = self.packets.len() - 1;
-        let first_packet = &mut self.packets[first_packet_idx];
+        let cur_packet_idx = self.packets.len() - 1;
+        let cur_packet = &mut self.packets[cur_packet_idx];
         if request {
-            let cursor = first_packet.len();
+            let cursor = cur_packet.len();
             // -2 because link offset is encoded on two bytes (u16).
-            first_packet.add_request(cursor, cursor + header_len - 2);
+            // cur_packet.add_request(cursor, cursor + header_len - 2);
+            todo!("need to rework the request system");
         }
-        let first_packet_elt_offset = first_packet.len();
+        let cur_packet_elt_offset = cur_packet.len();
 
         // Write the actual element's content.
         let mut writer = BundleWriter::new(self);
@@ -82,10 +90,10 @@ impl Bundle {
         let length = writer.len as u32;
 
         // Finally write length.
-        let first_packet = &mut self.packets[first_packet_idx];
-        let first_len_slice = &mut first_packet.data[first_packet_elt_offset + 1..];
+        let cur_packet = &mut self.packets[cur_packet_idx];
+        let cur_len_slice = &mut cur_packet.data[cur_packet_elt_offset + 1..];
         // Unwrap because we now there is enough space at the given position.
-        E::LEN.write(&mut Cursor::new(first_len_slice), length).unwrap();
+        E::LEN.write(&mut Cursor::new(cur_len_slice), length).unwrap();
 
     }
 
@@ -110,14 +118,25 @@ impl Bundle {
 
     }
 
+    #[inline]
     pub fn len(&self) -> usize {
         self.packets.len()
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.packets.is_empty()
     }
 
     /// Get a slice of all packets of this bundle.
     #[inline]
     pub fn get_packets(&self) -> &[Box<Packet>] {
         &self.packets[..]
+    }
+
+    #[inline]
+    pub fn get_packet(&self, index: usize) -> Option<&Packet> {
+        self.packets.get(index).map(|p| &**p)
     }
 
     /// See `BundleRawElementsIter`.
@@ -214,9 +233,9 @@ struct BundleReader<'a> {
     /// The current remaining packet's data from the current packet.
     data: &'a [u8],
     /// The total length available in the bundle.
-    len: usize,
+    len: u64,
     /// The internal position of the reader, used for seeking operations.
-    pos: usize,
+    pos: u64,
 }
 
 impl<'a> BundleReader<'a> {
@@ -226,11 +245,21 @@ impl<'a> BundleReader<'a> {
             bundle,
             packets: bundle.get_packets(),
             data: &[],
-            len: bundle.get_packets().iter().map(|p| p.get_body_len()).sum(),
+            len: bundle.get_packets().iter().map(|p| p.get_body_len()).map(|n| n as u64).sum(),
             pos: 0
         };
         ret.discard_packets_until_non_empty();
         ret
+    }
+
+    #[inline]
+    fn len(&self) -> u64 {
+        self.len
+    }
+
+    #[inline]
+    fn pos(&self) -> u64 {
+        self.pos
     }
 
     /// Internal function to discord all head packets until there is one
@@ -257,6 +286,50 @@ impl<'a> BundleReader<'a> {
         self.data
     }
 
+    /// Optimized absolute position seek for bundle structure.
+    fn seek_absolute(&mut self, abs_pos: u64) -> u64 {
+        if abs_pos >= self.len {
+            self.packets = &[];
+            self.data = &[];
+            self.pos = self.len;
+        } else {
+            let rel_pos = abs_pos as i64 - self.pos as i64;
+            if rel_pos > 0 {
+                if (rel_pos as usize) < self.data.len() {
+                    // Here we are in the same packet.
+                    self.data = &self.data[rel_pos as usize..];
+                } else {
+                    // We are after the current packet.
+                    self.packets = &self.packets[1..];
+                    self.seek_relative_unchecked(rel_pos as u64);
+                }
+            } else if rel_pos < 0 {
+                self.packets = self.bundle.get_packets();
+                self.seek_relative_unchecked(abs_pos);
+            }
+            self.pos = abs_pos;
+        }
+        self.pos
+    }
+
+    /// An unchecked relative incremented seek, to use only with `seek`.
+    /// It is unchecked because the internal `pos` is not updated and
+    /// this shouldn't go above or equal to length.
+    fn seek_relative_unchecked(&mut self, mut offset: u64) {
+        while offset != 0 {
+            let packet = &self.packets[0];
+            let packet_len = packet.get_body_len() as u64;
+            if offset >= packet_len {
+                offset -= packet_len;
+                self.packets = &self.packets[1..];
+            } else {
+                self.data = &packet.get_body_data()[offset as usize..];
+                return;
+            }
+        }
+        self.discard_packets_until_non_empty();
+    }
+
 }
 
 impl<'a> Read for BundleReader<'a> {
@@ -279,38 +352,16 @@ impl<'a> Read for BundleReader<'a> {
 impl<'a> Seek for BundleReader<'a> {
 
     fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> {
-
         let abs_pos = match pos {
             SeekFrom::Start(pos) => pos,
             SeekFrom::Current(pos) => (self.pos as i64 + pos) as u64,
             SeekFrom::End(pos) => (self.pos as i64 + pos) as u64
         };
-
-        let mut remaining = abs_pos as usize;
-        self.packets = self.bundle.get_packets();
-
-        while !self.packets.is_empty() && remaining != 0 {
-            let packet = &self.packets[0];
-            let packet_body_len = packet.get_body_len();
-            if remaining >= packet_body_len {
-                remaining -= packet_body_len;
-                self.packets = &self.packets[1..];
-            } else {
-                self.data = &packet.get_body_data()[remaining..];
-                return Ok(abs_pos);
-            }
-        }
-
-        self.data = self.packets.get(0)
-            .map(|p| p.get_body_data())
-            .unwrap_or(&[]);
-
-        Ok(abs_pos)
-
+        Ok(self.seek_absolute(abs_pos))
     }
 
     fn stream_position(&mut self) -> std::io::Result<u64> {
-        Ok(self.pos as u64)
+        Ok(self.pos)
     }
 
 }
@@ -320,105 +371,87 @@ impl<'a> Seek for BundleReader<'a> {
 /// This is not a real `Iterator` implementor because the `ElementCodec`
 /// is needed. And you can get the right codec from the next element id.
 pub struct BundleRawElementsIter<'a> {
-    bundle_reader: BundleReader<'a>
+    bundle_reader: BundleReader<'a>,
+    next_request_offset: u64
 }
 
 impl<'a> BundleRawElementsIter<'a> {
 
     fn new(bundle: &'a Bundle) -> Self {
+        let bundle_reader = BundleReader::new(bundle);
         Self {
-            bundle_reader: BundleReader::new(bundle)
+            next_request_offset: bundle_reader.get_packet()
+                .map(Packet::get_request_first_offset)
+                .unwrap_or(0) as u64,
+            bundle_reader
         }
     }
 
+    /// Return the next element's identifier, to actually decode it you
+    /// need to call `next_element`.
     #[inline]
-    pub fn next_element_id(&self) -> u8 {
-        self.bundle_reader.get_packet_remaining_data()[0]
+    pub fn next_id(&self) -> Option<u8> {
+        self.bundle_reader.get_packet_remaining_data().get(0).copied()
     }
 
-    pub fn next_element<E: ElementCodec>(&mut self) -> Option<E> {
+    /// Decode the next element using the given codec, if the decode
+    /// fails (and return `None`), the internal state is kept as before
+    /// the call.
+    pub fn next<E: ElementCodec>(&mut self) -> Option<RawElement<E>> {
 
         let header_len = E::LEN.header_len() + 1;
-        self.bundle_reader.read_u8().ok()?;
-        let len = E::LEN.read(&mut self.bundle_reader).ok()?;
 
-        E::decode(&mut self.bundle_reader).ok()
+        if self.bundle_reader.get_packet_remaining_data().len() < header_len {
+            return None;
+        }
 
-        /*if let Some(ref mut packet) = self.packet {
-            let header_len = E::LEN.header_len() + 1;
-            if self.element_data.len() >= header_len { // +1 for element ID
+        // Read header and decides if it's a request.
+        let elt_pos = self.bundle_reader.pos();
+        let elt_id = self.bundle_reader.read_u8().ok()?;
+        let request = elt_pos == self.next_request_offset;
 
-                let mut cursor = Cursor::new(&self.element_data[1..]);
-                let len = E::LEN.read(&mut cursor).ok()? as usize;
+        // Read the element's length.
+        let elt_len = E::LEN.read(&mut self.bundle_reader).ok()? as u64;
 
-                // Strip element's header.
-                self.element_data = &self.element_data[header_len..];
+        // If request, read the reply id and the next request's offset.
+        if request {
+            todo!();
+        }
 
-                let mut slices = [&[][..]; 32];
-                let mut slices_count = 1;
-                slices[0] = self.element_data;
+        let elt_data_begin = self.bundle_reader.pos();
+        let elt_data_end = elt_data_begin + elt_len;
 
-                if self.element_data.len() < len {
-                    let mut remaining_len = len - self.element_data.len();
-                    let mut packet_index = self.packet_index;
-                    while remaining_len != 0 {
-                        packet_index += 1;
-                        match self.bundle.packets.get(packet_index) {
-                            Some(packet) => self.element_data = packet.get_body_data(),
-                            None => todo!("not enough length for this packet")
-                        }
-                    }
-                    let slice_len = self.element_data.len().min(remaining_len);
-                    remaining_len -= slice_len;
-                    slices[slices_count] = &self.element_data[..slice_len];
-                    slices_count += 1;
-                }
+        let mut elt_data_reader = SubCursor::new(
+            &mut self.bundle_reader,
+            elt_data_begin,
+            elt_data_end
+        );
 
-                /*if self.element_data.len() >= len {
-                    // In this case, we use a simple cursor.
-                    let mut cursor = Cursor::new(&self.element_data[..len]);
-                    E::decode(&mut cursor).ok()
-                } else {
-
-                }*/
-
-                todo!()
-
-            } else {
+        match E::decode(&mut elt_data_reader) {
+            Ok(elt) => {
+                self.bundle_reader.seek_absolute(elt_data_end);
+                Some(RawElement {
+                    elt,
+                    id: elt_id,
+                    reply_id: None
+                })
+            }
+            Err(_) => {
+                self.bundle_reader.seek_absolute(elt_pos);
                 None
             }
-        } else {
-            None
-        }*/
-
-    }
-
-}
-
-/*struct MultipartCursor<'a, 'b> {
-    slices: &'a [&'b [u8]],
-    slice_index: usize,
-    slice: &'b [u8]
-}
-
-impl<'a, 'b> MultipartCursor<'a, 'b> {
-
-    fn new(slices: &'a [&'b [u8]]) -> Self {
-        Self {
-            slices,
-            slice_index: 0,
-            slice: &slices[0][..]
         }
+
     }
 
 }
 
-impl<'a, 'b> Read for MultipartCursor<'a, 'b> {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
 
-    }
-}*/
-
+pub struct RawElement<E: ElementCodec> {
+    pub elt: E,
+    pub id: u8,
+    pub reply_id: Option<u32>
+}
 
 
 pub struct BundleElementIter<'a> {
