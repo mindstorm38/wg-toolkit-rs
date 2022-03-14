@@ -1,7 +1,11 @@
-use std::collections::HashMap;
-use std::io::{self, Read, Write};
+//! Definitions for elements contained in bundles (and so in packets).
+
+use std::io::{self, Read, Seek, Write};
 
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
+
+pub mod login;
+
 
 
 /// Type of length used by a specific message codec.
@@ -58,54 +62,96 @@ pub trait ElementCodec: Sized {
     /// Type of length used by this element.
     const LEN: ElementLength;
 
-    /*/// The element's identifier.
-    const ID: u8;*/
-
     /// Encode the element in the given writer.
     /// IO errors should only be returned if operations on the output fails.
     fn encode<W: Write>(&self, out: &mut W) -> io::Result<()>;
 
     /// Decode the element from the given reader.
     /// IO errors should only be returned if operations on the input fails.
-    fn decode<R: Read>(input: &mut R) -> io::Result<Self>;
+    fn decode<R: Read + Seek>(input: &mut R) -> io::Result<Self>;
 
 }
 
 
-/// An element definition.
-#[derive(Debug)]
-pub struct ElementDef {
-    pub name: &'static str,
-    pub length: ElementLength,
+/// A reply element.
+pub struct ReplyElement<C> {
+    reply_id: u32,
+    inner: C
 }
 
-impl ElementDef {
-    pub const fn new(name: &'static str, length: ElementLength) -> Self {
-        Self { name, length }
+impl<C> ElementCodec for ReplyElement<C>
+where
+    C: ElementCodec
+{
+
+    const LEN: ElementLength = ElementLength::Variable32;
+
+    fn encode<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        out.write_u32::<LittleEndian>(self.reply_id)?;
+        self.inner.encode(out)
     }
+
+    fn decode<R: Read + Seek>(input: &mut R) -> io::Result<Self> {
+        let reply_id = input.read_u32::<LittleEndian>()?;
+        let inner = C::decode(input)?;
+        Ok(Self { reply_id, inner })
+    }
+
 }
 
 
-/// A registry for all know elements. It's used to determine how
-/// element's length is encoded into the packet's data.
-pub struct ElementRegistry {
-    codecs: HashMap<u8, ElementDef>
-}
+macro_rules! def_raw_element_struct {
+    ($name:ident, $len: ident) => {
 
-impl ElementRegistry {
+        #[derive(Debug)]
+        pub struct $name(pub Vec<u8>);
 
-    pub fn new() -> Self {
-        Self {
-            codecs: HashMap::new()
+        impl $name {
+            pub fn new() -> Self {
+                Self(Vec::new())
+            }
         }
+
+        impl ElementCodec for $name {
+
+            const LEN: ElementLength = ElementLength::$len;
+
+            fn encode<W: Write>(&self, out: &mut W) -> io::Result<()> {
+                out.write_all(&self.0[..])
+            }
+
+            fn decode<R: Read + Seek>(input: &mut R) -> io::Result<Self> {
+                let mut data = Vec::new();
+                input.read_to_end(&mut data)?;
+                Ok(Self(data))
+            }
+
+        }
+
+    };
+}
+
+def_raw_element_struct!(RawElementVariable8, Variable8);
+def_raw_element_struct!(RawElementVariable16, Variable16);
+def_raw_element_struct!(RawElementVariable24, Variable24);
+def_raw_element_struct!(RawElementVariable32, Variable32);
+
+
+#[derive(Debug)]
+pub struct RawElementFixed<const LEN: usize>(pub [u8; LEN]);
+
+impl<const LEN: usize> ElementCodec for RawElementFixed<LEN> {
+
+    const LEN: ElementLength = ElementLength::Fixed(LEN as u32);
+
+    fn encode<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        out.write_all(&self.0[..])
     }
 
-    pub fn register(&mut self, id: u8, codec: ElementDef) {
-        self.codecs.insert(id, codec);
-    }
-
-    pub fn get(&self, id: u8) -> Option<&ElementDef> {
-        self.codecs.get(&id)
+    fn decode<R: Read + Seek>(input: &mut R) -> io::Result<Self> {
+        let mut ret = Self([0; LEN]);
+        input.read_exact(&mut ret.0[..])?;
+        Ok(ret)
     }
 
 }

@@ -1,3 +1,5 @@
+//! Structures for managing bundles of packets.
+
 use std::io::{Write, Cursor, Read, Seek, SeekFrom};
 use std::collections::hash_map::Entry;
 use std::time::{Duration, Instant};
@@ -6,7 +8,7 @@ use std::hash::Hash;
 
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 
-use super::packet::{Packet, PACKET_MAX_BODY_LEN};
+use super::packet::{Packet, PACKET_MAX_BODY_LEN, PACKET_FLAGS_LEN};
 use super::element::ElementCodec;
 use crate::util::SubCursor;
 
@@ -250,15 +252,18 @@ impl<'a> Write for BundleWriter<'a> {
 
 /// A reader implementation used to read a bundle while ignoring headers
 /// and footers. This reader is mainly used by `BundleRawElementsIter`.
+/// Headers and footers are ignored while reading and seeking because
+/// elements can span over multiple packet's body and headers/footers
+/// are only relevant to know the first request
 struct BundleReader<'a> {
     /// The bundle we are reading from.
     bundle: &'a Bundle,
     /// The current packet's index in the bundle.
     packets: &'a [Box<Packet>],
     /// The current remaining packet's data from the current packet.
-    packet_data: &'a [u8],
-    /// The internal position of the reader within the current packet.
-    packet_pos: usize,
+    packet_body: &'a [u8],
+    /// The internal position of the reader within the current packet's body.
+    packet_body_pos: usize,
     /// The total length available in the bundle.
     len: u64,
     /// The internal position of the reader, used for seeking operations.
@@ -271,10 +276,10 @@ impl<'a> BundleReader<'a> {
         let mut ret = Self {
             bundle,
             packets: bundle.get_packets(),
-            packet_data: &[],
+            packet_body: &[],
             len: bundle.get_packets().iter().map(|p| p.get_body_len()).map(|n| n as u64).sum(),
             pos: 0,
-            packet_pos: 0
+            packet_body_pos: 0
         };
         ret.discard_packets_until_non_empty();
         ret
@@ -298,8 +303,8 @@ impl<'a> BundleReader<'a> {
             packets = &packets[1..];
         }
         self.packets = packets;
-        self.packet_data = packets.first().map(|p| p.get_body_data()).unwrap_or(&[]);
-        self.packet_pos = 0;
+        self.packet_body = packets.first().map(|p| p.get_body_data()).unwrap_or(&[]);
+        self.packet_body_pos = 0;
     }
 
     /// Get the packet that will be read on the next call. `None` if
@@ -313,38 +318,39 @@ impl<'a> BundleReader<'a> {
     /// Empty if no more packet to read from.
     #[inline]
     fn get_packet_remaining_data(&self) -> &[u8] {
-        self.packet_data
+        self.packet_body
     }
 
+    /// Get the real position of the cursor within the current packet's body.
     #[inline]
-    fn get_packet_pos(&self) -> usize {
-        self.packet_pos
+    fn get_packet_body_pos(&self) -> usize {
+        self.packet_body_pos
     }
 
     /// Optimized absolute position seek for bundle structure.
     fn seek_absolute(&mut self, abs_pos: u64) -> u64 {
         if abs_pos >= self.len {
             self.packets = &[];
-            self.packet_data = &[];
-            self.packet_pos = 0;
+            self.packet_body = &[];
+            self.packet_body_pos = 0;
             self.pos = self.len;
         } else {
             let rel_pos = abs_pos as i64 - self.pos as i64;
             if rel_pos > 0 {
-                if (rel_pos as usize) < self.packet_data.len() {
+                if (rel_pos as usize) < self.packet_body.len() {
                     // Here we are in the same packet.
-                    self.packet_data = &self.packet_data[rel_pos as usize..];
-                    self.packet_pos += rel_pos as usize;
+                    self.packet_body = &self.packet_body[rel_pos as usize..];
+                    self.packet_body_pos += rel_pos as usize;
                 } else {
                     // We are after the current packet.
                     self.packets = &self.packets[1..];
                     self.seek_relative_unchecked(rel_pos as u64);
                 }
             } else if rel_pos < 0 {
-                if rel_pos >= -(self.packet_pos as i64) {
+                if rel_pos >= -(self.packet_body_pos as i64) {
                     // We are in the same packet but before data pointer.
-                    self.packet_pos = (self.packet_pos as i64 + rel_pos) as usize;
-                    self.packet_data = &self.packets[0].get_body_data()[self.packet_pos..];
+                    self.packet_body_pos = (self.packet_body_pos as i64 + rel_pos) as usize;
+                    self.packet_body = &self.packets[0].get_body_data()[self.packet_body_pos..];
                 } else {
                     // We are in a packet before.
                     self.packets = self.bundle.get_packets();
@@ -367,8 +373,8 @@ impl<'a> BundleReader<'a> {
                 offset -= packet_len;
                 self.packets = &self.packets[1..];
             } else {
-                self.packet_pos = offset as usize;
-                self.packet_data = &packet.get_body_data()[self.packet_pos..];
+                self.packet_body_pos = offset as usize;
+                self.packet_body = &packet.get_body_data()[self.packet_body_pos..];
                 return;
             }
         }
@@ -382,10 +388,11 @@ impl<'a> Read for BundleReader<'a> {
         if self.packets.is_empty() {
             Err(std::io::ErrorKind::UnexpectedEof.into())
         } else {
-            let len = buf.len().min(self.packet_data.len());
-            buf[..len].copy_from_slice(&self.packet_data[..len]);
-            self.packet_data = &self.packet_data[len..];
-            if self.packet_data.is_empty() {
+            let len = buf.len().min(self.packet_body.len());
+            buf[..len].copy_from_slice(&self.packet_body[..len]);
+            self.packet_body = &self.packet_body[len..];
+            self.pos += len as u64;
+            if self.packet_body.is_empty() {
                 self.packets = &self.packets[1..];
                 self.discard_packets_until_non_empty();
             }
@@ -440,8 +447,9 @@ impl<'a> BundleRawElementsIter<'a> {
 
     /// Return `true` if the next element is a request.
     pub fn next_is_request(&self) -> bool {
-        self.next_request_offset != 0 &&
-            self.bundle_reader.get_packet_pos() == self.next_request_offset
+        // In this packet_pos we just ignore the optional prefix, this is why we add flags len.
+        let packet_pos = PACKET_FLAGS_LEN + self.bundle_reader.get_packet_body_pos();
+        self.next_request_offset != 0 && packet_pos == self.next_request_offset
     }
 
     /// Decode the next element using the given codec, if the decode

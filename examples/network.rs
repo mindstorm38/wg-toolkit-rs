@@ -3,7 +3,7 @@ use std::env;
 
 use rsa::{RsaPrivateKey, RsaPublicKey, pkcs8::{FromPublicKey, FromPrivateKey}, PublicKeyParts};
 
-use wgtk::net::element::{ElementRegistry, ElementDef, ElementLength};
+// use wgtk::net::element::{ElementRegistry, ElementDef, ElementLength};
 use wgtk::net::bundle::BundleAssembler;
 use wgtk::net::packet::Packet;
 
@@ -60,11 +60,11 @@ fn main() {
     let pubkey = RsaPublicKey::from_public_key_pem(pubkey_content.as_str()).unwrap();
     let privkey = RsaPrivateKey::from_pkcs8_pem(privkey_content.as_str()).unwrap();
 
-    let mut elements = ElementRegistry::new();
+    /*let mut elements = ElementRegistry::new();
     elements.register(0x00, ElementDef::new("login", ElementLength::Variable16));
     elements.register(0x01, ElementDef::new("authenticate", ElementLength::Fixed(4)));
     elements.register(0x02, ElementDef::new("ping", ElementLength::Fixed(1)));
-    elements.register(0xFF, ElementDef::new("reply", ElementLength::Variable32));
+    elements.register(0xFF, ElementDef::new("reply", ElementLength::Variable32));*/
 
     println!("PUB RSA {} {:?}", pubkey.size() * 8, pubkey);
     println!("PRIV RSA {} {:?}", privkey.size() * 8, privkey);
@@ -75,12 +75,12 @@ fn main() {
     let data = pubkey.encrypt(&mut rng, PaddingScheme::new_pkcs1v15_encrypt(), &clear_data).unwrap();
     println!("({}) {:?}", data.len(), data);*/
 
-    serv(&elements);
+    serv(/*&elements*/);
 
 }
 
 
-fn serv(_elements: &ElementRegistry) {
+fn serv(/*_elements: &*/) {
 
     let sock = UdpSocket::bind("127.0.0.1:9788").unwrap();
 

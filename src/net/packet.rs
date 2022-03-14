@@ -1,4 +1,7 @@
-use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
+//! Packet structure definition with synchronization methods.
+
+use std::fmt::{Debug, Formatter, Write};
+use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian, BigEndian};
 use std::io::{Cursor, Read};
 
 use super::PacketFlags;
@@ -32,7 +35,7 @@ pub struct Packet {
     has_prefix: bool,
     /// Offset of the footer when the packet is finalized or loaded.
     footer_offset: usize,
-    /// The first request's offset in the packet.
+    /// The first request's offset in the packet. Zero if no request in the packet.
     request_first_offset: usize,
     /// Sequence number of the first packet of the chain where the owning packet is.
     seq_first: u32,
@@ -354,6 +357,43 @@ impl Packet {
 
     }
 
+}
+
+impl Debug for Packet {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+
+        let mut s = f.debug_struct("Packet");
+
+        s.field("body_len", &self.get_body_len());
+
+        let mut body_buf = String::new();
+        for &byte in self.get_body_data().iter().take(24) {
+            body_buf.write_fmt(format_args!("{:02X}", byte))?;
+        }
+        if self.get_body_len() > 24 {
+            body_buf.push_str("..");
+        }
+        s.field("body", &body_buf);
+
+        if self.has_prefix {
+            let prefix = Cursor::new(&self.data[..PACKET_PREFIX_LEN])
+                .read_u32::<BigEndian>().unwrap();
+            s.field("prefix", &format!("{:08X}", prefix));
+        }
+
+        if self.has_requests() {
+            s.field("request_offset", &self.request_first_offset);
+        }
+
+        if self.has_seq() {
+            s.field("seq_first", &self.seq_first);
+            s.field("seq", &self.seq);
+            s.field("seq_last", &self.seq_last);
+        }
+
+        s.finish()
+
+    }
 }
 
 

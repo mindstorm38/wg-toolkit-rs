@@ -1,8 +1,10 @@
+//! W.I.P.
+
 use std::net::{ToSocketAddrs, UdpSocket, SocketAddr};
 use std::collections::HashMap;
 use std::marker::PhantomData;
 
-use super::bundle::{Bundle, BundleAssembler, BundleRawElementsIter};
+use super::bundle::{BundleAssembler, BundleRawElementsIter};
 use super::element::ElementCodec;
 use super::packet::Packet;
 
