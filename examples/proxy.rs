@@ -1,7 +1,7 @@
 use std::env;
 
-use wgtk::net::proxy::{Proxy, ProxySideFilter};
-use wgtk::net::bundle::Bundle;
+use wgtk::net::proxy::{Proxy, ProxyListener, ProxyDirectTransfer, ProxySideOutput};
+use wgtk::net::bundle::{Bundle, BundleAssembler};
 use wgtk::net::packet::Packet;
 
 use wgtk::net::element::{RawElementFixed, RawElementVariable16};
@@ -18,8 +18,8 @@ fn main() {
         client_bind_addr,
         server_bind_addr,
         server_addr,
-        LoginClientFilter,
-        ()
+        ProxyDirectTransfer,
+        ProxyDirectTransfer
     ).unwrap();
 
     loop {
@@ -29,11 +29,36 @@ fn main() {
 }
 
 
-struct LoginClientFilter;
+struct LoginAppClientListener {
+    asm: BundleAssembler
+}
 
-impl ProxySideFilter for LoginClientFilter {
+impl ProxyListener for LoginAppClientListener {
 
-    fn immediate_transfer(&mut self) -> bool {
+    fn received<O: ProxySideOutput>(&mut self, mut packet: Box<Packet>, len: usize, out: &O) -> std::io::Result<()> {
+
+        if let Err(_) = packet.sync_state(len, true) {
+
+        } else {
+            if let Some(bundle) = self.asm.try_assemble((), packet) {
+
+
+
+            }
+        }
+
+        Ok(())
+
+    }
+
+}
+
+
+/*struct LoginClientFilter;
+
+impl ProxyFilter for LoginClientFilter {
+
+    fn received_data(&mut self) -> bool {
         true
     }
 
@@ -60,4 +85,4 @@ impl ProxySideFilter for LoginClientFilter {
 
     }
 
-}
+}*/

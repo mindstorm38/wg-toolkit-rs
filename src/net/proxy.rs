@@ -4,11 +4,12 @@
 
 
 use std::net::SocketAddr;
+use std::io;
 
 use mio::net::UdpSocket;
 use mio::{Events, Interest, Poll, Token};
 
-use crate::net::bundle::{Bundle, BundleAssembler};
+use crate::net::bundle::Bundle;
 use crate::net::packet::Packet;
 
 
@@ -18,27 +19,33 @@ const SERVER_AVAIL: Token = Token(1);
 
 /// A special proxy for intercepting, decoding and resending packets
 /// from server to client and from client to server.
-pub struct Proxy<CF, SF> {
-    client: ProxySide<ProxyClientHandler, CF>,
-    server: ProxySide<ProxyServerHandler, SF>,
+pub struct Proxy<CL, SL> {
+    client: ProxySide<ProxyClientHandler, CL>,
+    server: ProxySide<ProxyServerHandler, SL>,
     poll: Poll,
     events: Events
 }
 
-impl<CF, SF> Proxy<CF, SF>
+impl<CL, SL> Proxy<CL, SL>
 where
-    CF: ProxySideFilter,
-    SF: ProxySideFilter
+    CL: ProxyListener,
+    SL: ProxyListener
 {
 
     /// Bind a proxy to a local address to which a client can connect.
     /// - The client bind address to give is the one to which the client must connect.
     /// - The server bind address is the local endpoint where the server will send data.
     /// - The server address is the server to which the proxy will be connected to send data.
-    pub fn bind(client_bind_addr: SocketAddr, server_bind_addr: SocketAddr, server_addr: SocketAddr, client_filter: CF, server_filter: SF) -> std::io::Result<Self> {
+    pub fn bind(
+        client_bind_addr: SocketAddr,
+        server_bind_addr: SocketAddr,
+        server_addr: SocketAddr,
+        client_listener: CL,
+        server_listener: SL
+    ) -> io::Result<Self> {
 
-        let mut client = ProxySide::new("CLIENT", client_bind_addr, ProxyClientHandler::new(), client_filter)?;
-        let mut server = ProxySide::new("SERVER", server_bind_addr, ProxyServerHandler::new(server_addr), server_filter)?;
+        let mut client = ProxySide::new(client_bind_addr, ProxyClientHandler::new(), client_listener)?;
+        let mut server = ProxySide::new(server_bind_addr, ProxyServerHandler::new(server_addr), server_listener)?;
 
         let poll = Poll::new()?;
         poll.registry().register(&mut client.sock, CLIENT_AVAIL, Interest::READABLE)?;
@@ -53,7 +60,7 @@ where
 
     }
 
-    pub fn poll(&mut self) -> std::io::Result<()> {
+    pub fn poll(&mut self) -> io::Result<()> {
 
         println!("[POLL]");
         self.poll.poll(&mut self.events, None)?;
@@ -82,33 +89,29 @@ where
 
 /// Internal structure for defining a proxy side, usually client or server.
 /// It also contains the bundle assembler for received packets.
-struct ProxySide<H, F> {
-    name: &'static str,
+struct ProxySide<H, L> {
     sock: UdpSocket,
-    asm: BundleAssembler,
     handler: H,
-    filter: F
+    listener: L
 }
 
-impl<H, F> ProxySide<H, F>
+impl<H, L> ProxySide<H, L>
 where
-    H: ProxySideHandler,
-    F: ProxySideFilter
+    H: ProxySideConnector,
+    L: ProxyListener
 {
     
-    fn new(name: &'static str, bind_addr: SocketAddr, mut handler: H, filter: F) -> std::io::Result<Self> {
+    fn new(bind_addr: SocketAddr, mut handler: H, listener: L) -> io::Result<Self> {
         let mut sock = UdpSocket::bind(bind_addr)?;
         handler.setup(&mut sock)?;
         Ok(Self {
-            name,
             sock,
-            asm: BundleAssembler::new(true),
             handler,
-            filter
+            listener
         })
     }
 
-    fn send_finalized_bundle(&mut self, bundle: &mut Bundle) -> std::io::Result<usize> {
+    fn send_finalized_bundle(&mut self, bundle: &mut Bundle) -> io::Result<usize> {
         let mut total_len = 0;
         for packet in bundle.get_packets() {
             total_len += self.handler.send(&self.sock, packet.get_valid_data())?;
@@ -117,89 +120,94 @@ where
     }
     
     /// Transfer from this side to another while possible. Every filter is applied.
-    fn transfer_to<TH, TF>(&mut self, to: &mut ProxySide<TH, TF>) -> std::io::Result<()>
+    fn transfer_to<TH, TL>(&mut self, to: &mut ProxySide<TH, TL>) -> io::Result<()>
     where
-        TH: ProxySideHandler,
-        TF: ProxySideFilter
+        TH: ProxySideConnector,
+        TL: ProxyListener
     {
-
-        macro_rules! tlog {
-            ($format:tt, $($arg:tt)*) => {
-                println!(concat!("[{} -> {}] ", $format), self.name, to.name, $($arg)*);
-            };
-        }
-
         loop {
-
             let mut packet = Packet::new_boxed(true);
-
             match self.handler.recv(&self.sock, &mut packet.data[..]) {
                 Ok(len) => {
-
-                    if self.filter.immediate_transfer() {
-                        to.handler.send(&to.sock, &packet.data[..len])?;
-                    }
-
-                    if let Err(e) = packet.sync_state(len, true) {
-                        tlog!("Failed to sync packet data: {:?}", e);
-                    } else {
-
-                        tlog!("Accumulating packet: {:?}", packet);
-                        self.filter.received_packet(&packet);
-
-                        if let Some(bundle) = self.asm.try_assemble((), packet) {
-                            tlog!("Received bundle of length: {}", bundle.len());
-                            self.filter.received_bundle(&bundle);
-                        }
-
-                    }
-
+                    self.listener.received(packet, len, to)?;
                 },
-                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => break,
                 Err(e) => return Err(e)
             }
-
         }
-
         Ok(())
-
     }
     
 }
 
 
+/// An abstract view to a proxy side's output. It is passed to the filter
+pub trait ProxySideOutput {
+
+    /// Send raw data to this side.
+    fn send_data(&self, data: &[u8]) -> io::Result<()>;
+
+    fn send_synced_packet(&self, packet: &Packet) -> io::Result<()> {
+        self.send_data(packet.get_valid_data())
+    }
+
+    fn send_finalized_bundle(&self, bundle: &Bundle) -> io::Result<()> {
+        for packet in bundle.get_packets() {
+            self.send_synced_packet(&**packet)?;
+        }
+        Ok(())
+    }
+
+}
+
+/// Implement the trait for proxy side.
+impl<H, L> ProxySideOutput for ProxySide<H, L>
+where
+    H: ProxySideConnector,
+    L: ProxyListener
+{
+    fn send_data(&self, data: &[u8]) -> io::Result<()> {
+        self.sock.send(data).map(|_| ())
+    }
+}
+
+
+/// A listener trait responsible of raw and not synced packets received from
+/// a proxy side. With this you can do anything of the received packet.
+pub trait ProxyListener {
+
+    /// Called when packet's data is received, the implementor is responsible
+    /// of transmitting data to the output side if needed. **Note that** the
+    /// given packet is not synced, only its data is valid for the given len.
+    fn received<O: ProxySideOutput>(&mut self, packet: Box<Packet>, len: usize, out: &O) -> io::Result<()>;
+
+}
+
+/// A simple common side listener that just redirect incoming datagram to output.
+pub struct ProxyDirectTransfer;
+impl ProxyListener for ProxyDirectTransfer {
+    fn received<O: ProxySideOutput>(&mut self, packet: Box<Packet>, len: usize, out: &O) -> io::Result<()> {
+        out.send_data(&packet.data[..len])
+    }
+}
+
+
+// Side handlers (internal only)
+
 /// An internal handler for specific transfer from one side to another.
-trait ProxySideHandler {
-    fn setup(&mut self, sock: &mut UdpSocket) -> std::io::Result<()>;
-    fn recv(&mut self, from: &UdpSocket, buf: &mut [u8]) -> std::io::Result<usize>;
-    fn send(&mut self, to: &UdpSocket, buf: &[u8]) -> std::io::Result<usize>;
+trait ProxySideConnector {
+    fn setup(&mut self, sock: &mut UdpSocket) -> io::Result<()>;
+    fn recv(&mut self, from: &UdpSocket, buf: &mut [u8]) -> io::Result<usize>;
+    fn send(&mut self, to: &UdpSocket, buf: &[u8]) -> io::Result<usize>;
 }
-
-
-/// A public filter trait for packets received by a proxy side and sent to another.
-pub trait ProxySideFilter {
-
-    /// Return `true` to immediately transfer the received packet's data
-    /// to the opposite side.
-    fn immediate_transfer(&mut self) -> bool;
-
-    /// Called when a packet is successfully synced to its received data.
-    fn received_packet(&mut self, packet: &Packet);
-
-    /// Called when a bundle is successfully assembled from received packets.
-    fn received_bundle(&mut self, bundle: &Bundle);
-
-}
-
-// Blank impl if you don't want any filter.
-impl ProxySideFilter for () {
-    fn immediate_transfer(&mut self) -> bool { true }
-    fn received_packet(&mut self, _packet: &Packet) { }
-    fn received_bundle(&mut self, _bundle: &Bundle) {}
-}
-
 
 /// A handler for the client side of a proxy, with a dynamic address.
+/// Because we are using UDP, the client peer address may often change from one
+/// datagram to another. To solve that the client socket is never directly
+/// connected to the peer address because it would break MIO event detection,
+/// but we save the peer address when receiving a datagram and use this address
+/// when sending datagrams. *This means that no datagram can be sent if no
+/// one was received before, because we can't know the client peer address.*
 struct ProxyClientHandler {
     addr: Option<SocketAddr>
 }
@@ -210,19 +218,19 @@ impl ProxyClientHandler {
     }
 }
 
-impl ProxySideHandler for ProxyClientHandler {
+impl ProxySideConnector for ProxyClientHandler {
 
-    fn setup(&mut self, _sock: &mut UdpSocket) -> std::io::Result<()> {
+    fn setup(&mut self, _sock: &mut UdpSocket) -> io::Result<()> {
         Ok(())
     }
 
-    fn recv(&mut self, from: &UdpSocket, buf: &mut [u8]) -> std::io::Result<usize> {
+    fn recv(&mut self, from: &UdpSocket, buf: &mut [u8]) -> io::Result<usize> {
         let (len, orig) = from.recv_from(buf)?;
         self.addr = Some(orig);
         Ok(len)
     }
 
-    fn send(&mut self, to: &UdpSocket, buf: &[u8]) -> std::io::Result<usize> {
+    fn send(&mut self, to: &UdpSocket, buf: &[u8]) -> io::Result<usize> {
         if let Some(addr) = self.addr {
             to.send_to(buf, addr)
         } else {
@@ -233,6 +241,9 @@ impl ProxySideHandler for ProxyClientHandler {
 }
 
 /// A handler for the server side of a proxy, with a fixed connected address.
+/// The server socket is connected to the server's address at setup and
+/// data is received from and sent to this address without passing the address
+/// again to `recv` and `send` functions.
 struct ProxyServerHandler {
     addr: SocketAddr
 }
@@ -243,17 +254,17 @@ impl ProxyServerHandler {
     }
 }
 
-impl ProxySideHandler for ProxyServerHandler {
+impl ProxySideConnector for ProxyServerHandler {
 
-    fn setup(&mut self, sock: &mut UdpSocket) -> std::io::Result<()> {
+    fn setup(&mut self, sock: &mut UdpSocket) -> io::Result<()> {
         sock.connect(self.addr)
     }
 
-    fn recv(&mut self, from: &UdpSocket, buf: &mut [u8]) -> std::io::Result<usize> {
+    fn recv(&mut self, from: &UdpSocket, buf: &mut [u8]) -> io::Result<usize> {
         from.recv(buf)
     }
 
-    fn send(&mut self, to: &UdpSocket, buf: &[u8]) -> std::io::Result<usize> {
+    fn send(&mut self, to: &UdpSocket, buf: &[u8]) -> io::Result<usize> {
         to.send(buf)
     }
 

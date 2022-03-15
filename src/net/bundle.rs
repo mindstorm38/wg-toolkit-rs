@@ -501,12 +501,14 @@ impl<'a> BundleRawElementsIter<'a> {
             &mut self.bundle_reader,
             elt_data_begin,
             elt_data_end
-        );
+        )?;
 
         let elt = E::decode(&mut elt_data_reader)?;
 
         self.bundle_reader.seek_absolute(elt_data_end);
 
+        // Here we check if we have changed packets during decoding of the element.
+        // If changed, we change the next request offset.
         match self.bundle_reader.get_packet() {
             Some(end_packet) => {
                 if !std::ptr::eq(start_packet, end_packet) {
