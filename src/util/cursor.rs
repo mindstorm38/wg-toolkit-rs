@@ -16,14 +16,19 @@ pub struct SubCursor<T> {
 }
 
 impl<T: Seek> SubCursor<T> {
+
+    /// Create a new sub cursor and ensure that the cursor is placed at `begin` position.
     pub fn new(mut inner: T, begin: u64, end: u64) -> io::Result<Self> {
         inner.seek(SeekFrom::Start(begin))?;
         Ok(Self::new_unchecked(inner, begin, end))
     }
+
 }
 
 impl<T> SubCursor<T> {
 
+    /// Create a new sub cursor but doesn't check that the given inner IO is at the given
+    /// `begin` position. If you know that it will be at such position you can use this.
     pub fn new_unchecked(inner: T, begin: u64, end: u64) -> Self {
         Self {
             inner,
@@ -64,7 +69,7 @@ impl<T: Read> Read for SubCursor<T> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let remaining = self.remaining();
         if remaining == 0 {
-            Err(io::ErrorKind::UnexpectedEof.into())
+            Ok(0)
         } else {
             let exp_len = buf.len().min(sat_u64_to_usize(remaining));
             let len = self.inner.read(&mut buf[..exp_len])?;

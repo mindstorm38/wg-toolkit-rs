@@ -68,9 +68,11 @@ where
         for event in self.events.iter() {
             let res = match event.token() {
                 CLIENT_AVAIL => {
+                    println!("[CLIENT -> SERVER]");
                     self.client.transfer_to(&mut self.server)
                 }
                 SERVER_AVAIL => {
+                    println!("[SERVER -> CLIENT]");
                     self.server.transfer_to(&mut self.client)
                 }
                 _ => unreachable!()
@@ -110,14 +112,6 @@ where
             listener
         })
     }
-
-    fn send_finalized_bundle(&mut self, bundle: &mut Bundle) -> io::Result<usize> {
-        let mut total_len = 0;
-        for packet in bundle.get_packets() {
-            total_len += self.handler.send(&self.sock, packet.get_valid_data())?;
-        }
-        Ok(total_len)
-    }
     
     /// Transfer from this side to another while possible. Every filter is applied.
     fn transfer_to<TH, TL>(&mut self, to: &mut ProxySide<TH, TL>) -> io::Result<()>
@@ -145,13 +139,13 @@ where
 pub trait ProxySideOutput {
 
     /// Send raw data to this side.
-    fn send_data(&self, data: &[u8]) -> io::Result<()>;
+    fn send_data(&mut self, data: &[u8]) -> io::Result<()>;
 
-    fn send_synced_packet(&self, packet: &Packet) -> io::Result<()> {
+    fn send_synced_packet(&mut self, packet: &Packet) -> io::Result<()> {
         self.send_data(packet.get_valid_data())
     }
 
-    fn send_finalized_bundle(&self, bundle: &Bundle) -> io::Result<()> {
+    fn send_finalized_bundle(&mut self, bundle: &Bundle) -> io::Result<()> {
         for packet in bundle.get_packets() {
             self.send_synced_packet(&**packet)?;
         }
@@ -166,8 +160,8 @@ where
     H: ProxySideConnector,
     L: ProxyListener
 {
-    fn send_data(&self, data: &[u8]) -> io::Result<()> {
-        self.sock.send(data).map(|_| ())
+    fn send_data(&mut self, data: &[u8]) -> io::Result<()> {
+        self.handler.send(&self.sock, data).map(|_| ())
     }
 }
 
@@ -179,14 +173,14 @@ pub trait ProxyListener {
     /// Called when packet's data is received, the implementor is responsible
     /// of transmitting data to the output side if needed. **Note that** the
     /// given packet is not synced, only its data is valid for the given len.
-    fn received<O: ProxySideOutput>(&mut self, packet: Box<Packet>, len: usize, out: &O) -> io::Result<()>;
+    fn received<O: ProxySideOutput>(&mut self, packet: Box<Packet>, len: usize, out: &mut O) -> io::Result<()>;
 
 }
 
 /// A simple common side listener that just redirect incoming datagram to output.
 pub struct ProxyDirectTransfer;
 impl ProxyListener for ProxyDirectTransfer {
-    fn received<O: ProxySideOutput>(&mut self, packet: Box<Packet>, len: usize, out: &O) -> io::Result<()> {
+    fn received<O: ProxySideOutput>(&mut self, packet: Box<Packet>, len: usize, out: &mut O) -> io::Result<()> {
         out.send_data(&packet.data[..len])
     }
 }

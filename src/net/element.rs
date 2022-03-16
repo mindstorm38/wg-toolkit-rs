@@ -61,40 +61,121 @@ pub trait ElementCodec: Sized {
 
     /// Type of length used by this element.
     const LEN: ElementLength;
+    /// Encode options type, use `()` if no particular options are expected.
+    type EncodeCfg;
+    /// Decode options type, use `()` if no particular options are expected.
+    type DecodeCfg;
 
     /// Encode the element in the given writer.
     /// IO errors should only be returned if operations on the output fails.
-    fn encode<W: Write>(&self, out: &mut W) -> io::Result<()>;
+    fn encode<W: Write>(&self, output: &mut W, cfg: &Self::EncodeCfg) -> io::Result<()>;
 
     /// Decode the element from the given reader.
     /// IO errors should only be returned if operations on the input fails.
-    fn decode<R: Read + Seek>(input: &mut R) -> io::Result<Self>;
+    fn decode<R: Read + Seek>(&mut self, input: &mut R, cfg: &Self::DecodeCfg) -> io::Result<()>;
 
 }
+
+
+/// A extension trait for `Read` specific to elements encoding.
+pub trait ElementReadExt: Read {
+
+    /// Read a packed 32-bits integer.
+    fn read_packed_u32(&mut self) -> io::Result<u32> {
+        match self.read_u8()? {
+            255 => self.read_u24::<LittleEndian>(),
+            n => Ok(n as u32)
+        }
+    }
+
+    fn read_rich_blob(&mut self, dst: &mut Vec<u8>) -> io::Result<()> {
+        let len = self.read_packed_u32()? as usize;
+        let mut buf = vec![0; len];
+        self.read_exact(&mut buf[..])?;
+        dst.extend_from_slice(&buf[..]);
+        Ok(())
+    }
+
+    fn read_rich_string(&mut self, dst: &mut String) -> io::Result<()> {
+        let len = self.read_packed_u32()? as usize;
+        let mut buf = vec![0; len];
+        self.read_exact(&mut buf[..])?;
+        match std::str::from_utf8(&buf[..]) {
+            Ok(s) => {
+                dst.push_str(s);
+                Ok(())
+            },
+            Err(_) => Err(io::ErrorKind::InvalidData.into())
+        }
+    }
+
+}
+
+
+pub trait ElementWriteExt: Write {
+
+    /// Write a packed 32-bits integer.
+    fn write_packed_u32(&mut self, n: u32) -> io::Result<()> {
+        if n >= 255 {
+            self.write_u8(255)?;
+            self.write_u24::<LittleEndian>(n)
+        } else {
+            self.write_u8(n as u8)
+        }
+    }
+
+    /// Write a blob of data with its packed length before.
+    fn write_rich_blob(&mut self, data: &[u8]) -> io::Result<()> {
+        self.write_packed_u32(data.len() as u32)?;
+        self.write_all(data)
+    }
+
+    /// Write a string with its packed length before.
+    fn write_rich_string(&mut self, s: &str) -> io::Result<()> {
+        self.write_rich_blob(s.as_bytes())
+    }
+
+}
+
+impl<R: Read> ElementReadExt for R {}
+impl<W: Write> ElementWriteExt for W {}
 
 
 /// A reply element.
 pub struct ReplyElement<C> {
+    inner: C,
     reply_id: u32,
-    inner: C
 }
 
-impl<C> ElementCodec for ReplyElement<C>
-where
-    C: ElementCodec
-{
+impl<C> ReplyElement<C> {
+    pub fn new(inner: C, reply_id: u32) -> Self {
+        Self {
+            inner,
+            reply_id
+        }
+    }
+}
+
+impl<C: Default> Default for ReplyElement<C> {
+    fn default() -> Self {
+        Self::new(C::default(), 0)
+    }
+}
+
+impl<C: ElementCodec> ElementCodec for ReplyElement<C> {
 
     const LEN: ElementLength = ElementLength::Variable32;
+    type EncodeCfg = C::EncodeCfg;
+    type DecodeCfg = C::DecodeCfg;
 
-    fn encode<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        out.write_u32::<LittleEndian>(self.reply_id)?;
-        self.inner.encode(out)
+    fn encode<W: Write>(&self, output: &mut W, cfg: &Self::EncodeCfg) -> io::Result<()> {
+        output.write_u32::<LittleEndian>(self.reply_id)?;
+        self.inner.encode(output, cfg)
     }
 
-    fn decode<R: Read + Seek>(input: &mut R) -> io::Result<Self> {
-        let reply_id = input.read_u32::<LittleEndian>()?;
-        let inner = C::decode(input)?;
-        Ok(Self { reply_id, inner })
+    fn decode<R: Read + Seek>(&mut self, input: &mut R, cfg: &Self::DecodeCfg) -> io::Result<()> {
+        self.reply_id = input.read_u32::<LittleEndian>()?;
+        self.inner.decode(input, cfg)
     }
 
 }
@@ -115,15 +196,16 @@ macro_rules! def_raw_element_struct {
         impl ElementCodec for $name {
 
             const LEN: ElementLength = ElementLength::$len;
+            type EncodeCfg = ();
+            type DecodeCfg = ();
 
-            fn encode<W: Write>(&self, out: &mut W) -> io::Result<()> {
-                out.write_all(&self.0[..])
+            fn encode<W: Write>(&self, output: &mut W, _cfg: &Self::EncodeCfg) -> io::Result<()> {
+                output.write_all(&self.0[..])
             }
 
-            fn decode<R: Read + Seek>(input: &mut R) -> io::Result<Self> {
-                let mut data = Vec::new();
-                input.read_to_end(&mut data)?;
-                Ok(Self(data))
+            fn decode<R: Read + Seek>(&mut self, input: &mut R, _cfg: &Self::DecodeCfg) -> io::Result<()> {
+                self.0.clear();
+                input.read_to_end(&mut self.0).map(|_| ())
             }
 
         }
@@ -143,15 +225,15 @@ pub struct RawElementFixed<const LEN: usize>(pub [u8; LEN]);
 impl<const LEN: usize> ElementCodec for RawElementFixed<LEN> {
 
     const LEN: ElementLength = ElementLength::Fixed(LEN as u32);
+    type EncodeCfg = ();
+    type DecodeCfg = ();
 
-    fn encode<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        out.write_all(&self.0[..])
+    fn encode<W: Write>(&self, output: &mut W, _cfg: &Self::EncodeCfg) -> io::Result<()> {
+        output.write_all(&self.0[..])
     }
 
-    fn decode<R: Read + Seek>(input: &mut R) -> io::Result<Self> {
-        let mut ret = Self([0; LEN]);
-        input.read_exact(&mut ret.0[..])?;
-        Ok(ret)
+    fn decode<R: Read + Seek>(&mut self, input: &mut R, _cfg: &Self::DecodeCfg) -> io::Result<()> {
+        input.read_exact(&mut self.0[..])
     }
 
 }

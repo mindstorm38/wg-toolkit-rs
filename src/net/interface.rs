@@ -92,7 +92,8 @@ where
 {
 
     fn next_element_and_dispatch(&mut self, iter: &mut BundleRawElementsIter) -> bool {
-        match iter.next::<E>() {
+        todo!()
+        /*match iter.next::<E>() {
             Some(elt) => {
                 if let Some(callback) = &mut self.callback {
                     callback(&elt.elt);
@@ -100,7 +101,7 @@ where
                 true
             }
             _ => false
-        }
+        }*/
     }
 
 }

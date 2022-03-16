@@ -10,6 +10,7 @@ use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 
 use super::packet::{Packet, PACKET_MAX_BODY_LEN, PACKET_FLAGS_LEN};
 use super::element::ElementCodec;
+
 use crate::util::SubCursor;
 
 
@@ -69,7 +70,18 @@ impl Bundle {
 
     /// Add a new element to this bundle, everything is managed for the caller,
     /// new packets are created if needed and the message can be a request.
-    pub fn add_element<E: ElementCodec>(&mut self, id: u8, elt: &E, request: bool) {
+    pub fn add_element<E>(&mut self, id: u8, elt: &E, request: bool)
+    where
+        E: ElementCodec,
+        E::EncodeCfg: Default
+    {
+        self.add_element_with_cfg(id, elt, &E::EncodeCfg::default(), request)
+    }
+
+    pub fn add_element_with_cfg<E>(&mut self, id: u8, elt: &E, cfg: &E::EncodeCfg, request: bool)
+    where
+        E: ElementCodec
+    {
 
         if self.force_new_packet {
             self.add_packet();
@@ -114,7 +126,7 @@ impl Bundle {
         // Write the actual element's content.
         let mut writer = BundleWriter::new(self);
         // For now we just unwrap the encode result, because no IO error should be produced by a BundleWriter.
-        elt.encode(&mut writer).unwrap();
+        elt.encode(&mut writer, cfg).unwrap();
         let length = writer.len as u32;
 
         // Finally write length.
@@ -170,7 +182,7 @@ impl Bundle {
     }
 
     /// See `BundleRawElementsIter`.
-    pub fn iter_raw_elements(&self) -> BundleRawElementsIter {
+    pub fn iter_raw_elements(&self) -> BundleRawElementsIter<'_> {
         BundleRawElementsIter::new(self)
     }
 
@@ -386,7 +398,7 @@ impl<'a> BundleReader<'a> {
 impl<'a> Read for BundleReader<'a> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         if self.packets.is_empty() {
-            Err(std::io::ErrorKind::UnexpectedEof.into())
+            Ok(0)
         } else {
             let len = buf.len().min(self.packet_body.len());
             buf[..len].copy_from_slice(&self.packet_body[..len]);
@@ -455,7 +467,18 @@ impl<'a> BundleRawElementsIter<'a> {
     /// Decode the next element using the given codec, if the decode
     /// fails (and return `None`), the internal state is kept as before
     /// the call.
-    pub fn next<E: ElementCodec>(&mut self) -> Option<RawElement<E>> {
+    pub fn next<E>(&mut self, elt: E) -> Option<RawElement<E>>
+    where
+        E: ElementCodec,
+        E::DecodeCfg: Default
+    {
+        self.next_with_cfg(elt, &E::DecodeCfg::default())
+    }
+
+    pub fn next_with_cfg<E>(&mut self, elt: E, cfg: &E::DecodeCfg) -> Option<RawElement<E>>
+    where
+        E: ElementCodec
+    {
 
         let request = self.next_is_request();
         let header_len = E::LEN.header_len() + 1 + if request { 6 } else { 0 };
@@ -466,9 +489,9 @@ impl<'a> BundleRawElementsIter<'a> {
 
         let elt_pos = self.bundle_reader.pos();
 
-        match self.next_internal::<E>(request) {
+        match self.next_internal(request, elt, cfg) {
             Ok(elt) => Some(elt),
-            Err(_) => {
+            Err(e) => {
                 // If any error happens, we cancel the operation.
                 self.bundle_reader.seek_absolute(elt_pos);
                 None
@@ -479,7 +502,10 @@ impl<'a> BundleRawElementsIter<'a> {
 
     /// Internal only. Used by `next` to wrap all IO errors and reset if an error happens.
     #[inline(always)]
-    fn next_internal<E: ElementCodec>(&mut self, request: bool) -> std::io::Result<RawElement<E>> {
+    fn next_internal<E>(&mut self, request: bool, mut elt: E, cfg: &E::DecodeCfg) -> std::io::Result<RawElement<E>>
+    where
+        E: ElementCodec
+    {
 
         let start_packet = self.bundle_reader.get_packet().unwrap();
 
@@ -497,13 +523,15 @@ impl<'a> BundleRawElementsIter<'a> {
         let elt_data_begin = self.bundle_reader.pos();
         let elt_data_end = elt_data_begin + elt_len;
 
-        let mut elt_data_reader = SubCursor::new(
+        // We can use unchecked because we know that the given 'inner' reader
+        // is placed at the same position as given 'begin'.
+        let mut elt_data_reader = SubCursor::new_unchecked(
             &mut self.bundle_reader,
             elt_data_begin,
             elt_data_end
-        )?;
+        );
 
-        let elt = E::decode(&mut elt_data_reader)?;
+        elt.decode(&mut elt_data_reader, cfg)?;
 
         self.bundle_reader.seek_absolute(elt_data_end);
 

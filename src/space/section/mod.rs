@@ -34,7 +34,7 @@ pub trait Section: Sized {
 
 
 /// An extension to the `Read` trait specifically used to decode compiled space's sections.
-pub trait ReadSectionExt: Read {
+pub(self) trait ReadSectionExt: Read {
 
     fn skip<const N: usize>(&mut self) -> io::Result<()> {
         let mut buf = [0; N];

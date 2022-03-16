@@ -1,5 +1,7 @@
 use std::env;
 
+use rsa::{RsaPrivateKey, RsaPublicKey, pkcs8::{FromPublicKey, FromPrivateKey}};
+
 use wgtk::net::proxy::{Proxy, ProxyListener, ProxyDirectTransfer, ProxySideOutput};
 use wgtk::net::bundle::{Bundle, BundleAssembler};
 use wgtk::net::packet::Packet;
@@ -14,11 +16,20 @@ fn main() {
     let client_bind_addr = "0.0.0.0:9788".parse().unwrap();
     let server_bind_addr = "0.0.0.0:9789".parse().unwrap();
 
+    let client_privkey_path = env::var("WG_CLIENT_PRIVKEY_PATH").unwrap();
+    let server_pubkey_path = env::var("WG_SERVER_PUBKEY_PATH").unwrap();
+
+    let client_privkey_str = std::fs::read_to_string(client_privkey_path).unwrap();
+    let server_pubkey_str = std::fs::read_to_string(server_pubkey_path).unwrap();
+
+    let client_privkey = RsaPrivateKey::from_pkcs8_pem(client_privkey_str.as_str()).unwrap();
+    let server_pubkey = RsaPublicKey::from_public_key_pem(server_pubkey_str.as_str()).unwrap();
+
     let mut login_proxy = Proxy::bind(
         client_bind_addr,
         server_bind_addr,
         server_addr,
-        ProxyDirectTransfer,
+        LoginAppClientListener::new(client_privkey),
         ProxyDirectTransfer
     ).unwrap();
 
@@ -30,19 +41,42 @@ fn main() {
 
 
 struct LoginAppClientListener {
-    asm: BundleAssembler
+    asm: BundleAssembler,
+    client_privkey: RsaPrivateKey,
+}
+
+impl LoginAppClientListener {
+    pub fn new(client_privkey: RsaPrivateKey) -> Self {
+        Self {
+            asm: BundleAssembler::new(true),
+            client_privkey
+        }
+    }
 }
 
 impl ProxyListener for LoginAppClientListener {
 
-    fn received<O: ProxySideOutput>(&mut self, mut packet: Box<Packet>, len: usize, out: &O) -> std::io::Result<()> {
+    fn received<O: ProxySideOutput>(&mut self, mut packet: Box<Packet>, len: usize, out: &mut O) -> std::io::Result<()> {
 
-        if let Err(_) = packet.sync_state(len, true) {
-
+        if let Err(e) = packet.sync_state(len, true) {
+            eprintln!("[CLIENT -> SERVER] Failed to sync packet state: {:?}", e);
         } else {
             if let Some(bundle) = self.asm.try_assemble((), packet) {
 
-
+                // We expect bundle to have only one element in login app.
+                let mut iter = bundle.iter_raw_elements();
+                match iter.next_id() {
+                    Some(LoginElement::ID) => {
+                        let login = iter.next_with_cfg(LoginElement::default(), &self.client_privkey).unwrap();
+                        println!("[CLIENT -> SERVER] Received login: {:?}", login.elt);
+                    }
+                    Some(PingElement::ID) => {
+                        let ping = iter.next(PingElement::default()).unwrap();
+                        println!("[CLIENT -> SERVER] Received ping: {:?}", ping.elt);
+                        out.send_finalized_bundle(&bundle).unwrap();
+                    }
+                    _ => {}
+                }
 
             }
         }
