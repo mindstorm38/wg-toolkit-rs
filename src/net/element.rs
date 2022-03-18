@@ -61,6 +61,7 @@ pub trait ElementCodec: Sized {
 
     /// Type of length used by this element.
     const LEN: ElementLength;
+
     /// Encode options type, use `()` if no particular options are expected.
     type EncodeCfg;
     /// Decode options type, use `()` if no particular options are expected.
@@ -77,7 +78,18 @@ pub trait ElementCodec: Sized {
 }
 
 
-/// A extension trait for `Read` specific to elements encoding.
+pub trait ElementEncoder {
+    type Element;
+    fn encode<W: Write>(&mut self, elt: &Self::Element) -> io::Result<()>;
+}
+
+pub trait ElementDecoder {
+    type Element;
+    fn decode<R: Read + Seek>(&mut self) -> io::Result<Self::Element>;
+}
+
+
+/// A extension trait for `Read` specific to element decoding.
 pub trait ElementReadExt: Read {
 
     /// Read a packed 32-bits integer.
@@ -112,6 +124,7 @@ pub trait ElementReadExt: Read {
 }
 
 
+/// A extension trait for `Write` specific to element encoding.
 pub trait ElementWriteExt: Write {
 
     /// Write a packed 32-bits integer.

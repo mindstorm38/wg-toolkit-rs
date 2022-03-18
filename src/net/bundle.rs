@@ -1,6 +1,6 @@
 //! Structures for managing bundles of packets.
 
-use std::io::{Write, Cursor, Read, Seek, SeekFrom};
+use std::io::{self, Write, Cursor, Read, Seek, SeekFrom};
 use std::collections::hash_map::Entry;
 use std::time::{Duration, Instant};
 use std::collections::HashMap;
@@ -248,14 +248,14 @@ impl<'a> BundleWriter<'a> {
 
 impl<'a> Write for BundleWriter<'a> {
 
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let slice = self.bundle.reserve(buf.len());
         slice.copy_from_slice(&buf[..slice.len()]);
         self.len += slice.len();
         Ok(slice.len())
     }
 
-    fn flush(&mut self) -> std::io::Result<()> {
+    fn flush(&mut self) -> io::Result<()> {
         Ok(())
     }
 
@@ -396,7 +396,7 @@ impl<'a> BundleReader<'a> {
 }
 
 impl<'a> Read for BundleReader<'a> {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         if self.packets.is_empty() {
             Ok(0)
         } else {
@@ -415,7 +415,7 @@ impl<'a> Read for BundleReader<'a> {
 
 impl<'a> Seek for BundleReader<'a> {
 
-    fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> {
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         Ok(self.seek_absolute(match pos {
             SeekFrom::Start(pos) => pos,
             SeekFrom::Current(pos) => (self.pos as i64 + pos) as u64,
@@ -423,7 +423,7 @@ impl<'a> Seek for BundleReader<'a> {
         }))
     }
 
-    fn stream_position(&mut self) -> std::io::Result<u64> {
+    fn stream_position(&mut self) -> io::Result<u64> {
         Ok(self.pos)
     }
 
@@ -467,7 +467,7 @@ impl<'a> BundleRawElementsIter<'a> {
     /// Decode the next element using the given codec, if the decode
     /// fails (and return `None`), the internal state is kept as before
     /// the call.
-    pub fn next<E>(&mut self, elt: E) -> Option<RawElement<E>>
+    pub fn next<E>(&mut self, elt: E) -> Result<RawElement<E>, RawElementError>
     where
         E: ElementCodec,
         E::DecodeCfg: Default
@@ -475,7 +475,7 @@ impl<'a> BundleRawElementsIter<'a> {
         self.next_with_cfg(elt, &E::DecodeCfg::default())
     }
 
-    pub fn next_with_cfg<E>(&mut self, elt: E, cfg: &E::DecodeCfg) -> Option<RawElement<E>>
+    pub fn next_with_cfg<E>(&mut self, elt: E, cfg: &E::DecodeCfg) -> Result<RawElement<E>, RawElementError>
     where
         E: ElementCodec
     {
@@ -484,17 +484,17 @@ impl<'a> BundleRawElementsIter<'a> {
         let header_len = E::LEN.header_len() + 1 + if request { 6 } else { 0 };
 
         if self.bundle_reader.get_packet_remaining_data().len() < header_len {
-            return None;
+            return Err(RawElementError::TooShortPacket);
         }
 
         let elt_pos = self.bundle_reader.pos();
 
         match self.next_internal(request, elt, cfg) {
-            Ok(elt) => Some(elt),
+            Ok(elt) => Ok(elt),
             Err(e) => {
                 // If any error happens, we cancel the operation.
                 self.bundle_reader.seek_absolute(elt_pos);
-                None
+                Err(RawElementError::Io(e))
             }
         }
 
@@ -502,7 +502,7 @@ impl<'a> BundleRawElementsIter<'a> {
 
     /// Internal only. Used by `next` to wrap all IO errors and reset if an error happens.
     #[inline(always)]
-    fn next_internal<E>(&mut self, request: bool, mut elt: E, cfg: &E::DecodeCfg) -> std::io::Result<RawElement<E>>
+    fn next_internal<E>(&mut self, request: bool, mut elt: E, cfg: &E::DecodeCfg) -> io::Result<RawElement<E>>
     where
         E: ElementCodec
     {
@@ -555,6 +555,15 @@ impl<'a> BundleRawElementsIter<'a> {
 
     }
 
+}
+
+
+pub enum RawElementError {
+    /// The current packet isn't enough large for element's header,
+    /// which need to be on a single packet.
+    TooShortPacket,
+    /// An unexpected or unhandled IO error happened.
+    Io(io::Error)
 }
 
 

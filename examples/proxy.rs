@@ -40,16 +40,18 @@ fn main() {
 }
 
 
-struct LoginAppClientListener {
+struct LoginAppClientListener<'a, 'b> {
     asm: BundleAssembler,
-    client_privkey: RsaPrivateKey,
+    client_privkey: &'a RsaPrivateKey,
+    server_pubkey: &'b RsaPublicKey
 }
 
-impl LoginAppClientListener {
-    pub fn new(client_privkey: RsaPrivateKey) -> Self {
+impl<'a, 'b> LoginAppClientListener<'a, 'b> {
+    pub fn new(client_privkey: &'a RsaPrivateKey, server_pubkey: &'b RsaPublicKey) -> Self {
         Self {
             asm: BundleAssembler::new(true),
-            client_privkey
+            client_privkey,
+            server_pubkey
         }
     }
 }
@@ -67,8 +69,13 @@ impl ProxyListener for LoginAppClientListener {
                 let mut iter = bundle.iter_raw_elements();
                 match iter.next_id() {
                     Some(LoginElement::ID) => {
-                        let login = iter.next_with_cfg(LoginElement::default(), &self.client_privkey).unwrap();
+
+                        let login = iter.next_with_cfg(LoginElement::default(), self.client_privkey).unwrap();
                         println!("[CLIENT -> SERVER] Received login: {:?}", login.elt);
+
+                        let mut new_bundle = Bundle::new_empty(true);
+                        // new_bundle.add_element_with_cfg(LoginElement::ID, &login.elt, &Some(self.server_pubkey))
+
                     }
                     Some(PingElement::ID) => {
                         let ping = iter.next(PingElement::default()).unwrap();

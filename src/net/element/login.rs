@@ -6,20 +6,20 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use rsa::{RsaPrivateKey, RsaPublicKey};
 use crate::net::element::ElementWriteExt;
 
-use super::{ElementCodec, ElementLength, ElementReadExt};
+use super::{ElementCodec, ElementEncoder, ElementLength, ElementReadExt};
 use crate::net::filter::{RsaReader, RsaWriter};
 
 
 /// A login request, optionally encrypted.
 #[derive(Debug, Default)]
 pub struct LoginElement {
-    version: u32,
-    username: String,
-    password: String,
-    blowfish_key: Vec<u8>,
-    context: String,
-    nonce: u32,
-    has_digest: bool
+    pub version: u32,
+    pub username: String,
+    pub password: String,
+    pub blowfish_key: Vec<u8>,
+    pub context: String,
+    pub digest: Option<[u8; 16]>,
+    pub nonce: u32,
 }
 
 impl LoginElement {
@@ -29,7 +29,6 @@ impl LoginElement {
     fn decode_internal<R: Read>(&mut self, input: &mut R) -> io::Result<()> {
 
         let flags = input.read_u8()?;
-        self.has_digest = flags & 0x01 != 0;
 
         self.username.clear();
         self.password.clear();
@@ -41,10 +40,13 @@ impl LoginElement {
         input.read_rich_blob(&mut self.blowfish_key)?;
         input.read_rich_string(&mut self.context)?;
 
-        if self.has_digest {
+        self.digest = if flags & 0x01 != 0 {
             let mut digest = [0; 16];
             input.read_exact(&mut digest);
-        }
+            Some(digest)
+        } else {
+            Option::None
+        };
 
         self.nonce = input.read_u32::<LittleEndian>()?;
 
@@ -54,14 +56,13 @@ impl LoginElement {
 
     fn encode_internal<W: Write>(&self, output: &mut W) -> io::Result<()> {
 
-        output.write_u8(if self.has_digest { 0x01 } else { 0x00 })?;
+        output.write_u8(if self.digest.is_some() { 0x01 } else { 0x00 })?;
         output.write_rich_string(self.username.as_str())?;
         output.write_rich_string(self.password.as_str())?;
         output.write_rich_blob(&self.blowfish_key[..])?;
         output.write_rich_string(self.context.as_str())?;
 
-        if self.has_digest {
-            let digest = [0; 16]; // TODO: Unknown for now.
+        if let Some(digest) = self.digest {
             output.write_all(&digest[..])?;
         }
 
@@ -97,6 +98,22 @@ impl ElementCodec for LoginElement {
         }
     }
 
+}
+
+
+pub struct LoginEncoder {
+    key: Option<RsaPublicKey>
+}
+
+impl LoginEncoder {
+
+}
+
+impl ElementEncoder for LoginEncoder {
+    type Element = LoginElement;
+    fn encode<W: Write>(&mut self, elt: &Self::Element) -> io::Result<()> {
+        todo!()
+    }
 }
 
 
