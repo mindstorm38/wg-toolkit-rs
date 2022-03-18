@@ -29,7 +29,7 @@ fn main() {
         client_bind_addr,
         server_bind_addr,
         server_addr,
-        LoginAppClientListener::new(client_privkey),
+        LoginAppClientListener::new(&client_privkey, &server_pubkey),
         ProxyDirectTransfer
     ).unwrap();
 
@@ -56,7 +56,7 @@ impl<'a, 'b> LoginAppClientListener<'a, 'b> {
     }
 }
 
-impl ProxyListener for LoginAppClientListener {
+impl<'a, 'b> ProxyListener for LoginAppClientListener<'a, 'b> {
 
     fn received<O: ProxySideOutput>(&mut self, mut packet: Box<Packet>, len: usize, out: &mut O) -> std::io::Result<()> {
 

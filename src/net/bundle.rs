@@ -558,6 +558,7 @@ impl<'a> BundleRawElementsIter<'a> {
 }
 
 
+#[derive(Debug)]
 pub enum RawElementError {
     /// The current packet isn't enough large for element's header,
     /// which need to be on a single packet.
