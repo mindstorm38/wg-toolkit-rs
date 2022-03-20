@@ -119,37 +119,3 @@ impl ProxyListener for LoginAppServerListener {
     }
 
 }
-
-
-/*struct LoginClientFilter;
-
-impl ProxyFilter for LoginClientFilter {
-
-    fn received_data(&mut self) -> bool {
-        true
-    }
-
-    fn received_packet(&mut self, _packet: &Packet) {
-
-    }
-
-    fn received_bundle(&mut self, bundle: &Bundle) {
-
-        let mut iter = bundle.iter_raw_elements();
-        loop {
-            match iter.next_id() {
-                Some(LoginElement::ID) => {
-                    let login = iter.next::<RawElementVariable16>().unwrap();
-                    println!("login: ({}) {:?}", login.elt.0.len(), login.elt.0);
-                },
-                Some(PingElement::ID) => {
-                    let ping = iter.next::<PingElement>().unwrap();
-                    println!("Received ping: {:?}", ping.elt);
-                }
-                _ => break
-            }
-        }
-
-    }
-
-}*/
