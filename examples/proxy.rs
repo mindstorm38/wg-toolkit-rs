@@ -65,7 +65,7 @@ impl ProxyListener for LoginAppClientListener<'_, '_> {
                 assert_eq!(bundle.len(), 1);
 
                 let prefix = bundle.get_packets()[0].get_prefix().unwrap();
-                println!("[CLIENT -> SERVER] Prefix: {prefix}");
+                println!("[CLIENT -> SERVER] Received: {:?}", bundle.get_packets());
 
                 // We expect bundle to have only one element in login app.
                 let mut iter = bundle.iter_raw_elements();

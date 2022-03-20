@@ -9,7 +9,7 @@ use sha1::Sha1;
 
 /// A filter reader for RSA-encrypted data (its length must be
 /// a multiple of the key's block size).
-pub struct RsaReader<'a, R> {
+pub struct RsaReader<'a, R: Read> {
     inner: R,
     key: &'a RsaPrivateKey,
     cipher_block: Vec<u8>,
@@ -17,7 +17,7 @@ pub struct RsaReader<'a, R> {
     pos: usize
 }
 
-impl<'a, R> RsaReader<'a, R> {
+impl<'a, R: Read> RsaReader<'a, R> {
     pub fn new(inner: R, key: &'a RsaPrivateKey) -> Self {
         Self {
             inner,
@@ -66,25 +66,25 @@ impl<'a, R: Read> Read for RsaReader<'a, R> {
 /// A filter write for clear data to RSA-encrypted blocks.
 /// Note that each flush call with non-empty internal buffer
 /// will write a full RSA block.
-pub struct RsaWriter<'a, O> {
+pub struct RsaWriter<'a, O: Write> {
     inner: O,
     key: &'a RsaPublicKey,
     clear_block: Vec<u8>,
     clear_block_cap: usize
 }
 
-impl<'a, O> RsaWriter<'a, O> {
+impl<'a, O: Write> RsaWriter<'a, O> {
     pub fn new(inner: O, key: &'a RsaPublicKey) -> Self {
         Self {
             inner,
             clear_block: Vec::new(),
-            clear_block_cap: key.size() - 130,
+            clear_block_cap: 214, // key.size() - 130,
             key,
         }
     }
 }
 
-impl<'a, O: Write> Write for RsaWriter<'a, O> {
+impl<O: Write> Write for RsaWriter<'_, O> {
 
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let remaining = self.clear_block_cap - self.clear_block.len();
@@ -108,4 +108,10 @@ impl<'a, O: Write> Write for RsaWriter<'a, O> {
         Ok(())
     }
 
+}
+
+impl<O: Write> Drop for RsaWriter<'_, O> {
+    fn drop(&mut self) {
+        let _ = Write::flush(self);
+    }
 }
