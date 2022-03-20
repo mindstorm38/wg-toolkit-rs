@@ -90,7 +90,7 @@ impl<'a, O: Write> Write for RsaWriter<'a, O> {
         let remaining = self.clear_block_cap - self.clear_block.len();
         let len = buf.len().min(remaining);
         self.clear_block.extend_from_slice(&buf[..len]);
-        if len < buf.len() {
+        if remaining == len {
             // If the length ultimately written is less than expected,
             // flush to cleanup 'clear_block'.
             self.flush()?;
@@ -102,7 +102,7 @@ impl<'a, O: Write> Write for RsaWriter<'a, O> {
         if !self.clear_block.is_empty() {
             let padding = PaddingScheme::new_pkcs1v15_encrypt();
             let cipher_block = self.key.encrypt(&mut OsRng, padding, &self.clear_block[..]).unwrap();
-            self.inner.write_all(&cipher_block[..]);
+            self.inner.write_all(&cipher_block[..])?;
             self.clear_block.clear();
         }
         Ok(())

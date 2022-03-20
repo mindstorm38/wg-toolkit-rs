@@ -62,17 +62,16 @@ where
 
     pub fn poll(&mut self) -> io::Result<()> {
 
-        println!("[POLL]");
         self.poll.poll(&mut self.events, None)?;
 
         for event in self.events.iter() {
             let res = match event.token() {
                 CLIENT_AVAIL => {
-                    println!("[CLIENT -> SERVER]");
+                    println!("[CLIENT -> SERVER] ...");
                     self.client.transfer_to(&mut self.server)
                 }
                 SERVER_AVAIL => {
-                    println!("[SERVER -> CLIENT]");
+                    println!("[SERVER -> CLIENT] ...");
                     self.server.transfer_to(&mut self.client)
                 }
                 _ => unreachable!()
@@ -121,7 +120,7 @@ where
     {
         loop {
             let mut packet = Packet::new_boxed(true);
-            match self.handler.recv(&self.sock, &mut packet.data[..]) {
+            match self.handler.recv(&self.sock, packet.get_raw_data_mut()) {
                 Ok(len) => {
                     self.listener.received(packet, len, to)?;
                 },
@@ -142,7 +141,7 @@ pub trait ProxySideOutput {
     fn send_data(&mut self, data: &[u8]) -> io::Result<()>;
 
     fn send_synced_packet(&mut self, packet: &Packet) -> io::Result<()> {
-        self.send_data(packet.get_valid_data())
+        self.send_data(&packet.get_raw_data()[..packet.raw_len()])
     }
 
     fn send_finalized_bundle(&mut self, bundle: &Bundle) -> io::Result<()> {
@@ -172,7 +171,8 @@ pub trait ProxyListener {
 
     /// Called when packet's data is received, the implementor is responsible
     /// of transmitting data to the output side if needed. **Note that** the
-    /// given packet is not synced, only its data is valid for the given len.
+    /// given packet is not synced, only its raw data is valid for the given
+    /// length.
     fn received<O: ProxySideOutput>(&mut self, packet: Box<Packet>, len: usize, out: &mut O) -> io::Result<()>;
 
 }
@@ -181,7 +181,7 @@ pub trait ProxyListener {
 pub struct ProxyDirectTransfer;
 impl ProxyListener for ProxyDirectTransfer {
     fn received<O: ProxySideOutput>(&mut self, packet: Box<Packet>, len: usize, out: &mut O) -> io::Result<()> {
-        out.send_data(&packet.data[..len])
+        out.send_data(&packet.get_raw_data()[..len])
     }
 }
 

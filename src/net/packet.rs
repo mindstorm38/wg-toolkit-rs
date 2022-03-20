@@ -4,6 +4,9 @@ use std::fmt::{Debug, Formatter, Write};
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian, BigEndian};
 use std::io::{Cursor, Read};
 
+use rand::RngCore;
+use rand::rngs::OsRng;
+
 use super::PacketFlags;
 
 
@@ -26,13 +29,18 @@ pub const PACKET_MAX_BODY_LEN: usize =
 
 pub struct Packet {
     /// Raw data of the packet, header and footer data is not valid until
-    /// finalization of the packet.
-    pub data: [u8; PACKET_MAX_LEN],
+    /// finalization of the packet. This first 4 bytes are always reserved for
+    /// prefix, but are used only if `has_prefix` is set to true.
+    data: [u8; PACKET_MAX_LEN],
     /// Length of data currently used in the data array, this also includes the
-    /// packet's header (flags) and footer (when finalized).
+    /// packet's header (flags) and footer (when finalized), but not the length
+    /// of of the prefix.
     len: usize,
-    /// If the data contains a 4-bytes prefix.
-    has_prefix: bool,
+    /// Some optional prefix in the first 4 bytes in `data`, if none the first 4
+    /// bytes are unused.
+    prefix: Option<u32>,
+    // /// If the data contains a 4-bytes prefix.
+    // has_prefix: bool,
     /// Offset of the footer when the packet is finalized or loaded.
     footer_offset: usize,
     /// The first request's offset in the packet. Zero if no request in the packet.
@@ -52,12 +60,11 @@ pub struct Packet {
 impl Packet {
 
     pub fn new(has_prefix: bool) -> Self {
-        let len = PACKET_FLAGS_LEN + if has_prefix { PACKET_PREFIX_LEN } else { 0 };
         Self {
             data: [0; PACKET_MAX_LEN],
-            len,
-            has_prefix,
-            footer_offset: len,
+            len: PACKET_FLAGS_LEN,
+            prefix: if has_prefix { Some(0) } else { None },
+            footer_offset: PACKET_FLAGS_LEN,
             request_first_offset: 0,
             seq_first: 0,
             seq_last: 0,
@@ -70,31 +77,56 @@ impl Packet {
         Box::new(Self::new(has_prefix))
     }
 
-    // Memory management
+    // Prefix
 
-    /// Return the total used length of data.
+    /// Returns true if the first 4 bytes are used.
+    #[inline]
+    pub fn has_prefix(&self) -> bool {
+        self.prefix.is_some()
+    }
+
+    #[inline]
+    pub fn get_prefix(&self) -> Option<u32> {
+        self.prefix
+    }
+
+    #[inline]
+    pub fn set_prefix(&mut self, prefix: Option<u32>) {
+        self.prefix = prefix;
+    }
+
+    // Various lengths
+
+    /// Return the length of this packet.
     #[inline]
     pub fn len(&self) -> usize {
         self.len
     }
 
-    /// Returns the free length available in this packet.
+    /// Return the raw length of this packet, including reserved first 4 bytes.
+    #[inline]
+    pub fn raw_len(&self) -> usize {
+        self.len + PACKET_PREFIX_LEN
+    }
+
+    /// Return the free length available in this packet.
     #[inline]
     pub fn available_len(&self) -> usize {
-        self.data.len() - self.len - PACKET_MAX_FOOTER_LEN
+        self.data.len() - self.len - PACKET_MAX_FOOTER_LEN - PACKET_PREFIX_LEN
     }
 
-    /// Returns the offset in data to the flags, varying between 0
-    /// and `PACKET_PREFIX_LEN` if the packet has prefix.
+    /// Return the size of the body.
     #[inline]
-    pub fn get_flags_offset(&self) -> usize {
-        if self.has_prefix { PACKET_PREFIX_LEN } else { 0 }
+    pub fn body_len(&self) -> usize {
+        self.get_footer_offset() - PACKET_FLAGS_LEN
     }
 
-    /// Returns the offset in data to the body (just after flags).
+    /// Return the offset of the first raw data in the internal data array.
+    /// If this packet has a prefix, the raw offset is 0, if not it's 4.
     #[inline]
-    pub fn get_body_offset(&self) -> usize {
-        self.get_flags_offset() + PACKET_FLAGS_LEN
+    pub fn get_raw_offset(&self) -> usize {
+        // If we have a prefix, the raw data starts immediately (offset 0).
+        if self.has_prefix() { 0 } else { PACKET_PREFIX_LEN }
     }
 
     /// Returns the offset in data to the footer, 0 if not yet defined.
@@ -103,29 +135,71 @@ impl Packet {
         self.footer_offset
     }
 
-    /// Return the size of the body.
+    /*/// Returns the offset in data to the flags, varying between 0
+    /// and `PACKET_PREFIX_LEN` if the packet has prefix.
     #[inline]
-    pub fn get_body_len(&self) -> usize {
-        self.get_footer_offset() - self.get_body_offset()
+    pub fn get_flags_offset(&self) -> usize {
+        // if self.has_prefix { PACKET_PREFIX_LEN } else { 0 }
+        PACKET_PREFIX_LEN
     }
 
-    /// Return a slice to the body part of the internal data.
+    /// Returns the offset in data to the body (just after flags).
+    #[inline]
+    pub fn get_body_offset(&self) -> usize {
+        self.get_flags_offset() + PACKET_FLAGS_LEN
+    }*/
+
+    // Raw data
+
+    /// Return a slice to the raw data, optionally including the prefix.
+    /// This slice has no upper bound, to get the raw length, call `raw_len`.
+    #[inline]
+    pub fn get_raw_data(&self) -> &[u8] {
+        let off = self.get_raw_offset();
+        &self.data[off..]
+    }
+
+    /// Return a slice to the raw data, optionally including the prefix.
+    /// This slice has no upper bound, to get the raw length, call `raw_len`.
+    ///
+    /// You can use this to received datagram's data on, and then
+    /// call `sync_state` with the received length.
+    #[inline]
+    pub fn get_raw_data_mut(&mut self) -> &mut [u8] {
+        let off = self.get_raw_offset();
+        &mut self.data[off..]
+    }
+
+    // Data
+
+    /// Return a slice to the data, this doesn't contains the prefix.
+    #[inline]
+    pub fn get_data(&self) -> &[u8] {
+        &self.data[PACKET_PREFIX_LEN..][..self.len]
+    }
+
+    /// Return a mutable slice to the data, this doesn't contains the prefix
+    /// and has the length as the upper bound. This is used for example by
+    /// bundles to write elements.
+    #[inline]
+    pub fn get_data_mut(&mut self) -> &mut [u8] {
+        &mut self.data[PACKET_PREFIX_LEN..][..self.len]
+    }
+
+    /// Return a slice to the body part of the internal data, starting after
+    /// the flags header and ending before existing footers.
     #[inline]
     pub fn get_body_data(&self) -> &[u8] {
-        &self.data[self.get_body_offset()..self.get_footer_offset()]
+        &self.get_data()[PACKET_FLAGS_LEN..self.get_footer_offset()]
     }
 
-    /// Return a slice to the valid portion of data, equivalent to `&data[..len]`.
-    #[inline]
-    pub fn get_valid_data(&self) -> &[u8] {
-        &self.data[..self.len]
-    }
+    // Data reservation
 
-    /// Internal method used to increment the cursor's offset and return a mutable
+    /// Internal method used to increment the length and return a mutable
     /// slice to the reserved data.
     pub fn reserve_unchecked(&mut self, len: usize) -> &mut [u8] {
-        debug_assert!(self.len + len <= self.data.len(), "Reserve overflow.");
-        let ptr = &mut self.data[self.len..][..len];
+        debug_assert!(self.len + len <= self.data.len() - PACKET_PREFIX_LEN, "Reserve overflow.");
+        let ptr = &mut self.data[PACKET_PREFIX_LEN + self.len..][..len];
         self.len += len;
         self.footer_offset = self.len; // As we may overwrite the footer.
         ptr
@@ -133,7 +207,7 @@ impl Packet {
 
     /// Clear all this packet and restart from after the flags.
     pub fn clear(&mut self) {
-        self.len = self.get_body_offset();
+        self.len = PACKET_FLAGS_LEN;
         self.footer_offset = self.len;
         self.clear_seq();
         self.clear_requests();
@@ -226,10 +300,18 @@ impl Packet {
             self.len = self.footer_offset;
         }
 
+        // We need to get seq here to avoid &mut self/&self interference.
         let has_seq = self.has_seq();
 
         let mut cursor = Cursor::new(&mut self.data[..]);
-        cursor.set_position(self.len as u64);
+
+        // Immediately write the prefix if needed.
+        if let Some(prefix) = self.prefix {
+            cursor.write_u32::<LittleEndian>(prefix).unwrap();
+        }
+
+        // Go to the end of the packet.
+        cursor.set_position((PACKET_PREFIX_LEN + self.len) as u64);
 
         let mut flags = 0u16;
 
@@ -252,22 +334,22 @@ impl Packet {
         // TODO: Acks
 
         // Set the length, just before the checksum if enabled.
-        self.len = cursor.position() as usize;
+        self.len = cursor.position() as usize - PACKET_PREFIX_LEN;
 
         if self.has_checksum {
             flags |= PacketFlags::HAS_CHECKSUM;
         }
 
-        let prefix_len = if self.has_prefix { PACKET_PREFIX_LEN as u64 } else { 0 };
+        // let prefix_len = if self.has_prefix { PACKET_PREFIX_LEN as u64 } else { 0 };
 
         // Finally, write flags.
-        cursor.set_position(prefix_len);
+        cursor.set_position(PACKET_PREFIX_LEN as u64);
         cursor.write_u16::<LittleEndian>(flags).unwrap();
 
         // Calculate checksum and write it if enabled.
         // Placed here to take flags into checksum.
         if self.has_checksum {
-            cursor.set_position(prefix_len);
+            cursor.set_position(PACKET_PREFIX_LEN as u64);
             let checksum = Self::calc_checksum(&mut cursor, self.len as u64);
             cursor.write_u32::<LittleEndian>(checksum).unwrap();
             self.len += 4;
@@ -277,14 +359,22 @@ impl Packet {
 
     /// Synchronize internal packet's state from its data.
     /// This can be called multiple times, the result is stable.
+    /// If this packet has prefix, the length given to this method must count additional 4.
     ///
     /// *If this function returns an error, the integrity of the internal state is not guaranteed.*
-    pub fn sync_state(&mut self, len: usize, has_prefix: bool) -> Result<(), PacketSyncError> {
+    pub fn sync_state(&mut self, len: usize/*, has_prefix: bool*/) -> Result<(), PacketSyncError> {
+
+        // Fix length if it contains a 4-bytes prefix.
+        let real_len = len - if self.has_prefix() { PACKET_PREFIX_LEN } else { 0 };
 
         let mut cursor = Cursor::new(&mut self.data[..]);
 
-        let prefix_len = if has_prefix { PACKET_PREFIX_LEN } else { 0 };
-        cursor.set_position(prefix_len as u64);
+        // If we have a prefix, read it, if not just seek after it.
+        if let Some(ref mut prefix) = self.prefix {
+            *prefix = cursor.read_u32::<LittleEndian>().unwrap();
+        } else {
+            cursor.set_position(PACKET_PREFIX_LEN as u64);
+        }
 
         let flags = cursor.read_u16::<LittleEndian>().unwrap();
 
@@ -311,15 +401,15 @@ impl Packet {
             if has_seq { 12 } else { 0 } +
             if has_requests { 2 } else { 0 };
 
-        if len < footer_len + prefix_len + PACKET_FLAGS_LEN { // +2 is flags size.
+        if real_len < footer_len + PACKET_FLAGS_LEN {
             return Err(PacketSyncError::TooShort);
         }
 
-        self.len = len;
-        self.has_prefix = has_prefix;
-        self.footer_offset = len - footer_len;
+        self.len = real_len;
+        // self.has_prefix = has_prefix;
+        self.footer_offset = real_len - footer_len;
 
-        cursor.set_position(self.footer_offset as u64);
+        cursor.set_position((PACKET_PREFIX_LEN + self.footer_offset) as u64);
 
         if has_seq {
             self.seq_first = cursor.read_u32::<LittleEndian>().unwrap();
@@ -344,7 +434,7 @@ impl Packet {
         if self.has_checksum {
             let pos = cursor.position();
             let checksum = cursor.read_u32::<LittleEndian>().unwrap();
-            cursor.set_position(prefix_len as u64);
+            cursor.set_position(PACKET_PREFIX_LEN as u64);
             let real_checksum = Self::calc_checksum(&mut cursor, pos);
             if checksum != real_checksum {
                 return Err(PacketSyncError::InvalidChecksum);
@@ -364,21 +454,19 @@ impl Debug for Packet {
 
         let mut s = f.debug_struct("Packet");
 
-        s.field("body_len", &self.get_body_len());
+        s.field("len", &self.len());
+        s.field("raw_len", &self.raw_len());
+        s.field("body_len", &self.body_len());
 
-        let mut body_buf = String::new();
-        for &byte in self.get_body_data().iter().take(24) {
-            body_buf.write_fmt(format_args!("{:02X}", byte))?;
-        }
-        if self.get_body_len() > 24 {
-            body_buf.push_str("..");
-        }
-        s.field("body", &body_buf);
+        s.field("body", &crate::util::get_hex_str_from(self.get_body_data(), 24));
 
-        if self.has_prefix {
-            let prefix = Cursor::new(&self.data[..PACKET_PREFIX_LEN])
-                .read_u32::<BigEndian>().unwrap();
+        if let Some(prefix) = self.prefix {
             s.field("prefix", &format!("{:08X}", prefix));
+        }
+
+        if self.footer_offset < self.len {
+            s.field("footer_offset", &self.footer_offset);
+            s.field("footer_len", &(self.len - self.footer_offset));
         }
 
         if self.has_requests() {

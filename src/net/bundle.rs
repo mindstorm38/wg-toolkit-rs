@@ -9,7 +9,7 @@ use std::hash::Hash;
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 
 use super::packet::{Packet, PACKET_MAX_BODY_LEN, PACKET_FLAGS_LEN};
-use super::element::ElementCodec;
+use super::element::{ElementCodec, /*ElementEncoder, ElementDecoder*/};
 
 use crate::util::SubCursor;
 
@@ -68,17 +68,7 @@ impl Bundle {
         Self::new(packets, has_prefix)
     }
 
-    /// Add a new element to this bundle, everything is managed for the caller,
-    /// new packets are created if needed and the message can be a request.
-    pub fn add_element<E>(&mut self, id: u8, elt: &E, request: bool)
-    where
-        E: ElementCodec,
-        E::EncodeCfg: Default
-    {
-        self.add_element_with_cfg(id, elt, &E::EncodeCfg::default(), request)
-    }
-
-    pub fn add_element_with_cfg<E>(&mut self, id: u8, elt: &E, cfg: &E::EncodeCfg, request: bool)
+    pub fn add_element<E>(&mut self, id: u8, codec: &E, elt: E::Element, request: bool)
     where
         E: ElementCodec
     {
@@ -89,7 +79,7 @@ impl Bundle {
         }
 
         // Allocate element's header, +1 for element's ID, +6 reply_id and link offset.
-        let header_len = E::LEN.header_len() + 1 + if request { 6 } else { 0 };
+        let header_len = E::LEN.len() + 1 + if request { 6 } else { 0 };
         let header_slice = self.reserve_exact(header_len);
         header_slice[0] = id;
 
@@ -101,52 +91,57 @@ impl Bundle {
         // Update the current packet's cursor and header length.
         let cur_packet_idx = self.packets.len() - 1;
         let cur_packet = &mut self.packets[cur_packet_idx];
-        let cur_packet_elt_offset = cur_packet.len() - header_len;
+        let cur_packet_end = cur_packet.len();
+        let cur_packet_elt_offset = cur_packet_end - header_len;
 
         if request {
 
-            // Register request.
-            self.request_header_offsets.push((cur_packet_idx, cur_packet_elt_offset));
+            let cur_request_header_offset = cur_packet_end - 6;
+
+            self.request_header_offsets.push((cur_packet_idx, cur_request_header_offset));
 
             if self.request_last_link_offset == 0 {
                 cur_packet.set_request_first_offset(cur_packet_elt_offset);
             } else {
-
-                let link_slice = &mut cur_packet.data[self.request_last_link_offset..];
-                Cursor::new(link_slice)
-                    .write_u16::<LittleEndian>(cur_packet_elt_offset as u16)
-                    .unwrap();
-
+                let link_slice = &mut cur_packet.get_data_mut()[self.request_last_link_offset..];
+                Cursor::new(link_slice).write_u16::<LittleEndian>(cur_packet_elt_offset as u16).unwrap();
             }
 
-            self.request_last_link_offset = cur_packet.len() - 2;
+            self.request_last_link_offset = cur_request_header_offset + 4;
 
         }
 
         // Write the actual element's content.
         let mut writer = BundleWriter::new(self);
         // For now we just unwrap the encode result, because no IO error should be produced by a BundleWriter.
-        elt.encode(&mut writer, cfg).unwrap();
+        codec.encode(&mut writer, elt).unwrap();
+        // encoder.encode(&mut writer).unwrap();
         let length = writer.len as u32;
 
         // Finally write length.
         let cur_packet = &mut self.packets[cur_packet_idx];
-        let cur_len_slice = &mut cur_packet.data[cur_packet_elt_offset + 1..];
+        let cur_len_slice = &mut cur_packet.get_data_mut()[cur_packet_elt_offset + 1..];
         // Unwrap because we now there is enough space at the given position.
-        E::LEN.write(&mut Cursor::new(cur_len_slice), length).unwrap();
+        E::LEN.write(Cursor::new(cur_len_slice), length).unwrap();
 
     }
 
     /// Finalize the bundle by synchronizing all packets in it and setting
     /// their sequence id.
     /// This can be called multiple times, the result is stable.
-    pub fn finalize(&mut self, seq_id: &mut u32) {
+    pub fn finalize(&mut self, seq_id: &mut u32, reply_id: &mut u32) {
 
-        // TODO: Setup reply for requests IDs
+        // Reply IDs
+        for &(packet_index, request_header_offset) in &self.request_header_offsets {
+            let slice = &mut self.packets[packet_index].get_data_mut()[request_header_offset..][..6];
+            Cursor::new(slice).write_u32::<LittleEndian>(*reply_id).unwrap();
+            *reply_id += 1;
+        }
 
+        // Sequence IDs
         let multi_packet = self.packets.len() > 1;
         let seq_first = *seq_id;
-        let seq_last = seq_first + self.packets.len() as u32;
+        let seq_last = seq_first + self.packets.len() as u32 - 1;
 
         for packet in &mut self.packets {
             if multi_packet {
@@ -177,8 +172,8 @@ impl Bundle {
     }
 
     #[inline]
-    pub fn get_packet(&self, index: usize) -> Option<&Packet> {
-        self.packets.get(index).map(|p| &**p)
+    pub fn get_packets_mut(&mut self) -> &mut [Box<Packet>] {
+        &mut self.packets[..]
     }
 
     /// See `BundleRawElementsIter`.
@@ -188,7 +183,9 @@ impl Bundle {
 
     /// Internal method to add a new packet at the end of the chain.
     fn add_packet(&mut self) {
-        self.packets.push(Packet::new_boxed(self.has_prefix));
+        let packet = Packet::new_boxed(self.has_prefix);
+        self.available_len = packet.available_len();
+        self.packets.push(packet);
         self.request_last_link_offset = 0;
     }
 
@@ -202,9 +199,6 @@ impl Bundle {
             self.add_packet();
         }
         let packet = self.packets.last_mut().unwrap();
-        if new_packet {
-            self.available_len = packet.available_len();
-        }
         self.available_len -= len;
         packet.reserve_unchecked(len)
     }
@@ -218,9 +212,6 @@ impl Bundle {
             self.add_packet();
         }
         let packet = self.packets.last_mut().unwrap();
-        if new_packet {
-            self.available_len = packet.available_len();
-        }
         let len = len.min(self.available_len);
         self.available_len -= len;
         packet.reserve_unchecked(len)
@@ -289,7 +280,7 @@ impl<'a> BundleReader<'a> {
             bundle,
             packets: bundle.get_packets(),
             packet_body: &[],
-            len: bundle.get_packets().iter().map(|p| p.get_body_len()).map(|n| n as u64).sum(),
+            len: bundle.get_packets().iter().map(|p| p.body_len()).map(|n| n as u64).sum(),
             pos: 0,
             packet_body_pos: 0
         };
@@ -311,7 +302,7 @@ impl<'a> BundleReader<'a> {
     /// with a non-empty body.
     fn discard_packets_until_non_empty(&mut self) {
         let mut packets = self.packets;
-        while !packets.is_empty() && packets[0].get_body_len() == 0 {
+        while !packets.is_empty() && packets[0].body_len() == 0 {
             packets = &packets[1..];
         }
         self.packets = packets;
@@ -380,7 +371,7 @@ impl<'a> BundleReader<'a> {
     fn seek_relative_unchecked(&mut self, mut offset: u64) {
         while offset != 0 {
             let packet = &self.packets[0];
-            let packet_len = packet.get_body_len() as u64;
+            let packet_len = packet.body_len() as u64;
             if offset >= packet_len {
                 offset -= packet_len;
                 self.packets = &self.packets[1..];
@@ -464,24 +455,13 @@ impl<'a> BundleRawElementsIter<'a> {
         self.next_request_offset != 0 && packet_pos == self.next_request_offset
     }
 
-    /// Decode the next element using the given codec, if the decode
-    /// fails (and return `None`), the internal state is kept as before
-    /// the call.
-    pub fn next<E>(&mut self, elt: E) -> Result<RawElement<E>, RawElementError>
-    where
-        E: ElementCodec,
-        E::DecodeCfg: Default
-    {
-        self.next_with_cfg(elt, &E::DecodeCfg::default())
-    }
-
-    pub fn next_with_cfg<E>(&mut self, elt: E, cfg: &E::DecodeCfg) -> Result<RawElement<E>, RawElementError>
+    pub fn next<E>(&mut self, codec: &E) -> Result<RawElement<E::Element>, RawElementError>
     where
         E: ElementCodec
     {
 
         let request = self.next_is_request();
-        let header_len = E::LEN.header_len() + 1 + if request { 6 } else { 0 };
+        let header_len = E::LEN.len() + 1 + if request { 6 } else { 0 };
 
         if self.bundle_reader.get_packet_remaining_data().len() < header_len {
             return Err(RawElementError::TooShortPacket);
@@ -489,7 +469,7 @@ impl<'a> BundleRawElementsIter<'a> {
 
         let elt_pos = self.bundle_reader.pos();
 
-        match self.next_internal(request, elt, cfg) {
+        match self.next_internal(request, codec) {
             Ok(elt) => Ok(elt),
             Err(e) => {
                 // If any error happens, we cancel the operation.
@@ -502,7 +482,7 @@ impl<'a> BundleRawElementsIter<'a> {
 
     /// Internal only. Used by `next` to wrap all IO errors and reset if an error happens.
     #[inline(always)]
-    fn next_internal<E>(&mut self, request: bool, mut elt: E, cfg: &E::DecodeCfg) -> io::Result<RawElement<E>>
+    fn next_internal<E>(&mut self, request: bool, codec: &E) -> io::Result<RawElement<E::Element>>
     where
         E: ElementCodec
     {
@@ -525,13 +505,15 @@ impl<'a> BundleRawElementsIter<'a> {
 
         // We can use unchecked because we know that the given 'inner' reader
         // is placed at the same position as given 'begin'.
-        let mut elt_data_reader = SubCursor::new_unchecked(
+        let elt_data_reader = SubCursor::new_unchecked(
             &mut self.bundle_reader,
             elt_data_begin,
             elt_data_end
         );
 
-        elt.decode(&mut elt_data_reader, cfg)?;
+        // let elt = decoder.decode(elt_data_reader, elt_len)?;
+        // elt.decode(&mut elt_data_reader, cfg)?;
+        let elt = codec.decode(elt_data_reader, elt_len)?;
 
         self.bundle_reader.seek_absolute(elt_data_end);
 
@@ -568,7 +550,7 @@ pub enum RawElementError {
 }
 
 
-pub struct RawElement<E: ElementCodec> {
+pub struct RawElement<E> {
     pub elt: E,
     pub id: u8,
     pub reply_id: Option<u32>

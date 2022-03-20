@@ -7,54 +7,7 @@ use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 pub mod login;
 
 
-
-/// Type of length used by a specific message codec.
-/// This describes how the length of an element should be encoded in the packet.
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
-pub enum ElementLength {
-    Fixed(u32),
-    Variable8,
-    Variable16,
-    Variable24,
-    Variable32
-}
-
-impl ElementLength {
-
-    pub fn read<R: Read>(&self, reader: &mut R) -> std::io::Result<u32> {
-        match self {
-            Self::Fixed(len) => Ok(*len),
-            Self::Variable8 => reader.read_u8().map(|n| n as u32),
-            Self::Variable16 => reader.read_u16::<LittleEndian>().map(|n| n as u32),
-            Self::Variable24 => reader.read_u24::<LittleEndian>(),
-            Self::Variable32 => reader.read_u32::<LittleEndian>(),
-        }
-    }
-
-    pub fn write<W: Write>(&self, writer: &mut W, len: u32) -> std::io::Result<()> {
-        match self {
-            Self::Fixed(fixed_len) => { assert_eq!(*fixed_len, len); Ok(()) },
-            Self::Variable8 => writer.write_u8(len as u8),
-            Self::Variable16 => writer.write_u16::<LittleEndian>(len as u16),
-            Self::Variable24 => writer.write_u24::<LittleEndian>(len),
-            Self::Variable32 => writer.write_u32::<LittleEndian>(len),
-        }
-    }
-
-    pub fn header_len(&self) -> usize {
-        match self {
-            Self::Fixed(_) => 0,
-            Self::Variable8 => 1,
-            Self::Variable16 => 2,
-            Self::Variable24 => 3,
-            Self::Variable32 => 4,
-        }
-    }
-
-}
-
-
-/// A codec implemented on a particular element, this is used when writing
+/*/// A codec implemented on a particular element, this is used when writing
 /// an element on a bundle or when adding receive handlers for particular
 /// elements.
 pub trait ElementCodec: Sized {
@@ -75,17 +28,101 @@ pub trait ElementCodec: Sized {
     /// IO errors should only be returned if operations on the input fails.
     fn decode<R: Read + Seek>(&mut self, input: &mut R, cfg: &Self::DecodeCfg) -> io::Result<()>;
 
-}
+}*/
 
+// Following traits/structs are for the new element API //
 
+/*/// Encoder for an element, such types are moved when encoding is required,
+/// if you want to avoid moving a huge type, implement this trait on
+/// (mutable) references.
 pub trait ElementEncoder {
-    type Element;
-    fn encode<W: Write>(&mut self, elt: &Self::Element) -> io::Result<()>;
+    /// Length codec used for this element.
+    const LEN: ElementLength;
+    /// The input type to encode.
+    type Input;
+    /// Encode an element.
+    fn encode<W: Write>(&self, write: W, input: Self::Input) -> io::Result<()>;
 }
 
+/// Decoder for an element, such types are moved when decoding is required,
+/// if you want to avoid moving a huge type, implement this trait on
+/// (mutable) references.
 pub trait ElementDecoder {
+    /// Length codec used for this element.
+    const LEN: ElementLength;
+    /// The output type for this decoder.
+    type Output;
+    /// Decode an element, the given reader is seek-able and its length is given separately.
+    fn decode<R: Read + Seek>(&self, read: R, len: u64) -> io::Result<Self::Output>;
+}*/
+
+pub trait ElementCodec {
+
+    /// Length codec used for this element.
+    const LEN: ElementLength;
+    /// Type of the element.
     type Element;
-    fn decode<R: Read + Seek>(&mut self) -> io::Result<Self::Element>;
+
+    /// Encode an element.
+    fn encode<W: Write>(&self, write: W, input: Self::Element) -> io::Result<()>;
+
+    /// Decode an element, the given reader is seek-able and its length is given separately.
+    fn decode<R: Read + Seek>(&self, read: R, len: u64) -> io::Result<Self::Element>;
+
+}
+
+
+/// Type of length used by a specific message codec.
+/// This describes how the length of an element should be encoded in the packet.
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+pub enum ElementLength {
+    /// The size of the element is fixed, and every writen element must be of this size.
+    Fixed(u32),
+    /// The size of the element is variable, and is encoded on 8 bits.
+    Variable8,
+    /// The size of the element is variable, and is encoded on 16 bits.
+    Variable16,
+    /// The size of the element is variable, and is encoded on 24 bits.
+    Variable24,
+    /// The size of the element is variable, and is encoded on 32 bits.
+    Variable32
+}
+
+impl ElementLength {
+
+    /// Read the length from a given reader.
+    pub fn read<R: Read>(&self, mut reader: R) -> std::io::Result<u32> {
+        match self {
+            Self::Fixed(len) => Ok(*len),
+            Self::Variable8 => reader.read_u8().map(|n| n as u32),
+            Self::Variable16 => reader.read_u16::<LittleEndian>().map(|n| n as u32),
+            Self::Variable24 => reader.read_u24::<LittleEndian>(),
+            Self::Variable32 => reader.read_u32::<LittleEndian>(),
+        }
+    }
+
+    /// Write the length to the given writer.
+    pub fn write<W: Write>(&self, mut writer: W, len: u32) -> std::io::Result<()> {
+        match self {
+            Self::Fixed(fixed_len) => { assert_eq!(*fixed_len, len); Ok(()) },
+            Self::Variable8 => writer.write_u8(len as u8),
+            Self::Variable16 => writer.write_u16::<LittleEndian>(len as u16),
+            Self::Variable24 => writer.write_u24::<LittleEndian>(len),
+            Self::Variable32 => writer.write_u32::<LittleEndian>(len),
+        }
+    }
+
+    /// Return the size in bytes of this type of length.
+    pub fn len(&self) -> usize {
+        match self {
+            Self::Fixed(_) => 0,
+            Self::Variable8 => 1,
+            Self::Variable16 => 2,
+            Self::Variable24 => 3,
+            Self::Variable32 => 4,
+        }
+    }
+
 }
 
 
@@ -100,23 +137,17 @@ pub trait ElementReadExt: Read {
         }
     }
 
-    fn read_rich_blob(&mut self, dst: &mut Vec<u8>) -> io::Result<()> {
+    fn read_rich_blob(&mut self) -> io::Result<Vec<u8>> {
         let len = self.read_packed_u32()? as usize;
         let mut buf = vec![0; len];
         self.read_exact(&mut buf[..])?;
-        dst.extend_from_slice(&buf[..]);
-        Ok(())
+        Ok(buf)
     }
 
-    fn read_rich_string(&mut self, dst: &mut String) -> io::Result<()> {
-        let len = self.read_packed_u32()? as usize;
-        let mut buf = vec![0; len];
-        self.read_exact(&mut buf[..])?;
-        match std::str::from_utf8(&buf[..]) {
-            Ok(s) => {
-                dst.push_str(s);
-                Ok(())
-            },
+    fn read_rich_string(&mut self) -> io::Result<String> {
+        let blob = self.read_rich_blob()?;
+        match String::from_utf8(blob) {
+            Ok(s) => Ok(s),
             Err(_) => Err(io::ErrorKind::InvalidData.into())
         }
     }
@@ -154,7 +185,14 @@ impl<R: Read> ElementReadExt for R {}
 impl<W: Write> ElementWriteExt for W {}
 
 
-/// A reply element.
+
+
+
+
+
+
+
+/*/// A reply element.
 pub struct ReplyElement<C> {
     inner: C,
     reply_id: u32,
@@ -249,4 +287,4 @@ impl<const LEN: usize> ElementCodec for RawElementFixed<LEN> {
         input.read_exact(&mut self.0[..])
     }
 
-}
+}*/

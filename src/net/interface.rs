@@ -5,11 +5,11 @@ use std::collections::HashMap;
 use std::marker::PhantomData;
 
 use super::bundle::{BundleAssembler, BundleRawElementsIter};
-use super::element::ElementCodec;
+// use super::element::ElementCodec;
 use super::packet::Packet;
 
 
-/// A all-in-one interface for the WG network protocol, using bundles and
+/*/// A all-in-one interface for the WG network protocol, using bundles and
 /// allowing callbacks of specific elements.
 pub struct Interface {
     sock: UdpSocket,
@@ -61,7 +61,7 @@ impl Interface {
         }
     }*/
 
-    pub fn register_element<E, C>(&mut self, id: u8, callback: Option<C>)
+    /*pub fn register_element<E, C>(&mut self, id: u8, callback: Option<C>)
     where
         E: ElementCodec + 'static,
         C: FnMut(&E) + 'static
@@ -70,12 +70,12 @@ impl Interface {
             callback,
             phantom: PhantomData
         }));
-    }
+    }*/
 
-}
+}*/
 
 
-/// Internal abstract element definition.
+/*/// Internal abstract element definition.
 trait InterfaceElement {
     fn next_element_and_dispatch(&mut self, iter: &mut BundleRawElementsIter) -> bool;
 }
@@ -104,4 +104,4 @@ where
         }*/
     }
 
-}
+}*/
