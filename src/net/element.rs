@@ -185,12 +185,69 @@ impl<R: Read> ElementReadExt for R {}
 impl<W: Write> ElementWriteExt for W {}
 
 
+// Raw elements to use for debugging purposes
 
+pub struct RawElementCodec<I: RawElementCodecLen>(I);
 
+impl<I: RawElementCodecLen> ElementCodec for RawElementCodec<I> {
 
+    const LEN: ElementLength = I::LEN;
+    type Element = Vec<u8>;
 
+    fn encode<W: Write>(&self, mut write: W, input: Self::Element) -> io::Result<()> {
+        write.write_all(&input[..])
+    }
 
+    fn decode<R: Read + Seek>(&self, mut read: R, len: u64) -> io::Result<Self::Element> {
+        let mut buf = Vec::with_capacity(len as usize);
+        read.read_to_end(&mut buf)?;
+        Ok(buf)
+    }
 
+}
+
+impl<I: RawElementCodecLen + Default> RawElementCodec<I> {
+    pub fn new() -> Self {
+        Self(I::default())
+    }
+}
+
+pub trait RawElementCodecLen {
+    const LEN: ElementLength;
+}
+
+#[derive(Default)] pub struct RawElementCodecLenVar8;
+#[derive(Default)] pub struct RawElementCodecLenVar16;
+#[derive(Default)] pub struct RawElementCodecLenVar24;
+#[derive(Default)] pub struct RawElementCodecLenVar32;
+pub struct RawElementCodecLenFixed<const LEN: usize>([(); LEN]);
+
+impl RawElementCodecLen for RawElementCodecLenVar8 {
+    const LEN: ElementLength = ElementLength::Variable8;
+}
+impl RawElementCodecLen for RawElementCodecLenVar16 {
+    const LEN: ElementLength = ElementLength::Variable16;
+}
+impl RawElementCodecLen for RawElementCodecLenVar24 {
+    const LEN: ElementLength = ElementLength::Variable24;
+}
+impl RawElementCodecLen for RawElementCodecLenVar32 {
+    const LEN: ElementLength = ElementLength::Variable32;
+}
+impl<const LEN: usize> RawElementCodecLen for RawElementCodecLenFixed<LEN> {
+    const LEN: ElementLength = ElementLength::Fixed(LEN as u32);
+}
+impl<const LEN: usize> Default for RawElementCodecLenFixed<LEN> {
+    fn default() -> Self {
+        Self([(); LEN])
+    }
+}
+
+pub type RawElementCodecVar8 = RawElementCodec<RawElementCodecLenVar8>;
+pub type RawElementCodecVar16 = RawElementCodec<RawElementCodecLenVar16>;
+pub type RawElementCodecVar24 = RawElementCodec<RawElementCodecLenVar24>;
+pub type RawElementCodecVar32 = RawElementCodec<RawElementCodecLenVar32>;
+pub type RawElementCodecFixed<const LEN: usize> = RawElementCodec<RawElementCodecLenFixed<LEN>>;
 
 /*/// A reply element.
 pub struct ReplyElement<C> {
