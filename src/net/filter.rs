@@ -78,7 +78,7 @@ impl<'a, O: Write> RsaWriter<'a, O> {
         Self {
             inner,
             clear_block: Vec::new(),
-            clear_block_cap: 214, // key.size() - 130,
+            clear_block_cap: key.size() - 41 - 1, // key.size() - 130,
             key,
         }
     }
@@ -100,7 +100,7 @@ impl<O: Write> Write for RsaWriter<'_, O> {
 
     fn flush(&mut self) -> io::Result<()> {
         if !self.clear_block.is_empty() {
-            let padding = PaddingScheme::new_pkcs1v15_encrypt();
+            let padding = PaddingScheme::new_oaep::<Sha1>();
             let cipher_block = self.key.encrypt(&mut OsRng, padding, &self.clear_block[..]).unwrap();
             self.inner.write_all(&cipher_block[..])?;
             self.clear_block.clear();

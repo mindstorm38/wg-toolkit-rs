@@ -6,10 +6,11 @@ use std::time::{Duration, Instant};
 use std::collections::HashMap;
 use std::hash::Hash;
 
-use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
+use byteorder::{ReadBytesExt, WriteBytesExt, LE};
 
 use super::packet::{Packet, PACKET_MAX_BODY_LEN, PACKET_FLAGS_LEN};
-use super::element::{ElementCodec, /*ElementEncoder, ElementDecoder*/};
+use super::element::reply::{ReplyHeaderCodec, ReplyCodec, Reply, REPLY_ID};
+use super::element::ElementCodec;
 
 use crate::util::SubCursor;
 
@@ -31,10 +32,10 @@ pub struct Bundle {
     /// If packets in this bundle has a prefix.
     has_prefix: bool,
     /// Offset of the link of the last request, `0` if not request yet.
-    request_last_link_offset: usize,
-    /// Offsets to all requests' headers in this bundle, it's used to add replay IDs.
-    /// Each tuple in the vec are of the form `(packet_index, request_header_offset)`.
-    request_header_offsets: Vec<(usize, usize)>
+    last_request_header_offset: usize,
+    // /// Offsets to all requests' headers in this bundle, it's used to add replay IDs.
+    // /// Each tuple in the vec are of the form `(packet_index, request_header_offset)`.
+    // request_header_offsets: Vec<(usize, usize)>
 }
 
 impl Bundle {
@@ -47,8 +48,8 @@ impl Bundle {
             packets,
             force_new_packet: true,
             has_prefix,
-            request_last_link_offset: 0,
-            request_header_offsets: Vec::new()
+            last_request_header_offset: 0,
+            // request_header_offsets: Vec::new()
         }
     }
 
@@ -68,7 +69,28 @@ impl Bundle {
         Self::new(packets, has_prefix)
     }
 
-    pub fn add_element<E>(&mut self, id: u8, codec: &E, elt: E::Element, request: bool)
+    /// Add a basic element to this bundle.
+    #[inline]
+    pub fn add_element<E: ElementCodec>(&mut self, id: u8, codec: &E, elt: E::Element) {
+        self.add_element_raw(id, codec, elt, None);
+    }
+
+    /// Add a request element to this bundle, with a given request ID.
+    #[inline]
+    pub fn add_request<E: ElementCodec>(&mut self, id: u8, codec: &E, elt: E::Element, request_id: u32) {
+        self.add_element_raw(id, codec, elt, Some(request_id));
+    }
+
+    /// Add a reply element to this bundle, for a given request ID.
+    /// Such elements are special and don't require an ID, such elements are always of
+    /// a 32-bit variable length and prefixed with the request ID. The length codec from
+    /// the given codec is not used.
+    #[inline]
+    pub fn add_reply<E: ElementCodec>(&mut self, codec: &E, elt: E::Element, request_id: u32) {
+        self.add_element(REPLY_ID, &ReplyCodec::new(codec), Reply::new(request_id, elt))
+    }
+
+    pub fn add_element_raw<E>(&mut self, id: u8, codec: &E, elt: E::Element, request: Option<u32>)
     where
         E: ElementCodec
     {
@@ -79,11 +101,11 @@ impl Bundle {
         }
 
         // Allocate element's header, +1 for element's ID, +6 reply_id and link offset.
-        let header_len = E::LEN.len() + 1 + if request { 6 } else { 0 };
+        let header_len = E::LEN.len() + 1 + if request.is_some() { 6 } else { 0 };
         let header_slice = self.reserve_exact(header_len);
         header_slice[0] = id;
 
-        if request {
+        if request.is_some() {
             // Reset all request's header fields.
             header_slice[header_len - 6..][..6].fill(0);
         }
@@ -94,21 +116,18 @@ impl Bundle {
         let cur_packet_end = cur_packet.len();
         let cur_packet_elt_offset = cur_packet_end - header_len;
 
-        if request {
-
+        if let Some(request_id) = request {
             let cur_request_header_offset = cur_packet_end - 6;
-
-            self.request_header_offsets.push((cur_packet_idx, cur_request_header_offset));
-
-            if self.request_last_link_offset == 0 {
+            // self.request_header_offsets.push((cur_packet_idx, cur_request_header_offset));
+            if self.last_request_header_offset == 0 {
                 cur_packet.set_request_first_offset(cur_packet_elt_offset);
             } else {
-                let link_slice = &mut cur_packet.get_data_mut()[self.request_last_link_offset..];
-                Cursor::new(link_slice).write_u16::<LittleEndian>(cur_packet_elt_offset as u16).unwrap();
+                let request_header_slice = &mut cur_packet.get_data_mut()[self.last_request_header_offset..];
+                let mut request_header_cursor = Cursor::new(request_header_slice);
+                request_header_cursor.write_u32::<LE>(request_id).unwrap();
+                request_header_cursor.write_u16::<LE>(cur_packet_elt_offset as u16).unwrap();
             }
-
-            self.request_last_link_offset = cur_request_header_offset + 4;
-
+            self.last_request_header_offset = cur_request_header_offset;
         }
 
         // Write the actual element's content.
@@ -129,14 +148,7 @@ impl Bundle {
     /// Finalize the bundle by synchronizing all packets in it and setting
     /// their sequence id.
     /// This can be called multiple times, the result is stable.
-    pub fn finalize(&mut self, seq_id: &mut u32, reply_id: &mut u32) {
-
-        // Reply IDs
-        for &(packet_index, request_header_offset) in &self.request_header_offsets {
-            let slice = &mut self.packets[packet_index].get_data_mut()[request_header_offset..][..6];
-            Cursor::new(slice).write_u32::<LittleEndian>(*reply_id).unwrap();
-            *reply_id += 1;
-        }
+    pub fn finalize(&mut self, seq_id: &mut u32) {
 
         // Sequence IDs
         let multi_packet = self.packets.len() > 1;
@@ -176,9 +188,9 @@ impl Bundle {
         &mut self.packets[..]
     }
 
-    /// See `BundleRawElementsIter`.
-    pub fn iter_raw_elements(&self) -> BundleRawElementsIter<'_> {
-        BundleRawElementsIter::new(self)
+    /// See `BundleElementReader`.
+    pub fn get_element_reader(&self) -> BundleElementReader<'_> {
+        BundleElementReader::new(self)
     }
 
     /// Internal method to add a new packet at the end of the chain.
@@ -186,7 +198,7 @@ impl Bundle {
         let packet = Packet::new_boxed(self.has_prefix);
         self.available_len = packet.available_len();
         self.packets.push(packet);
-        self.request_last_link_offset = 0;
+        self.last_request_header_offset = 0;
     }
 
     /// Reserve exactly the given length in the current packet or a new one if
@@ -325,9 +337,13 @@ impl<'a> BundleReader<'a> {
     }
 
     /// Get the real position of the cursor within the current packet's body.
-    #[inline]
     fn get_packet_body_pos(&self) -> usize {
         self.packet_body_pos
+    }
+
+    /// Get the real position of the cursor within the current packet's data.
+    fn get_packet_data_pos(&self) -> usize {
+        self.get_packet_body_pos() + PACKET_FLAGS_LEN
     }
 
     /// Optimized absolute position seek for bundle structure.
@@ -421,17 +437,15 @@ impl<'a> Seek for BundleReader<'a> {
 }
 
 
-/// A special iterator designed to fetch each message on the bundle.
-/// This is not a real `Iterator` implementor because the `ElementCodec`
-/// is needed. And you can get the right codec from the next element id.
-pub struct BundleRawElementsIter<'a> {
-    bundle_reader: BundleReader<'a>,
+/// A special iterator designed to fetch each element on the bundle.
+pub struct BundleElementReader<'bundle> {
+    bundle_reader: BundleReader<'bundle>,
     next_request_offset: usize
 }
 
-impl<'a> BundleRawElementsIter<'a> {
+impl<'bundle> BundleElementReader<'bundle> {
 
-    fn new(bundle: &'a Bundle) -> Self {
+    fn new(bundle: &'bundle Bundle) -> Self {
         let bundle_reader = BundleReader::new(bundle);
         Self {
             next_request_offset: bundle_reader.get_packet()
@@ -441,60 +455,90 @@ impl<'a> BundleRawElementsIter<'a> {
         }
     }
 
-    /// Return the next element's identifier, to actually decode it you
-    /// need to call `next_element`.
-    #[inline]
-    pub fn next_id(&self) -> Option<u8> {
+    /// Read the current element's identifier. This call return the same result until
+    /// you explicitly choose to go to the next element while reading the element
+    pub fn read_id(&self) -> Option<u8> {
         self.bundle_reader.get_packet_remaining_data().get(0).copied()
     }
 
-    /// Return `true` if the next element is a request.
-    pub fn next_is_request(&self) -> bool {
-        // In this packet_pos we just ignore the optional prefix, this is why we add flags len.
-        let packet_pos = PACKET_FLAGS_LEN + self.bundle_reader.get_packet_body_pos();
-        self.next_request_offset != 0 && packet_pos == self.next_request_offset
+    /// Return `true` if the current element is a request, this is just dependent of
+    /// the current position within the current packet.
+    pub fn is_request(&self) -> bool {
+        let data_pos = self.bundle_reader.get_packet_data_pos();
+        self.next_request_offset != 0 && data_pos == self.next_request_offset
     }
 
-    pub fn next<E>(&mut self, codec: &E) -> Result<RawElement<E::Element>, RawElementError>
+    /// Read the current element, return a guard that you should use a codec to decode
+    /// the element depending on its type with. *This is a simpler version to use over
+    /// standard `read_element` method because it handle reply elements for you.*
+    pub fn next_element(&mut self) -> Option<BundleElement<'_, 'bundle>> {
+        match self.read_id() {
+            Some(REPLY_ID) => {
+                match self.read_element(&ReplyHeaderCodec, false) {
+                    Ok(elt) => {
+                        debug_assert!(elt.request_id.is_none(), "Replies should not be request at the same time.");
+                        Some(BundleElement::Reply(elt.element, ReplyElementReader(self)))
+                    }
+                    Err(_) => {
+                        None
+                    }
+                }
+            }
+            Some(id) => {
+                Some(BundleElement::Simple(id, SimpleElementReader(self)))
+            }
+            None => None
+        }
+    }
+
+    /// Try to decode the current element using a given codec. You can choose to go
+    /// to the next element using the `next` argument.
+    pub fn read_element<E>(&mut self, codec: &E, next: bool) -> Result<Element<E::Element>, ReadElementError>
     where
         E: ElementCodec
     {
 
-        let request = self.next_is_request();
+        let request = self.is_request();
         let header_len = E::LEN.len() + 1 + if request { 6 } else { 0 };
 
         if self.bundle_reader.get_packet_remaining_data().len() < header_len {
-            return Err(RawElementError::TooShortPacket);
+            return Err(ReadElementError::TooShortPacket);
         }
 
+        // We store the starting position of the element, it will be used if we need to rollback.
         let elt_pos = self.bundle_reader.pos();
 
-        match self.next_internal(request, codec) {
-            Ok(elt) => Ok(elt),
+        match self.read_element_internal(codec, next, request) {
+            Ok(elt) if next => Ok(elt),
+            Ok(elt) => {
+                // If no error but we don't want to go next.
+                self.bundle_reader.seek_absolute(elt_pos);
+                Ok(elt)
+            }
             Err(e) => {
                 // If any error happens, we cancel the operation.
                 self.bundle_reader.seek_absolute(elt_pos);
-                Err(RawElementError::Io(e))
+                Err(ReadElementError::Io(e))
             }
         }
 
     }
 
-    /// Internal only. Used by `next` to wrap all IO errors and reset if an error happens.
+    /// Internal only. Used by `next` to wrap all IO errors and reset seek if an error happens.
     #[inline(always)]
-    fn next_internal<E>(&mut self, request: bool, codec: &E) -> io::Result<RawElement<E::Element>>
+    fn read_element_internal<E>(&mut self, codec: &E, next: bool, request: bool) -> io::Result<Element<E::Element>>
     where
         E: ElementCodec
     {
 
         let start_packet = self.bundle_reader.get_packet().unwrap();
 
-        let elt_id = self.bundle_reader.read_u8()?;
+        let _elt_id = self.bundle_reader.read_u8()?;
         let elt_len = E::LEN.read(&mut self.bundle_reader)? as u64;
 
         let reply_id = if request {
-            let reply_id = self.bundle_reader.read_u32::<LittleEndian>()?;
-            self.next_request_offset = self.bundle_reader.read_u16::<LittleEndian>()? as usize;
+            let reply_id = self.bundle_reader.read_u32::<LE>()?;
+            self.next_request_offset = self.bundle_reader.read_u16::<LE>()? as usize;
             Some(reply_id)
         } else {
             None
@@ -511,28 +555,32 @@ impl<'a> BundleRawElementsIter<'a> {
             elt_data_end
         );
 
-        // let elt = decoder.decode(elt_data_reader, elt_len)?;
-        // elt.decode(&mut elt_data_reader, cfg)?;
-        let elt = codec.decode(elt_data_reader, elt_len)?;
+        let element = codec.decode(elt_data_reader, elt_len)?;
 
-        self.bundle_reader.seek_absolute(elt_data_end);
+        // We seek to the end only if we want to go next.
+        if next {
 
-        // Here we check if we have changed packets during decoding of the element.
-        // If changed, we change the next request offset.
-        match self.bundle_reader.get_packet() {
-            Some(end_packet) => {
-                if !std::ptr::eq(start_packet, end_packet) {
-                    self.next_request_offset = end_packet.get_request_first_offset();
+            // If decoding is successful, go to the next packet.
+            self.bundle_reader.seek_absolute(elt_data_end);
+
+            // Here we check if we have changed packets during decoding of the element.
+            // If changed, we change the next request offset.
+            match self.bundle_reader.get_packet() {
+                Some(end_packet) => {
+                    if !std::ptr::eq(start_packet, end_packet) {
+                        self.next_request_offset = end_packet.get_request_first_offset();
+                    }
+                    // Else, we are still in the same packet so we don't need to change this.
                 }
-                // Else, we are still in the same packet so we don't need to change this.
+                None => self.next_request_offset = 0
             }
-            None => self.next_request_offset = 0
+
         }
 
-        Ok(RawElement {
-            elt,
-            id: elt_id,
-            reply_id
+        Ok(Element {
+            element,
+            // id: elt_id,
+            request_id: reply_id
         })
 
     }
@@ -540,8 +588,29 @@ impl<'a> BundleRawElementsIter<'a> {
 }
 
 
+/// An element read from `BundleElementReader` and `BundleElement` variants,
+/// also containing the element's ID and an optional request ID.
+pub struct Element<E> {
+    /// The actual element.
+    pub element: E,
+    /// The request ID if the element is a request. Not to be confused with
+    /// the reply ID if the element is a `Reply`.
+    pub request_id: Option<u32>
+}
+
+impl<E> Into<Element<E>> for Element<Reply<E>> {
+    fn into(self) -> Element<E> {
+        Element {
+            element: self.element.element,
+            request_id: self.request_id
+        }
+    }
+}
+
+
+/// Error variants when polling next element from a bundle reader.
 #[derive(Debug)]
-pub enum RawElementError {
+pub enum ReadElementError {
     /// The current packet isn't enough large for element's header,
     /// which need to be on a single packet.
     TooShortPacket,
@@ -550,10 +619,72 @@ pub enum RawElementError {
 }
 
 
-pub struct RawElement<E> {
-    pub elt: E,
-    pub id: u8,
-    pub reply_id: Option<u32>
+/// Bundle element variant iterated from `BundleElementIter`.
+/// This enum provides a better way to read replies using sub codecs.
+pub enum BundleElement<'reader, 'bundle> {
+    /// A simple element with an ID and a reader.
+    Simple(u8, SimpleElementReader<'reader, 'bundle>),
+    /// A reply element with request ID and a reader.
+    Reply(u32, ReplyElementReader<'reader, 'bundle>)
+}
+
+impl BundleElement<'_, '_> {
+
+    /// Return `true` if this element is a simple one.
+    pub fn is_simple(&self) -> bool {
+        matches!(self, BundleElement::Simple(_, _))
+    }
+
+    /// Return `true` if this element is a reply.
+    pub fn is_reply(&self) -> bool {
+        matches!(self, BundleElement::Reply(_, _))
+    }
+
+}
+
+/// The simple variant of element, provides direct decoding using a codec.
+pub struct SimpleElementReader<'reader, 'bundle>(&'reader mut BundleElementReader<'bundle>);
+
+impl SimpleElementReader<'_, '_> {
+
+    /// Same as `read` but never go to the next element *(this is why this method doesn't take
+    /// self by value)*.
+    pub fn read_stable<E: ElementCodec>(&mut self, codec: &E) -> Result<Element<E::Element>, ReadElementError> {
+        self.0.read_element(codec, false)
+    }
+
+    /// Read the element using the given codec. This method take self by value and automatically
+    /// go the next element if read is successful, if not successful you will need to call
+    /// `Bundle::next_element` again.
+    pub fn read<E: ElementCodec>(mut self, codec: &E) -> Result<Element<E::Element>, ReadElementError> {
+        self.0.read_element(codec, true)
+    }
+
+}
+
+/// The reply variant of element, provides a way to read replies and get `Reply` elements
+/// containing the final element.
+pub struct ReplyElementReader<'reader, 'bundle>(&'reader mut BundleElementReader<'bundle>);
+
+impl<'reader, 'bundle> ReplyElementReader<'reader, 'bundle> {
+
+    /// Same as `read` but never go to the next element *(this is why this method doesn't take
+    /// self by value)*.
+    ///
+    /// This method doesn't returns the reply element but the final element.
+    pub fn read_stable<E: ElementCodec>(&mut self, codec: &E) -> Result<Element<E::Element>, ReadElementError> {
+        self.0.read_element(&ReplyCodec::new(codec), false).map(Into::into)
+    }
+
+    /// Read the reply element using the given codec. This method take self by value and
+    /// automatically go the next element if read is successful, if not successful you
+    /// will need to call `Bundle::next_element` again.
+    ///
+    /// This method doesn't returns the reply element but the final element.
+    pub fn read<E: ElementCodec>(mut self, codec: &E) -> Result<Element<E::Element>, ReadElementError> {
+        self.0.read_element(&ReplyCodec::new(codec), true).map(Into::into)
+    }
+
 }
 
 

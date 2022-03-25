@@ -1,11 +1,8 @@
 //! Packet structure definition with synchronization methods.
 
-use std::fmt::{Debug, Formatter, Write};
-use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian, BigEndian};
+use std::fmt::{Debug, Formatter};
+use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 use std::io::{Cursor, Read};
-
-use rand::RngCore;
-use rand::rngs::OsRng;
 
 use super::PacketFlags;
 

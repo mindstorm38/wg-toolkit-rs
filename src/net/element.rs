@@ -5,56 +5,8 @@ use std::io::{self, Read, Seek, Write};
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 
 pub mod login;
+pub mod reply;
 
-
-/*/// A codec implemented on a particular element, this is used when writing
-/// an element on a bundle or when adding receive handlers for particular
-/// elements.
-pub trait ElementCodec: Sized {
-
-    /// Type of length used by this element.
-    const LEN: ElementLength;
-
-    /// Encode options type, use `()` if no particular options are expected.
-    type EncodeCfg;
-    /// Decode options type, use `()` if no particular options are expected.
-    type DecodeCfg;
-
-    /// Encode the element in the given writer.
-    /// IO errors should only be returned if operations on the output fails.
-    fn encode<W: Write>(&self, output: &mut W, cfg: &Self::EncodeCfg) -> io::Result<()>;
-
-    /// Decode the element from the given reader.
-    /// IO errors should only be returned if operations on the input fails.
-    fn decode<R: Read + Seek>(&mut self, input: &mut R, cfg: &Self::DecodeCfg) -> io::Result<()>;
-
-}*/
-
-// Following traits/structs are for the new element API //
-
-/*/// Encoder for an element, such types are moved when encoding is required,
-/// if you want to avoid moving a huge type, implement this trait on
-/// (mutable) references.
-pub trait ElementEncoder {
-    /// Length codec used for this element.
-    const LEN: ElementLength;
-    /// The input type to encode.
-    type Input;
-    /// Encode an element.
-    fn encode<W: Write>(&self, write: W, input: Self::Input) -> io::Result<()>;
-}
-
-/// Decoder for an element, such types are moved when decoding is required,
-/// if you want to avoid moving a huge type, implement this trait on
-/// (mutable) references.
-pub trait ElementDecoder {
-    /// Length codec used for this element.
-    const LEN: ElementLength;
-    /// The output type for this decoder.
-    type Output;
-    /// Decode an element, the given reader is seek-able and its length is given separately.
-    fn decode<R: Read + Seek>(&self, read: R, len: u64) -> io::Result<Self::Output>;
-}*/
 
 pub trait ElementCodec {
 
@@ -243,105 +195,8 @@ impl<const LEN: usize> Default for RawElementCodecLenFixed<LEN> {
     }
 }
 
-pub type RawElementCodecVar8 = RawElementCodec<RawElementCodecLenVar8>;
-pub type RawElementCodecVar16 = RawElementCodec<RawElementCodecLenVar16>;
-pub type RawElementCodecVar24 = RawElementCodec<RawElementCodecLenVar24>;
-pub type RawElementCodecVar32 = RawElementCodec<RawElementCodecLenVar32>;
-pub type RawElementCodecFixed<const LEN: usize> = RawElementCodec<RawElementCodecLenFixed<LEN>>;
-
-/*/// A reply element.
-pub struct ReplyElement<C> {
-    inner: C,
-    reply_id: u32,
-}
-
-impl<C> ReplyElement<C> {
-    pub fn new(inner: C, reply_id: u32) -> Self {
-        Self {
-            inner,
-            reply_id
-        }
-    }
-}
-
-impl<C: Default> Default for ReplyElement<C> {
-    fn default() -> Self {
-        Self::new(C::default(), 0)
-    }
-}
-
-impl<C: ElementCodec> ElementCodec for ReplyElement<C> {
-
-    const LEN: ElementLength = ElementLength::Variable32;
-    type EncodeCfg = C::EncodeCfg;
-    type DecodeCfg = C::DecodeCfg;
-
-    fn encode<W: Write>(&self, output: &mut W, cfg: &Self::EncodeCfg) -> io::Result<()> {
-        output.write_u32::<LittleEndian>(self.reply_id)?;
-        self.inner.encode(output, cfg)
-    }
-
-    fn decode<R: Read + Seek>(&mut self, input: &mut R, cfg: &Self::DecodeCfg) -> io::Result<()> {
-        self.reply_id = input.read_u32::<LittleEndian>()?;
-        self.inner.decode(input, cfg)
-    }
-
-}
-
-
-macro_rules! def_raw_element_struct {
-    ($name:ident, $len: ident) => {
-
-        #[derive(Debug)]
-        pub struct $name(pub Vec<u8>);
-
-        impl $name {
-            pub fn new() -> Self {
-                Self(Vec::new())
-            }
-        }
-
-        impl ElementCodec for $name {
-
-            const LEN: ElementLength = ElementLength::$len;
-            type EncodeCfg = ();
-            type DecodeCfg = ();
-
-            fn encode<W: Write>(&self, output: &mut W, _cfg: &Self::EncodeCfg) -> io::Result<()> {
-                output.write_all(&self.0[..])
-            }
-
-            fn decode<R: Read + Seek>(&mut self, input: &mut R, _cfg: &Self::DecodeCfg) -> io::Result<()> {
-                self.0.clear();
-                input.read_to_end(&mut self.0).map(|_| ())
-            }
-
-        }
-
-    };
-}
-
-def_raw_element_struct!(RawElementVariable8, Variable8);
-def_raw_element_struct!(RawElementVariable16, Variable16);
-def_raw_element_struct!(RawElementVariable24, Variable24);
-def_raw_element_struct!(RawElementVariable32, Variable32);
-
-
-#[derive(Debug)]
-pub struct RawElementFixed<const LEN: usize>(pub [u8; LEN]);
-
-impl<const LEN: usize> ElementCodec for RawElementFixed<LEN> {
-
-    const LEN: ElementLength = ElementLength::Fixed(LEN as u32);
-    type EncodeCfg = ();
-    type DecodeCfg = ();
-
-    fn encode<W: Write>(&self, output: &mut W, _cfg: &Self::EncodeCfg) -> io::Result<()> {
-        output.write_all(&self.0[..])
-    }
-
-    fn decode<R: Read + Seek>(&mut self, input: &mut R, _cfg: &Self::DecodeCfg) -> io::Result<()> {
-        input.read_exact(&mut self.0[..])
-    }
-
-}*/
+pub type Var8ElementCodec = RawElementCodec<RawElementCodecLenVar8>;
+pub type Var16ElementCodec = RawElementCodec<RawElementCodecLenVar16>;
+pub type Var24ElementCodec = RawElementCodec<RawElementCodecLenVar24>;
+pub type Var32ElementCodec = RawElementCodec<RawElementCodecLenVar32>;
+pub type FixedElementCodec<const LEN: usize> = RawElementCodec<RawElementCodecLenFixed<LEN>>;
