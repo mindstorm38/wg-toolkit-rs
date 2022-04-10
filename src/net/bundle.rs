@@ -105,9 +105,10 @@ impl Bundle {
         let header_slice = self.reserve_exact(header_len);
         header_slice[0] = id;
 
-        if request.is_some() {
-            // Reset all request's header fields.
-            header_slice[header_len - 6..][..6].fill(0);
+        if let Some(request_id) = request {
+            let mut request_header_cursor = Cursor::new(&mut header_slice[header_len - 6..]);
+            request_header_cursor.write_u32::<LE>(request_id).unwrap();
+            request_header_cursor.write_u16::<LE>(0).unwrap(); // Next request offset set to null.
         }
 
         // Update the current packet's cursor and header length.
@@ -116,16 +117,14 @@ impl Bundle {
         let cur_packet_end = cur_packet.len();
         let cur_packet_elt_offset = cur_packet_end - header_len;
 
-        if let Some(request_id) = request {
+        if request.is_some() {
             let cur_request_header_offset = cur_packet_end - 6;
-            // self.request_header_offsets.push((cur_packet_idx, cur_request_header_offset));
             if self.last_request_header_offset == 0 {
                 cur_packet.set_request_first_offset(cur_packet_elt_offset);
             } else {
-                let request_header_slice = &mut cur_packet.get_data_mut()[self.last_request_header_offset..];
-                let mut request_header_cursor = Cursor::new(request_header_slice);
-                request_header_cursor.write_u32::<LE>(request_id).unwrap();
-                request_header_cursor.write_u16::<LE>(cur_packet_elt_offset as u16).unwrap();
+                let mut next_request_offset_cursor = Cursor::new(
+                    &mut cur_packet.get_data_mut()[self.last_request_header_offset + 4..]);
+                next_request_offset_cursor.write_u16::<LE>(cur_packet_elt_offset as u16).unwrap();
             }
             self.last_request_header_offset = cur_request_header_offset;
         }
