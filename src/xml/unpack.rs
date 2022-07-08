@@ -1,5 +1,6 @@
 use std::io::{self, Read, Seek, SeekFrom};
-use std::fmt::Write;
+use std::fmt::{Write, Display};
+use std::string::FromUtf8Error;
 
 use byteorder::{ReadBytesExt, LittleEndian};
 use xmltree::{self, Element, XMLNode};
@@ -41,7 +42,7 @@ impl<R: Read + Seek> XmlUnpacker<R> {
         }
     }
 
-    fn decode(mut self) -> Result<Element, XmlError> {
+    fn decode(mut self) -> XmlResult<Element> {
 
         let _ = self.read.read_u8()?;
         self.read_dictionary()?;
@@ -52,7 +53,7 @@ impl<R: Read + Seek> XmlUnpacker<R> {
 
     }
 
-    fn read_dictionary(&mut self) -> Result<(), XmlError> {
+    fn read_dictionary(&mut self) -> XmlResult<()> {
         loop {
             let string = read_null_string(&mut self.read)?;
             if string.is_empty() {
@@ -62,7 +63,7 @@ impl<R: Read + Seek> XmlUnpacker<R> {
         }
     }
 
-    fn read_element(&mut self, elt: &mut Element) -> Result<(), XmlError> {
+    fn read_element(&mut self, elt: &mut Element) -> XmlResult<()> {
 
         let children_count = self.read.read_u16::<LittleEndian>()? as usize;
         let descriptor = self.read_data_descriptor()?;
@@ -85,7 +86,7 @@ impl<R: Read + Seek> XmlUnpacker<R> {
 
     }
 
-    fn read_data_descriptor(&mut self) -> Result<DataDescriptor, XmlError> {
+    fn read_data_descriptor(&mut self) -> XmlResult<DataDescriptor> {
         let data_descriptor = self.read.read_u32::<LittleEndian>()?;
         let raw_data_type = data_descriptor >> 28;
         Ok(DataDescriptor {
@@ -96,14 +97,14 @@ impl<R: Read + Seek> XmlUnpacker<R> {
         })
     }
 
-    fn read_element_descriptor(&mut self) -> Result<ElementDescriptor, XmlError> {
+    fn read_element_descriptor(&mut self) -> XmlResult<ElementDescriptor> {
         Ok(ElementDescriptor {
             name_idx: self.read.read_u16::<LittleEndian>()? as usize,
             data: self.read_data_descriptor()?,
         })
     }
 
-    fn read_data(&mut self, elt: &mut Element, offset: u32, descriptor: &DataDescriptor, allow_element: bool) -> Result<(), XmlError> {
+    fn read_data(&mut self, elt: &mut Element, offset: u32, descriptor: &DataDescriptor, allow_element: bool) -> XmlResult<()> {
         let len = (descriptor.end_addr - offset) as usize;
         let string;
         match descriptor.data_type {
@@ -147,18 +148,17 @@ impl<R: Read + Seek> XmlUnpacker<R> {
         Ok(())
     }
 
-    fn read_string(&mut self, len: usize) -> Result<String, XmlError> {
+    fn read_string(&mut self, len: usize) -> XmlResult<String> {
         if len == 0 {
             Ok("".to_string())
         } else {
             let mut buf = vec![0; len];
             self.read.read_exact(&mut buf[..])?;
-            // TODO: Remove unwrap, or assume that XML strings will always be ASCII.
-            Ok(String::from_utf8(buf).unwrap())
+            Ok(String::from_utf8(buf)?)
         }
     }
 
-    fn read_number(&mut self, len: usize) -> Result<i64, XmlError> {
+    fn read_number(&mut self, len: usize) -> XmlResult<i64> {
         match len {
             0 => Ok(0),
             1 => Ok(self.read.read_i8()? as i64),
@@ -169,7 +169,7 @@ impl<R: Read + Seek> XmlUnpacker<R> {
         }
     }
 
-    fn read_vector(&mut self, len: usize) -> Result<Vec<f32>, XmlError> {
+    fn read_vector(&mut self, len: usize) -> XmlResult<Vec<f32>> {
         let n = len / 4;
         let mut res = Vec::with_capacity(n);
         for _ in 0..n {
@@ -178,7 +178,7 @@ impl<R: Read + Seek> XmlUnpacker<R> {
         Ok(res)
     }
 
-    fn read_bool(&mut self, len: usize) -> Result<bool, XmlError> {
+    fn read_bool(&mut self, len: usize) -> XmlResult<bool> {
         match len {
             0 => Ok(false),
             1 => Ok(self.read.read_u8()? == 1),
@@ -230,7 +230,7 @@ impl DataType {
 
 
 /// Internal fast reading for null-terminated strings. Requires a seekable reader.
-fn read_null_string<R: Read + Seek>(read: &mut R) -> io::Result<String> {
+fn read_null_string<R: Read + Seek>(read: &mut R) -> XmlResult<String> {
 
     let mut cursor = read.stream_position()?;
     let mut buf = [0; 32];
@@ -240,7 +240,7 @@ fn read_null_string<R: Read + Seek>(read: &mut R) -> io::Result<String> {
 
         let mut len = match read.read(&mut buf) {
             Ok(len) => len,
-            Err(e) if e.kind() != io::ErrorKind::Interrupted => return Err(e),
+            Err(e) if e.kind() != io::ErrorKind::Interrupted => return Err(e.into()),
             _ => continue
         };
 
@@ -258,10 +258,13 @@ fn read_null_string<R: Read + Seek>(read: &mut R) -> io::Result<String> {
 
     }
 
-    // TODO: Remove unwrap, or assume that XML names will always be ASCII.
-    Ok(String::from_utf8(string).unwrap())
+    Ok(String::from_utf8(string)?)
 
 }
+
+
+/// Type alias for result with a generic ok type and an [`XmlError`] error type.
+pub type XmlResult<T> = Result<T, XmlError>;
 
 
 #[derive(Debug)]
@@ -274,10 +277,43 @@ pub enum XmlError {
     InvalidNumberSize(usize),
     /// Invalid data size for a boolean.
     InvalidBoolSize(usize),
+    /// Invalid string utf8.
+    Utf8(FromUtf8Error),
     /// IO error will unpacking.
     Io(io::Error),
     /// XML parsing error while parsing a non-packed input.
     Xml(xmltree::ParseError),
+}
+
+impl Display for XmlError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            XmlError::InvalidDataType(n) => write!(f, "invalid data type id {n}"),
+            XmlError::UnexpectedElement => write!(f, "unexpected element data type"),
+            XmlError::InvalidNumberSize(n) => write!(f, "invalid data size of {n} bytes for a number"),
+            XmlError::InvalidBoolSize(n) => write!(f, "invalid data size of {n} bytes for a boolean"),
+            XmlError::Utf8(ref err) => write!(f, "utf8 error: {err:?}"),
+            XmlError::Io(ref err) => write!(f, "io error: {err:?}"),
+            XmlError::Xml(ref err) => write!(f, "xml parsing error: {err:?}"),
+        }
+    }
+}
+
+impl std::error::Error for XmlError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            XmlError::Utf8(err) => Some(err),
+            XmlError::Io(err) => Some(err),
+            XmlError::Xml(err) => Some(err),
+            _ => None
+        }
+    }
+}
+
+impl From<FromUtf8Error> for XmlError {
+    fn from(e: FromUtf8Error) -> Self {
+        Self::Utf8(e)
+    }
 }
 
 impl From<io::Error> for XmlError {
