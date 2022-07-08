@@ -2,11 +2,9 @@
 
 use std::fmt::Write;
 
-mod cursor;
-pub use cursor::*;
-
-mod fnv;
-pub use fnv::*;
+pub mod cursor;
+pub mod fnv;
+pub mod io;
 
 
 pub fn str_from_escaped(data: &[u8]) -> String {

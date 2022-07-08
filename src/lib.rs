@@ -1,15 +1,16 @@
 //! Toolkit for various binary and text formats distributed by Wargaming.net (BigWorld, Core engine).
 //!
-//! Credits to SkepticalFox for its works at
+//! Credits to SkepticalFox for its work on compiled spaces:
 //! https://bitbucket.org/SkepticalFox/wot-space.bin-utils/src/master/
+//! 
+//! Credits to SkaceKamen for its work on compiled model:
+//! https://github.com/SkaceKamen/wot-model-converter
 
 pub mod util;
-
-#[cfg(feature = "space")]
-pub mod space;
-
-#[cfg(feature = "xml")]
 pub mod xml;
+
+pub mod space;
+pub mod model;
 
 #[cfg(feature = "network")]
 pub mod net;

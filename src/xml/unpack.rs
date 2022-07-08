@@ -2,15 +2,16 @@ use std::io::{self, Read, Seek, SeekFrom};
 use std::fmt::{Write, Display};
 use std::string::FromUtf8Error;
 
-use byteorder::{ReadBytesExt, LittleEndian};
 use xmltree::{self, Element, XMLNode};
+
+use crate::util::io::WgReadExt;
 
 use super::PACKED_SIGNATURE;
 
 
 /// Unpack or parse XML from an input `Read` implementor. This function will
 /// simply parse the input if it happen to be an already unpacked XML.
-pub fn unpack_xml<R: Read + Seek>(read: &mut R) -> Result<Element, XmlError> {
+pub fn unpack_xml<R: Read + Seek>(read: &mut R) -> XmlResult<Element> {
 
     let pos = read.stream_position()?;
 
@@ -65,7 +66,7 @@ impl<R: Read + Seek> XmlUnpacker<R> {
 
     fn read_element(&mut self, elt: &mut Element) -> XmlResult<()> {
 
-        let children_count = self.read.read_u16::<LittleEndian>()? as usize;
+        let children_count = self.read.read_u16()? as usize;
         let descriptor = self.read_data_descriptor()?;
         let mut children = Vec::with_capacity(children_count);
         for _ in 0..children_count {
@@ -87,7 +88,7 @@ impl<R: Read + Seek> XmlUnpacker<R> {
     }
 
     fn read_data_descriptor(&mut self) -> XmlResult<DataDescriptor> {
-        let data_descriptor = self.read.read_u32::<LittleEndian>()?;
+        let data_descriptor = self.read.read_u32()?;
         let raw_data_type = data_descriptor >> 28;
         Ok(DataDescriptor {
             data_type: DataType::from_raw(raw_data_type)
@@ -99,7 +100,7 @@ impl<R: Read + Seek> XmlUnpacker<R> {
 
     fn read_element_descriptor(&mut self) -> XmlResult<ElementDescriptor> {
         Ok(ElementDescriptor {
-            name_idx: self.read.read_u16::<LittleEndian>()? as usize,
+            name_idx: self.read.read_u16()? as usize,
             data: self.read_data_descriptor()?,
         })
     }
@@ -162,9 +163,9 @@ impl<R: Read + Seek> XmlUnpacker<R> {
         match len {
             0 => Ok(0),
             1 => Ok(self.read.read_i8()? as i64),
-            2 => Ok(self.read.read_i16::<LittleEndian>()? as i64),
-            4 => Ok(self.read.read_i32::<LittleEndian>()? as i64),
-            8 => Ok(self.read.read_i64::<LittleEndian>()?),
+            2 => Ok(self.read.read_i16()? as i64),
+            4 => Ok(self.read.read_i32()? as i64),
+            8 => Ok(self.read.read_i64()?),
             _ => Err(XmlError::InvalidNumberSize(len))
         }
     }
@@ -173,7 +174,7 @@ impl<R: Read + Seek> XmlUnpacker<R> {
         let n = len / 4;
         let mut res = Vec::with_capacity(n);
         for _ in 0..n {
-            res.push(self.read.read_f32::<LittleEndian>()?);
+            res.push(self.read.read_f32()?);
         }
         Ok(res)
     }

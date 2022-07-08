@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use std::io::{Read, Seek};
 
-use super::{Section, SectionId, ReadSectionExt, BWST};
+use super::{Section, SectionId, BWST};
+use crate::util::io::WgReadExt;
 
 
 /// StaticGeometry section, defines models and positions.
