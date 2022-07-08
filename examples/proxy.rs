@@ -9,9 +9,9 @@ use wgtk::net::proxy::{Proxy, ProxyListener, ProxyDirectTransfer, ProxySideOutpu
 use wgtk::net::bundle::{Bundle, BundleElement, BundleAssembler};
 use wgtk::net::packet::Packet;
 
-use wgtk::net::element::login::{LoginCodec, PingCodec};
+use wgtk::net::element::login::{LoginCodec, PingCodec, ChallengeCodec, ChallengeResponseCodec};
 use wgtk::net::element::reply::{ReplyCodec};
-use wgtk::net::element::Var32ElementCodec;
+use wgtk::net::element::{Var16ElementCodec, Var32ElementCodec};
 
 
 fn main() {
@@ -79,6 +79,7 @@ impl ProxyListener for LoginAppClientListener<'_, '_, '_> {
 
                 let prefix = bundle.get_packets()[0].get_prefix().unwrap();
                 println!("[CLIENT -> SERVER] Received bundle: {:?}", bundle.get_packets());
+                println!("[CLIENT -> SERVER] Received packet: {}", wgtk::util::get_hex_str_from(&bundle.get_packets()[0].get_raw_data()[..bundle.get_packets()[0].raw_len()], 1000));
 
                 let mut reader = bundle.get_element_reader();
 
@@ -87,11 +88,23 @@ impl ProxyListener for LoginAppClientListener<'_, '_, '_> {
                         BundleElement::Simple(LoginCodec::ID, reader) => {
                             let login = reader.read(&self.login_codec).unwrap();
                             println!("[CLIENT -> SERVER] Received login: {:?}", login.element);
+                            let request_id = login.request_id.unwrap();
+                            let mut new_bundle = Bundle::new_empty(true);
+                            new_bundle.add_request(LoginCodec::ID, &self.login_codec, login.element, request_id);
+                            new_bundle.get_packets_mut()[0].set_prefix(Some(prefix));
+                            self.reply_tracker.borrow_mut().push_request(RequestSide::Client, request_id, LoginCodec::ID);
+                            new_bundle.finalize(&mut 0);
+                            out.send_finalized_bundle(&new_bundle).unwrap();
                         }
                         BundleElement::Simple(PingCodec::ID, reader) => {
                             let ping = reader.read(&PingCodec).unwrap();
                             println!("[CLIENT -> SERVER] Received ping try: {}", ping.element);
+                            self.reply_tracker.borrow_mut().push_request(RequestSide::Client, ping.request_id.unwrap(), PingCodec::ID);
                             out.send_finalized_bundle(&bundle).unwrap();
+                        }
+                        BundleElement::Simple(ChallengeResponseCodec::ID, reader) => {
+                            let data = reader.read(&Var16ElementCodec::new()).unwrap();
+                            println!("[CLIENT -> SERVER] Received challenge response: {}", wgtk::util::str_from_escaped(&data.element[..]));
                         }
                         BundleElement::Simple(id, _) => {
                             panic!("[CLIENT -> SERVER] Received unknown element: {}", id);
@@ -99,41 +112,6 @@ impl ProxyListener for LoginAppClientListener<'_, '_, '_> {
                         _ => {}
                     }
                 }
-
-                /*// We expect bundle to have only one element in login app.
-                let mut iter = bundle.iter_raw_elements();
-                match iter.next_id() {
-                    Some(LoginCodec::ID) => {
-
-                        let login = iter.next(&self.login_codec).unwrap();
-                        println!("[CLIENT -> SERVER] Received login: {:?}", login.elt);
-
-                        let mut request_id = login.request_id.unwrap();
-
-                        let mut new_bundle = Bundle::new_empty(true);
-                        new_bundle.add_request(LoginCodec::ID, &self.login_codec, login.elt, request_id);
-
-                        new_bundle.get_packets_mut()[0].set_prefix(Some(prefix));
-
-                        self.reply_tracker.borrow_mut().push_request(RequestSide::Client, request_id, LoginCodec::ID);
-                        new_bundle.finalize(&mut 0);
-
-                        assert_eq!(new_bundle.len(), 1);
-
-                        // let packet = &mut new_bundle.get_packets_mut()[0];
-                        // println!("[CLIENT -> SERVER] Send packet: {}", wgtk::util::get_hex_str_from(&packet.get_raw_data()[..packet.raw_len()], 1000));
-
-                        out.send_finalized_bundle(&new_bundle).unwrap();
-
-                    }
-                    Some(PingCodec::ID) => {
-                        let ping = iter.next(&PingCodec).unwrap().elt;
-                        println!("[CLIENT -> SERVER] Received ping try: {}", ping);
-                        out.send_finalized_bundle(&bundle).unwrap();
-                    }
-                    Some(n) => panic!("[CLIENT -> SERVER] Unsupported element id: {}", n),
-                    _ => unreachable!()
-                }*/
 
             }
         }
@@ -176,14 +154,26 @@ impl ProxyListener for LoginAppServerListener<'_> {
                 while let Some(elt) = reader.next_element() {
                     match elt {
                         BundleElement::Reply(request_id, reader) => {
-
-                            let reply = reader.read(&Var32ElementCodec::new()).unwrap();
-                            let data = reply.element;
-
                             println!("[SERVER -> CLIENT] Received reply (ID: {}):", request_id);
-                            println!("                   Raw:   {}", wgtk::util::get_hex_str_from(&data[..], 1000));
-                            println!("                   ASCII: {}", wgtk::util::str_from_escaped(&data[..]));
+                            match self.reply_tracker.borrow_mut().pop_request(RequestSide::Client, request_id) {
+                                Some(PingCodec::ID) => {
+                                    let ping = reader.read(&PingCodec).unwrap();
+                                    println!("[SERVER -> CLIENT] Received ping ack: {}", ping.element);
+                                    out.send_finalized_bundle(&bundle).unwrap();
+                                }
+                                Some(LoginCodec::ID) => {
+                                    let challenge = reader.read(&ChallengeCodec).unwrap();
+                                    println!("[SERVER -> CLIENT] Challenge: {:?}", challenge.element);
+                                    out.send_finalized_bundle(&bundle).unwrap();
 
+                                    /*let login_reply = reader.read(&Var32ElementCodec::new()).unwrap();
+                                    let data = &login_reply.element;
+                                    println!("[SERVER -> CLIENT] Login reply:");
+                                    println!("                   Raw:   {}", wgtk::util::get_hex_str_from(&data[..], 1000));
+                                    println!("                   ASCII: {}", wgtk::util::str_from_escaped(&data[..]));*/
+                                }
+                                _ => eprintln!("[SERVER -> CLIENT] Wrong request ID")
+                            }
                         }
                         _ => unreachable!()
                     }
