@@ -1,8 +1,8 @@
 //! Read and write extensions specific to WG.
 
-use std::io::{self, Read, Cursor};
+use std::io::{self, Read, Write, Cursor};
 
-use byteorder::{ReadBytesExt, LE};
+use byteorder::{ReadBytesExt, WriteBytesExt, LE};
 
 
 /// An extension to the `Read` trait specifically used to decode WG formats.
@@ -11,7 +11,6 @@ pub trait WgReadExt: Read {
     #[inline]
     fn read_u8(&mut self) -> io::Result<u8> {
         ReadBytesExt::read_u8(self)
-        
     }
 
     #[inline]
@@ -106,4 +105,84 @@ pub trait WgReadExt: Read {
 
 }
 
+pub trait WgWriteExt: Write {
+
+    #[inline]
+    fn write_u8(&mut self, n: u8) -> io::Result<()> {
+        WriteBytesExt::write_u8(self, n)
+    }
+
+    #[inline]
+    fn write_i8(&mut self, n: i8) -> io::Result<()> {
+        WriteBytesExt::write_i8(self, n)
+    }
+
+    #[inline]
+    fn write_u16(&mut self, n: u16) -> io::Result<()> {
+        WriteBytesExt::write_u16::<LE>(self, n)
+    }
+
+    #[inline]
+    fn write_i16(&mut self, n: i16) -> io::Result<()> {
+        WriteBytesExt::write_i16::<LE>(self, n)
+    }
+
+    #[inline]
+    fn write_u32(&mut self, n: u32) -> io::Result<()> {
+        WriteBytesExt::write_u32::<LE>(self, n)
+    }
+
+    #[inline]
+    fn write_i32(&mut self, n: i32) -> io::Result<()> {
+        WriteBytesExt::write_i32::<LE>(self, n)
+    }
+
+    #[inline]
+    fn write_u64(&mut self, n: u64) -> io::Result<()> {
+        WriteBytesExt::write_u64::<LE>(self, n)
+    }
+
+    #[inline]
+    fn write_i64(&mut self, n: i64) -> io::Result<()> {
+        WriteBytesExt::write_i64::<LE>(self, n)
+    }
+
+    #[inline]
+    fn write_f32(&mut self, n: f32) -> io::Result<()> {
+        WriteBytesExt::write_f32::<LE>(self, n)
+    }
+
+    #[inline]
+    fn write_string(&mut self, s: &str) -> io::Result<()> {
+        self.write_all(s.as_bytes())
+    }
+
+    /// Write the size header for a single structure. To write the header of
+    /// a vector, see `write_vector_head`.
+    fn write_single_head(&mut self, n: usize) -> io::Result<()> {
+        self.write_u32(n as u32)
+    }
+
+    /// Write header for vector of structure.
+    fn write_vector_head(&mut self, size: usize, count: usize) -> io::Result<()> {
+        self.write_u32(size as u32)?;
+        self.write_u32(count as u32)
+    }
+
+    /// Write a vector of structure. Items give in the iterator are converted 
+    /// through the given function. This function take the 
+    fn write_vector<T, I, F>(&mut self, vec: &[T], size: usize, mut func: F) -> io::Result<()>
+    where
+        F: FnMut(&T, &mut Self),
+    {
+        self.write_vector_head(size, vec.len())?;
+        for elt in vec {
+            (func)(elt, self);
+        }
+        Ok(())
+    }
+
+}
+
 impl<R: Read> WgReadExt for R {}
+impl<W: Write> WgWriteExt for W {}

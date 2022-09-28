@@ -11,7 +11,7 @@ use super::PACKED_SIGNATURE;
 
 /// Unpack or parse XML from an input `Read` implementor. This function will
 /// simply parse the input if it happen to be an already unpacked XML.
-pub fn unpack_xml<R: Read + Seek>(read: &mut R) -> XmlResult<Element> {
+pub fn unpack_xml<R: Read + Seek>(mut read: R) -> XmlResult<Element> {
 
     let pos = read.stream_position()?;
 
