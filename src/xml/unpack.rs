@@ -13,13 +13,11 @@ use super::PACKED_SIGNATURE;
 /// simply parse the input if it happen to be an already unpacked XML.
 pub fn unpack_xml<R: Read + Seek>(mut read: R) -> XmlResult<Element> {
 
-    let pos = read.stream_position()?;
-
     let mut buf = [0; 4];
     read.read_exact(&mut buf)?;
 
     if &buf != PACKED_SIGNATURE {
-        read.seek(SeekFrom::Start(pos))?;
+        read.seek(SeekFrom::Current(-4))?;
         Ok(Element::parse(read)?)
     } else {
         XmlUnpacker::new(read).decode()
