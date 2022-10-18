@@ -9,12 +9,68 @@ pub use pack::*;
 /// Re-export of xmltree dependency.
 pub use xmltree;
 
+use serde::{Deserialize};
+use serde::de::{Visitor, Unexpected};
+
 use glam::{Affine3A, Vec3A};
 use xmltree::Element;
 
 
 /// Signature of a packed XML file.
 pub const PACKED_SIGNATURE: &[u8; 4] = b"\x45\x4E\xA1\x62";
+
+
+/// Wrapper type for `Vec3A type to be (de)serialize in Wargaming packed XML.
+#[derive(Debug)]
+pub struct XmlVec3(pub Vec3A);
+
+impl<'de> Deserialize<'de> for XmlVec3 {
+
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>
+    {
+        deserializer.deserialize_str(Vec3Visitor)
+    }
+
+}
+
+/// Internal visitor structure for Vec3 deserializing.
+struct Vec3Visitor;
+impl<'de> Visitor<'de> for Vec3Visitor {
+
+    type Value = XmlVec3;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("a vector-3 string representation 'x y z'")
+    }
+
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error, 
+    {
+
+        fn from_str(s: &str) -> Option<XmlVec3> {
+            let mut parts = s.split(' ');
+            Some(XmlVec3(Vec3A::new(
+                parts.next()?.parse().ok()?,
+                parts.next()?.parse().ok()?,
+                parts.next()?.parse().ok()?,
+            )))
+        }
+
+        from_str(v).ok_or(E::invalid_value(Unexpected::Str(v), &self))
+        
+    }
+
+}
+
+
+/// Wrapper type for `Affine3A` type to be (de)serialize in Wargaming packed XML.
+#[derive(Debug)]
+pub struct XmlAffine3(pub Affine3A);
+
+
 
 
 
