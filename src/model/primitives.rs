@@ -1,4 +1,4 @@
-//! Primitives processed file.
+//! Utilities to read primitives processed files.
 
 use std::io::{self, Read, Seek, SeekFrom};
 use std::collections::HashMap;
@@ -7,14 +7,16 @@ use crate::util::io::WgReadExt;
 
 
 /// Primitives file reader utility.
-pub struct ModelPrimitives<R> {
+pub struct PrimitivesReader<R> {
     pub inner: R,
     sections: HashMap<String, SectionMeta>,
 }
 
-impl<R: Read + Seek> ModelPrimitives<R> {
+impl<R: Read + Seek> PrimitivesReader<R> {
 
-    pub fn new(mut inner: R) -> io::Result<Self> {
+    /// Open and decode a prititives file's header, the reader is
+    /// kept open and date can be read.
+    pub fn open(mut inner: R) -> io::Result<Self> {
 
         let mut sections = HashMap::new();
 
@@ -36,15 +38,16 @@ impl<R: Read + Seek> ModelPrimitives<R> {
                 off: section_offset,
                 len: section_len,
             });
-            
+
             // Keep the alignment of the section offset.
             section_offset += section_len;
             if section_len % 4 != 0 {
                 section_offset += 4 - section_len % 4;
             }
-
+            
             // Keep the alignment of the table cursor.
             table_len -= 24; // Remove the two u32 and the 16 skept bytes.
+            table_len -= section_name_len; // Remove the size of the name.
             if section_name_len % 4 != 0 {
                 let pad = 4 - section_name_len % 4;
                 let mut buf = [0; 4];
@@ -62,13 +65,18 @@ impl<R: Read + Seek> ModelPrimitives<R> {
     }
 
     #[inline]
-    pub fn get_section(&self, name: &str) -> Option<&SectionMeta> {
+    pub fn iter_sections_meta(&self) -> impl Iterator<Item = &'_ SectionMeta> {
+        self.sections.values()
+    }
+
+    #[inline]
+    pub fn get_section_meta(&self, name: &str) -> Option<&SectionMeta> {
         self.sections.get(name)
     }
 
 }
 
-/// 
+#[derive(Debug)]
 pub struct SectionMeta {
     pub name: String,
     pub off: usize,

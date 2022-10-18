@@ -5,7 +5,6 @@ use std::string::FromUtf8Error;
 use xmltree::{self, Element, XMLNode};
 
 use crate::util::io::WgReadExt;
-
 use super::PACKED_SIGNATURE;
 
 
@@ -20,7 +19,7 @@ pub fn unpack_xml<R: Read + Seek>(mut read: R) -> XmlResult<Element> {
         read.seek(SeekFrom::Current(-4))?;
         Ok(Element::parse(read)?)
     } else {
-        XmlUnpacker::new(read).decode()
+        XmlUnpacker::new(read).read()
     }
 
 }
@@ -41,7 +40,7 @@ impl<R: Read + Seek> XmlUnpacker<R> {
         }
     }
 
-    fn decode(mut self) -> XmlResult<Element> {
+    fn read(mut self) -> XmlResult<Element> {
 
         let _ = self.read.read_u8()?;
         self.read_dictionary()?;
