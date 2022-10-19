@@ -59,7 +59,7 @@ impl Element {
         self.children.iter().filter_map(move |(k, v)| (k == key).then_some(v))
     }
 
-    pub fn get_children<'a, 'b: 'a>(&'a self, key: &'b str) -> Option<&'a Value> {
+    pub fn get_child<'a, 'b: 'a>(&'a self, key: &'b str) -> Option<&'a Value> {
         self.iter_children(key).next()
     }
 
