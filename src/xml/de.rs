@@ -10,6 +10,7 @@ use serde::de::{self, SeqAccess};
 use crate::util::io::WgReadExt;
 
 
+/// A deserializer implementation for packed XML format.
 struct Deserializer<R: Read + Seek> {
     /// Internal reader.
     reader: R,
@@ -17,7 +18,9 @@ struct Deserializer<R: Read + Seek> {
     /// elements for their names.
     dict: Vec<String>,
     /// Stack of elements being deserialized.
-    elements: SmallVec<[ElementFullDescriptor; 8]>,
+    /// It initially contains the root element and only the last element 
+    /// is the one being deserialized.
+    stack: SmallVec<[ElementFullDescriptor; 8]>,
 }
 
 struct DeserializerSeq<'a, R: Read + Seek> {
@@ -45,9 +48,22 @@ impl<R: Read + Seek> Deserializer<R> {
         Ok(Self {
             reader,
             dict,
-            elements: smallvec![root_element]
+            stack: smallvec![root_element],
         })
 
+    }
+
+    fn current_element(&self) -> &ElementFullDescriptor {
+        &self.stack[self.stack.len() - 1]
+    }
+
+    fn current_typed_data(&self, ty: DataType) -> Result<&DataDescriptor, DeError> {
+        let elt = self.current_element();
+        if ty == elt.data.ty {
+            Ok(&elt.data)
+        } else {
+            Err(DeError::UnexpectedDataType(elt.data.ty))
+        }
     }
 
 }
@@ -64,56 +80,80 @@ impl<'de, 'a, R: Read + Seek> de::Deserializer<'de> for &'a mut Deserializer<R> 
 
     fn deserialize_bool<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
-        V: de::Visitor<'de> {
-        todo!()
+        V: de::Visitor<'de>
+    {
+        let data = self.current_typed_data(DataType::Boolean)?;
+        match data.length() {
+            0 => visitor.visit_bool(false),
+            1 => {
+                self.reader.seek(SeekFrom::Start(data.start_addr as u64))?;
+                visitor.visit_bool(self.reader.read_u8()? == 1)
+            }
+            len => Err(DeError::InvalidBoolSize(len))
+        }
     }
 
     fn deserialize_i8<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
-        V: de::Visitor<'de> {
-        todo!()
+        V: de::Visitor<'de>
+    {
+        let data = self.current_typed_data(DataType::Integer)?;
+        visitor.visit_i64(read_integer(&mut self.reader, data)?)
     }
 
     fn deserialize_i16<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
-        V: de::Visitor<'de> {
-        todo!()
+        V: de::Visitor<'de> 
+    {
+        let data = self.current_typed_data(DataType::Integer)?;
+        visitor.visit_i64(read_integer(&mut self.reader, data)?)
     }
 
     fn deserialize_i32<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
-        V: de::Visitor<'de> {
-        todo!()
+        V: de::Visitor<'de>
+    {
+        let data = self.current_typed_data(DataType::Integer)?;
+        visitor.visit_i64(read_integer(&mut self.reader, data)?)
     }
 
     fn deserialize_i64<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
-        V: de::Visitor<'de> {
-        todo!()
+        V: de::Visitor<'de> 
+    {
+        let data = self.current_typed_data(DataType::Integer)?;
+        visitor.visit_i64(read_integer(&mut self.reader, data)?)
     }
 
     fn deserialize_u8<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
-        V: de::Visitor<'de> {
-        todo!()
+    V: de::Visitor<'de> {
+        let data = self.current_typed_data(DataType::Integer)?;
+        visitor.visit_u64(read_integer(&mut self.reader, data)? as u64)
     }
 
     fn deserialize_u16<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
-        V: de::Visitor<'de> {
-        todo!()
+        V: de::Visitor<'de> 
+    {
+        let data = self.current_typed_data(DataType::Integer)?;
+        visitor.visit_u64(read_integer(&mut self.reader, data)? as u64)
     }
 
     fn deserialize_u32<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
-        V: de::Visitor<'de> {
-        todo!()
+        V: de::Visitor<'de> 
+    {
+        let data = self.current_typed_data(DataType::Integer)?;
+        visitor.visit_u64(read_integer(&mut self.reader, data)? as u64)
     }
 
     fn deserialize_u64<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
-        V: de::Visitor<'de> {
-        todo!()
+        V: de::Visitor<'de> 
+    {
+        let data = self.current_typed_data(DataType::Integer)?;
+        visitor.visit_u64(read_integer(&mut self.reader, data)? as u64)
     }
 
     fn deserialize_f32<V>(self, visitor: V) -> Result<V::Value, Self::Error>
@@ -193,8 +233,7 @@ impl<'de, 'a, R: Read + Seek> de::Deserializer<'de> for &'a mut Deserializer<R> 
     fn deserialize_seq<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: de::Visitor<'de> {
-        
-        visitor.visit_seq(seq)
+        todo!()
     }
 
     fn deserialize_tuple<V>(self, len: usize, visitor: V) -> Result<V::Value, Self::Error>
@@ -256,13 +295,37 @@ impl<'de, 'a, R: Read + Seek> de::Deserializer<'de> for &'a mut Deserializer<R> 
 
 }
 
+impl<'a, 'de, R: Read + Seek> SeqAccess<'de> for DeserializerSeq<'a, R> {
+
+    type Error = DeError;
+
+    fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Self::Error>
+    where
+        T: de::DeserializeSeed<'de> {
+        todo!()
+        // seed.deserialize(&mut *self.inner)
+    }
+
+}
+
 
 /// Internal data descriptor.
 struct DataDescriptor {
-    data_type: DataType,
-    #[allow(unused)] // Currently unused because children are packed and in the right order.
+    ty: DataType,
+    /// Start of the data in the file's address.
     start_addr: u32,
-    end_addr: u32
+    /// end of the data in the file's address.
+    end_addr: u32,
+}
+
+impl DataDescriptor {
+
+    /// Compute data length.
+    #[inline]
+    fn length(&self) -> usize {
+        (self.end_addr - self.start_addr) as usize
+    }
+
 }
 
 
@@ -281,18 +344,20 @@ struct ElementFullDescriptor {
 
 
 /// Internal possible data types.
-enum DataType {
-    Element,
-    String,
-    Integer,
-    Vector,
-    Boolean,
-    Blob
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DataType {
+    Element = 0,
+    String = 1,
+    Integer = 2,
+    Vector = 3,
+    Boolean = 4,
+    Blob = 5,
 }
 
 impl DataType {
 
-    pub fn from_raw(raw: u32) -> Option<Self> {
+    /// Return the data type from its raw 
+    fn from_raw(raw: u32) -> Option<Self> {
         Some(match raw {
             0 => Self::Element,
             1 => Self::String,
@@ -311,7 +376,7 @@ fn read_data_descriptor<R: Read + Seek>(reader: &mut R) -> Result<DataDescriptor
     let data_descriptor = reader.read_u32()?;
     let raw_data_type = data_descriptor >> 28;
     Ok(DataDescriptor {
-        data_type: DataType::from_raw(raw_data_type)
+        ty: DataType::from_raw(raw_data_type)
             .ok_or(DeError::InvalidDataType(raw_data_type))?,
         end_addr: data_descriptor & 0x00FFFFFFF,
         start_addr: reader.stream_position()? as u32,
@@ -341,6 +406,18 @@ fn read_element<R: Read + Seek>(reader: &mut R) -> Result<ElementFullDescriptor,
 
     Ok(full_descriptor)
 
+}
+
+
+fn read_integer<R: Read + Seek>(reader: &mut R, data: &DataDescriptor) -> Result<i64, DeError> {
+    match data.length() {
+        0 => Ok(0),
+        1 => Ok(reader.read_i8()? as i64),
+        2 => Ok(reader.read_i16()? as i64),
+        4 => Ok(reader.read_i32()? as i64),
+        8 => Ok(reader.read_i64()?),
+        len => Err(DeError::InvalidNumberSize(len))
+    }
 }
 
 
@@ -386,7 +463,7 @@ pub enum DeError {
     /// Invalid data type while parsing.
     InvalidDataType(u32),
     /// Unexpected `DataType::Element`.
-    UnexpectedElement,
+    UnexpectedDataType(DataType),
     /// Invalid data size for a number.
     InvalidNumberSize(usize),
     /// Invalid data size for a boolean.
@@ -405,7 +482,7 @@ impl Display for DeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match *self {
             DeError::InvalidDataType(n) => write!(f, "invalid data type id {n}"),
-            DeError::UnexpectedElement => write!(f, "unexpected element data type"),
+            DeError::UnexpectedDataType(ty) => write!(f, "unexpected data type {ty:?}"),
             DeError::InvalidNumberSize(n) => write!(f, "invalid data size of {n} bytes for a number"),
             DeError::InvalidBoolSize(n) => write!(f, "invalid data size of {n} bytes for a boolean"),
             DeError::Custom(ref msg) => write!(f, "custom deserialization error: {msg}"),
