@@ -1,10 +1,12 @@
-//! Module for packed XML codec.
+//! Module for Wargaming packed XML codec.
 
 mod unpack;
 mod pack;
 
 pub use unpack::*;
 pub use pack::*;
+
+pub mod de;
 
 /// Re-export of xmltree dependency.
 pub use xmltree;
@@ -20,22 +22,28 @@ use xmltree::Element;
 pub const PACKED_SIGNATURE: &[u8; 4] = b"\x45\x4E\xA1\x62";
 
 
+/// Represent a packed XML untyped value.
+pub enum Value {
+    Element(Vec<(String, Value)>),
+    String(String),
+    Integer(i64),
+    Bool(bool),
+    Vec3(Vec3A),
+    Affine3(Affine3A),
+    Blob(Vec<u8>),
+}
+
+
 /// Wrapper type for `Vec3A type to be (de)serialize in Wargaming packed XML.
 #[derive(Debug)]
 pub struct XmlVec3(pub Vec3A);
 
-impl<'de> Deserialize<'de> for XmlVec3 {
+/// Wrapper type for `Affine3A` type to be (de)serialize in Wargaming packed XML.
+#[derive(Debug)]
+pub struct XmlAffine3(pub Affine3A);
 
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>
-    {
-        deserializer.deserialize_str(Vec3Visitor)
-    }
 
-}
-
-/// Internal visitor structure for Vec3 deserializing.
+/// Internal visitor used to read a vec3 element.
 struct Vec3Visitor;
 impl<'de> Visitor<'de> for Vec3Visitor {
 
@@ -65,14 +73,14 @@ impl<'de> Visitor<'de> for Vec3Visitor {
 
 }
 
-
-/// Wrapper type for `Affine3A` type to be (de)serialize in Wargaming packed XML.
-#[derive(Debug)]
-pub struct XmlAffine3(pub Affine3A);
-
-
-
-
+impl<'de> Deserialize<'de> for XmlVec3 {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>
+    {
+        deserializer.deserialize_str(Vec3Visitor)
+    }
+}
 
 
 

@@ -17,11 +17,7 @@ pub struct Node {
     /// Identifier of the node.
     #[serde(rename = "$unflatten=identifier")]
     identifier: String,
-    transform: Affine3A,
     /// Children nodes.
     #[serde(rename = "node")]
     nodes: Vec<Node>
 }
-
-
-pub struct 
