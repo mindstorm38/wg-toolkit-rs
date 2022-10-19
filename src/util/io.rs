@@ -1,6 +1,6 @@
 //! Read and write extensions specific to WG.
 
-use std::io::{self, Read, Write, Cursor};
+use std::io::{self, Read, Write, Cursor, Seek, SeekFrom};
 
 use byteorder::{ReadBytesExt, WriteBytesExt, LE};
 
@@ -60,11 +60,19 @@ pub trait WgReadExt: Read {
         ReadBytesExt::read_f32::<LE>(self)
     }
 
+    /// Directly read a raw buffer of the given length.
     #[inline]
-    fn read_string(&mut self, len: usize) -> io::Result<String> {
+    fn read_buffer(&mut self, len: usize) -> io::Result<Vec<u8>> {
+        // TODO: Maybe use a better uninit approach in the future.
         let mut buf = vec![0; len];
         self.read_exact(&mut buf[..])?;
-        String::from_utf8(buf).map_err(|_| io::ErrorKind::InvalidData.into())
+        Ok(buf)
+    }
+
+    #[inline]
+    fn read_string(&mut self, len: usize) -> io::Result<String> {
+        String::from_utf8(self.read_buffer(len)?)
+            .map_err(|_| io::ErrorKind::InvalidData.into())
     }
 
     /// Read the size header for a single structure. To read the header of
@@ -100,6 +108,44 @@ pub trait WgReadExt: Read {
         }
 
         Ok(data)
+
+    }
+
+}
+
+pub trait WgReadSeekExt: Read + Seek {
+
+    /// Special null-terminated string reading function that 
+    /// uses seekability of the underlying stream.
+    fn read_cstring_fast(&mut self) -> io::Result<String> {
+
+        let mut cursor = self.stream_position()?;
+        let mut buf = [0; 32];
+        let mut string = Vec::new();
+
+        'e: loop {
+
+            let mut len = match self.read(&mut buf) {
+                Ok(len) => len,
+                Err(e) if e.kind() != io::ErrorKind::Interrupted => return Err(e.into()),
+                _ => continue
+            };
+
+            for &c in &buf[..len] {
+                cursor += 1;
+                len -= 1;
+                if c == 0 {
+                    if len != 0 { // Only seek if bytes remains.
+                        self.seek(SeekFrom::Start(cursor))?;
+                    }
+                    break 'e;
+                }
+                string.push(c);
+            }
+
+        }
+
+        String::from_utf8(string).map_err(|_| io::ErrorKind::InvalidData.into())
 
     }
 
@@ -153,8 +199,14 @@ pub trait WgWriteExt: Write {
     }
 
     #[inline]
-    fn write_string(&mut self, s: &str) -> io::Result<()> {
-        self.write_all(s.as_bytes())
+    fn write_string<S: AsRef<str>>(&mut self, s: S) -> io::Result<()> {
+        self.write_all(s.as_ref().as_bytes())
+    }
+
+    #[inline]
+    fn write_cstring<S: AsRef<str>>(&mut self, s: S) -> io::Result<()> {
+        self.write_string(s)?;
+        self.write_u8(0)
     }
 
     /// Write the size header for a single structure. To write the header of
@@ -185,4 +237,5 @@ pub trait WgWriteExt: Write {
 }
 
 impl<R: Read> WgReadExt for R {}
+impl<R: Read + Seek> WgReadSeekExt for R {}
 impl<W: Write> WgWriteExt for W {}

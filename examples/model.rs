@@ -1,26 +1,27 @@
-use std::io::BufReader;
+use std::io::{BufReader, Seek};
 use std::path::Path;
 use std::fs::File;
 use std::env;
 
-use wgtk::model::read_model;
+use wgtk::pxml::de::from_reader;
+use wgtk::pxml::ser::to_writer;
 
-use serde_json::Value;
-use quick_xml::de::{from_reader, from_str};
+use wgtk::model::read_model;
 
 fn main() {
 
     let path_raw = env::var("WGT_MODEL_PATH").unwrap();
     let path = Path::new(&path_raw);
-    let visual_file = File::open(path.with_extension("visual_processed")).unwrap();
+    let mut visual_file = File::open(path.with_extension("visual_processed")).unwrap();
     let primitives_file = File::open(path.with_extension("primitives_processed")).unwrap();
 
-//     let res = from_str::<Value>(r#"<tag1 att1 = "test">
-//     <tag2><!--Test comment-->Test</tag2>
-//     <tag2>Test 2</tag2>
-//  </tag1>"#);
-//     println!("{res:#?}");
+    let visual = from_reader(&mut visual_file).unwrap();
+    println!("{:#?}", visual);
 
-    read_model(visual_file, primitives_file);
+    to_writer(File::create(path.with_extension("visual_processed_2")).unwrap(), &*visual).unwrap();
+    from_reader(File::open(path.with_extension("visual_processed_2")).unwrap()).unwrap();
+
+    // visual_file.seek(std::io::SeekFrom::Start(0));
+    // read_model(visual_file, primitives_file);
 
 }

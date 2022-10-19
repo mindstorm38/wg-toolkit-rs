@@ -7,7 +7,7 @@
 //! https://github.com/SkaceKamen/wot-model-converter
 
 pub mod util;
-pub mod xml;
+pub mod pxml;
 
 pub mod space;
 pub mod model;
