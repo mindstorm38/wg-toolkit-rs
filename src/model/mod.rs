@@ -1,66 +1,93 @@
 //! Compiled model memory representation, encoding and decoding.
 
-pub mod primitives;
+use std::io::{Read, Seek};
+
+pub mod primitive;
 pub mod visual;
 
-use std::io::{self, Read, Seek};
-
-use glam::{Vec3A, Affine3A};
-
-use crate::pxml::from_reader;
-use crate::pxml::de::DeError as PxmlDeError;
-use self::primitives::PrimitivesReader;
+use self::visual::{Visual, RenderSet};
+use self::primitive::{PrimitiveReader, Vertices, Indices, Vertex, Primitive, Group};
 
 
-// /// Decode and resolve a compiled model.
-// pub fn read_model<Rv, Rp>(visual: Rv, primitives: Rp) -> ModelResult<Model>
-// where
-//     Rv: Read + Seek,
-//     Rp: Read + Seek,
-// {
+/// Decode and resolve a compiled model.
+pub fn from_readers<Rv, Rp>(visual_reader: Rv, primitive_reader: Rp) -> Result<Model, ()>
+where
+    Rv: Read + Seek,
+    Rp: Read + Seek,
+{
 
-//     let root_elt = from_reader(visual)?;
-//     let root_node_elt = root_elt.get_child("node").ok_or(ModelError::MalformedVisual)?;
+    let visual = visual::from_reader(visual_reader).unwrap();
+    let mut primitive_reader = PrimitiveReader::open(primitive_reader).unwrap();
+    let mut render_sets_data = Vec::new();
 
-//     let primitives_reader = PrimitivesReader::open(primitives)?;
-//     for meta in primitives_reader.iter_sections_meta() {
-//         println!("- {meta:?}");
-//     }
+    for render_set in &visual.render_sets {
 
-//     // Decode the root node.
-//     let mut root_node = Node::default();
-//     read_node(root_node_elt, &mut root_node);
+        let vertices = primitive_reader
+            .read_section::<Vertices>(&render_set.geometry.vertices_section)
+            .unwrap().unwrap();
 
-//     let mut model = Model {
-//         root_node,
-//         render_sets: Vec::new(),
-//         bounding_box: BoundingBox::default(),
-//         geometry_size: 0,
-//         min_uv_density: 0.0,
-//     };
-    
-//     for raw in &root_elt.children {
-//         if let Some(elt) = raw.as_element() {
-//             match &elt.name[..] {
-//                 "renderSet" => {
-//                     read_render_set(elt, &mut model);
-//                 }
-//                 "boundingBox" => {
-//                     let min = elt.get_child("min").ok_or(ModelError::MalformedVisual)?;
-//                     let max = elt.get_child("max").ok_or(ModelError::MalformedVisual)?;
-//                     model.bounding_box.min = min.to_vec3().ok_or(ModelError::MalformedVisual)?;
-//                     model.bounding_box.max = max.to_vec3().ok_or(ModelError::MalformedVisual)?;
-//                 }
-//                 a => {
-//                     println!("unhandled root element: {a}")
-//                 }
-//             }
-//         }
-//     }
+        let indices = primitive_reader
+            .read_section::<Indices>(&render_set.geometry.indices_section)
+            .unwrap().unwrap();
 
-//     Ok(model)
+        render_sets_data.push(RenderSetData {
+            vertices: vertices.vertices,
+            primitives: indices.primitives,
+            groups: indices.groups,
+        });
 
-// }
+    }
+
+    Ok(Model {
+        visual, 
+        render_sets_data,
+    })
+
+}
+
+
+#[derive(Debug)]
+pub struct Model {
+    /// Description of the visual components of the model.
+    pub visual: Box<Visual>,
+    /// Decoded data for each render set.
+    pub render_sets_data: Vec<RenderSetData>,
+}
+
+#[derive(Debug)]
+pub struct RenderSetData {
+    /// All vertices for the model. To access correct vertices,
+    /// use correct method of the model to get access to them.
+    pub vertices: Vec<Vertex>,
+    /// Indices of the model, linking all vertices.
+    pub primitives: Vec<Primitive>,
+    /// Groups of indices.
+    pub groups: Vec<Group>,
+}
+
+impl Model {
+
+    /// Shortcut method to get a render set metadata together with its data.
+    pub fn get_render_set(&self, index: usize) -> (&RenderSet, &RenderSetData) {
+        (
+            &self.visual.render_sets[index],
+            &self.render_sets_data[index],
+        )
+    }
+
+}
+
+impl RenderSetData {
+
+    pub fn get_group(&self, index: usize) -> (&[Vertex], &[Primitive]) {
+        let group = &self.groups[index];
+        (
+            &self.vertices[group.vertices_offset as usize..][..group.vertices_count as usize],
+            &self.primitives[group.primitives_offset as usize..][..group.primitives_count as usize],
+        )
+    }
+
+}
 
 
 // /// Internal recursive function used to read single layer of node,

@@ -75,6 +75,17 @@ pub trait WgReadExt: Read {
             .map_err(|_| io::ErrorKind::InvalidData.into())
     }
 
+    /// Read a null-terminated string of a fixed length, trailing zeros
+    /// are ignored and if no zero is encountered, an invalid data error
+    /// is returned.
+    fn read_cstring_fixed(&mut self, len: usize) -> io::Result<String> {
+        let mut buf = self.read_buffer(len)?;
+        let pos = buf.iter().position(|&o| o == 0)
+            .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidData))?;
+        buf.truncate(pos); // Truncate trailing zeros.
+        String::from_utf8(buf).map_err(|_| io::ErrorKind::InvalidData.into())
+    }
+
     /// Read the size header for a single structure. To read the header of
     /// a vector, see `read_vector_head`.
     fn read_single_head(&mut self) -> io::Result<usize> {
