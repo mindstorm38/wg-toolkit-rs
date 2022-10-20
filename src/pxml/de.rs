@@ -91,7 +91,7 @@ fn read_element<R: Read>(reader: &mut R, element: &mut Element, dict: &[String])
     let mut offset = self_descriptor.end_offset;
 
     for child in children_descriptors {
-        let mut value = Value::Bool(false);
+        let mut value = Value::Boolean(false);
         read_data(&mut *reader, &mut value, &child.data, dict, offset)?;
         offset = child.data.end_offset;
         element.add_children(&dict[child.name_index], value);
@@ -113,8 +113,8 @@ fn read_data<R: Read>(reader: &mut R, value: &mut Value, desc: &DataDescriptor, 
         },
         DataType::String => *value = Value::String(read_string(reader, len)?),
         DataType::Integer => *value = Value::Integer(read_integer(reader, len)?),
-        DataType::Boolean => *value = Value::Bool(read_bool(reader, len)?),
-        DataType::Blob => *value = Value::Blob(reader.read_buffer(len)?),
+        DataType::Boolean => *value = Value::Boolean(read_bool(reader, len)?),
+        DataType::CompressedString => *value = Value::String(read_compressed_string(reader, len)?),
         DataType::Float => {
             let floats = read_vector(reader, len)?;
             match floats.len() {
@@ -136,6 +136,13 @@ fn read_string<R: Read>(reader: &mut R, len: usize) -> Result<String, DeError> {
     } else {
         reader.read_string(len as usize).map_err(Into::into)
     }
+}
+
+
+/// Internal function that reads a compressed string.
+fn read_compressed_string<R: Read>(reader: &mut R, len: usize) -> Result<String, DeError> {
+    let data = reader.read_buffer(len)?;
+    Ok(base64::encode(&data[..]))
 }
 
 
@@ -188,6 +195,7 @@ struct DataDescriptor {
     /// compute data length if start address is known.
     end_offset: u32,
 }
+
 
 /// Internal descriptor for children elements of an element.
 struct ChildDescriptor {

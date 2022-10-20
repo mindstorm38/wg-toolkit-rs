@@ -8,10 +8,10 @@
 use glam::{Vec3A, Affine3A};
 use smallvec::SmallVec;
 
-pub mod de;
-pub mod ser;
+mod de;
+mod ser;
 
-pub use de::{from_reader, from_bytes};
+pub use de::{from_reader, from_bytes, DeError};
 pub use ser::{to_writer};
 
 
@@ -25,11 +25,10 @@ pub enum Value {
     Element(Box<Element>),
     String(String),
     Integer(i64),
-    Bool(bool),
+    Boolean(bool),
     Float(f32),
     Vec3(Vec3A),
     Affine3(Affine3A),
-    Blob(Vec<u8>),
 }
 
 /// A packed element.
@@ -46,7 +45,7 @@ impl Element {
 
     pub fn new() -> Self {
         Self { 
-            value: Value::Bool(false), 
+            value: Value::Boolean(false), 
             children: SmallVec::new(),
         }
     }
@@ -65,6 +64,52 @@ impl Element {
 
 }
 
+impl Value {
+
+    /// Try to get this value as an element if possible.
+    #[inline]
+    pub fn as_element(&self) -> Option<&Element> {
+        if let Self::Element(elt) = self { Some(&**elt) } else { None }
+    }
+
+    /// Try to get this value as a string if possible.
+    #[inline]
+    pub fn as_string(&self) -> Option<&String> {
+        if let Self::String(s) = self { Some(s) } else { None }
+    }
+
+    /// Try to get this value as an integer if possible.
+    #[inline]
+    pub fn as_integer(&self) -> Option<i64> {
+        if let Self::Integer(n) = *self { Some(n) } else { None }
+    }
+
+    /// Try to get this value as a boolean is possible.
+    #[inline]
+    pub fn as_boolean(&self) -> Option<bool> {
+        if let Self::Boolean(b) = *self { Some(b) } else { None }
+    }
+
+    /// Try to get this value as a float is possible.
+    #[inline]
+    pub fn as_float(&self) -> Option<f32> {
+        if let Self::Float(n) = *self { Some(n) } else { None }
+    }
+
+    /// Try to get this value as a vec3 is possible.
+    #[inline]
+    pub fn as_vec3(&self) -> Option<Vec3A> {
+        if let Self::Vec3(n) = *self { Some(n) } else { None }
+    }
+
+    /// Try to get this value as an affine3 is possible.
+    #[inline]
+    pub fn as_affine3(&self) -> Option<Affine3A> {
+        if let Self::Affine3(n) = *self { Some(n) } else { None }
+    }
+
+}
+
 
 /// Internally used data types for values.
 #[derive(Debug, Clone, Copy)]
@@ -74,7 +119,13 @@ enum DataType {
     Integer = 2,
     Float = 3,
     Boolean = 4,
-    Blob = 5,
+    /// This special kind act like a compressed string.
+    /// This type is only used when the string to compress has a length
+    /// that is a multiple of 4 and composed of the base64 charset. In 
+    /// such case the string is base64-decoded, the resulting bytes
+    /// are used instead of the string. To get the original string
+    /// we need to encode the input.
+    CompressedString = 5,
 }
 
 impl DataType {
@@ -87,7 +138,7 @@ impl DataType {
             2 => Self::Integer,
             3 => Self::Float,
             4 => Self::Boolean,
-            5 => Self::Blob,
+            5 => Self::CompressedString,
             _ => return None
         })
     }
@@ -99,7 +150,7 @@ impl DataType {
             DataType::Integer => 2,
             DataType::Float => 3,
             DataType::Boolean => 4,
-            DataType::Blob => 5
+            DataType::CompressedString => 5
         }
     }
 

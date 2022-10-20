@@ -122,13 +122,18 @@ fn write_value<W: Write + Seek>(writer: &mut W, value: &Value, dict: &HashMap<&S
             write_element(writer, &*child_element, dict).map(|len| (DataType::Element, len))
         }
         Value::String(s) => {
-            writer.write_string(s)?;
-            Ok((DataType::String, s.len()))
+            // Here we check if the input can possibly be compressed.
+            if let Ok(compressed) = base64::decode(s.as_bytes()) {
+                writer.write_all(&compressed[..])?;
+                Ok((DataType::CompressedString, compressed.len()))
+            } else {
+                writer.write_string(s)?;
+                Ok((DataType::String, s.len()))
+            }
         }
         &Value::Integer(n) => {
-            // Zero is optimized out.
             let len = if n == 0 {
-                0
+                0 // Zero is optimized out.
             } else if let Ok(n) = i8::try_from(n) {
                 writer.write_i8(n)?; 1
             } else if let Ok(n) = i16::try_from(n) {
@@ -140,7 +145,7 @@ fn write_value<W: Write + Seek>(writer: &mut W, value: &Value, dict: &HashMap<&S
             };
             Ok((DataType::Integer, len))
         },
-        &Value::Bool(b) => {
+        &Value::Boolean(b) => {
             // Only write an octet if true.
             if b {
                 writer.write_u8(1)?;
@@ -161,10 +166,6 @@ fn write_value<W: Write + Seek>(writer: &mut W, value: &Value, dict: &HashMap<&S
             write_vec3(writer, &a.z_axis)?;
             write_vec3(writer, &a.w_axis)?;
             Ok((DataType::Float, 4 * 12))
-        }
-        Value::Blob(data) => {
-            writer.write_all(&data[..])?;
-            Ok((DataType::Blob, data.len()))
         }
     }
 
