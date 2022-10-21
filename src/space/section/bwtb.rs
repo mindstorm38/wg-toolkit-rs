@@ -2,7 +2,8 @@ use std::fmt::{self, Formatter};
 use std::collections::HashMap;
 use std::io::Read;
 
-use super::{SectionId, ReadSectionExt};
+use super::{SectionId};
+use crate::util::io::WgReadExt;
 
 
 /// Header section, defining all offsets for real sections. This section is a fake section

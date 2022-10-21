@@ -2,13 +2,12 @@
 
 use std::fmt::Write;
 
-mod cursor;
-pub use cursor::*;
-
-mod fnv;
-pub use fnv::*;
+pub mod cursor;
+pub mod fnv;
+pub mod io;
 
 
+/// Make a string from an escaped sequence of bytes.
 pub fn str_from_escaped(data: &[u8]) -> String {
     let str_vec = data.iter()
         .copied()
@@ -18,6 +17,9 @@ pub fn str_from_escaped(data: &[u8]) -> String {
 }
 
 
+/// Make a string from an hexadecimal representation of a
+/// sequence of bytes, and add '..' if the length is longer
+/// than given count.
 pub fn get_hex_str_from(data: &[u8], count: usize) -> String {
     let mut buf = String::new();
     for byte in data.iter().copied().take(count) {
