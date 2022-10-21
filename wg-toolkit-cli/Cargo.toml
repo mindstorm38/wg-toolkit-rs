@@ -1,0 +1,17 @@
+[package]
+name = "wg-toolkit-cli"
+version = "0.1.0"
+authors = ["Théo Rozier <contact@theorozier.fr>"]
+edition = "2021"
+license = "GPL-3.0"
+description = "A CLI providing utilities for various binary and text formats distributed by Wargaming.net, backed by 'wg-toolkit' crate."
+categories = ["games", "parsing", "data-structures", "command-line-utilities"]
+homepage = "https://github.com/mindstorm38/wg-toolkit-rs"
+repository = "https://github.com/mindstorm38/wg-toolkit-rs"
+
+[dependencies]
+wg-toolkit = { path = "../wg-toolkit" }
+
+[[bin]]
+name = "wgtk"
+path = "src/main.rs"
