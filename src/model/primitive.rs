@@ -9,6 +9,10 @@ use glam::{Vec3, Vec2};
 use crate::util::io::{WgReadExt};
 
 
+/// Magic of a primitives processed files.
+pub const MAGIC: &[u8; 4] = b"\x65\x4E\xA1\x42";
+
+
 /// Trait to implement for section codecs.
 pub trait Section: Sized {
 
@@ -16,24 +20,44 @@ pub trait Section: Sized {
     /// is seekable and its cursor will be located at the 
     /// beginning of the section. The length of the section
     /// is also given.
-    fn read<R: Read + Seek>(reader: R, len: usize) -> io::Result<Self>;
+    fn read<R: Read + Seek>(reader: R, len: usize) -> Result<Self, DeError>;
 
 }
 
 
 /// Primitive store reader utility.
 pub struct PrimitiveReader<R> {
-    pub inner: R,
+    inner: R,
     sections: HashMap<String, SectionMeta>,
+}
+
+impl<R> PrimitiveReader<R> {
+
+    /// Consume the primitive reader and 
+    #[inline]
+    pub fn into_inner(self) -> R {
+        self.inner
+    }
+
 }
 
 impl<R: Read + Seek> PrimitiveReader<R> {
 
     /// Open and decode a prititives file's header, the reader is
     /// kept open and date can be read.
-    pub fn open(mut inner: R) -> io::Result<Self> {
+    /// 
+    /// *The position of the reader is not important because it
+    /// will be forced to zero before reading. It works like that 
+    /// because the inner reader will be read in absolute
+    /// positionning.*
+    pub fn open(mut inner: R) -> Result<Self, DeError> {
 
         let mut sections = HashMap::new();
+
+        inner.rewind()?;
+        if !inner.check_exact(MAGIC)? {
+            return Err(DeError::InvalidMagic);
+        }
 
         inner.seek(SeekFrom::End(-4))?;
         let mut table_len = inner.read_u32()? as usize;
@@ -90,11 +114,11 @@ impl<R: Read + Seek> PrimitiveReader<R> {
     }
 
     /// Read the given section using the given section type.
-    pub fn read_section<S: Section>(&mut self, name: &str) -> Option<io::Result<S>> {
+    pub fn read_section<S: Section>(&mut self, name: &str) -> Option<Result<S, DeError>> {
         let &SectionMeta { off, len, .. } = self.get_section_meta(name)?;
         match self.inner.seek(SeekFrom::Start(off as u64)) {
             Ok(_) => Some(S::read(&mut self.inner, len)),
-            Err(e) => Some(Err(e))
+            Err(e) => Some(Err(e.into()))
         }
     }
 
@@ -118,7 +142,7 @@ pub struct Vertices {
 
 impl Section for Vertices {
 
-    fn read<R: Read + Seek>(mut reader: R, _len: usize) -> io::Result<Self> {
+    fn read<R: Read + Seek>(mut reader: R, _len: usize) -> Result<Self, DeError> {
         
         // Read the type of vertex. This type is a null-terminated string
         // of a fixed length of 64 octets.
@@ -164,7 +188,7 @@ impl Section for Vertices {
                 ty_tb = true;
             }
             "xyznuv" => {}
-            _ => {}
+            _ => return Err(DeError::InvalidType(ty_name))
         }
 
         // Read all vertices.
@@ -217,7 +241,7 @@ impl Section for Vertices {
             let uv = {
                 let u = reader.read_f32()?;
                 let v = reader.read_f32()?;
-                Vec2::new(u, v)
+                Vec2::new(u, 1.0 - v)
             };
 
             let mut index = [0; 3];
@@ -305,11 +329,15 @@ pub struct Indices {
 
 impl Section for Indices {
 
-    fn read<R: Read + Seek>(mut reader: R, _len: usize) -> io::Result<Self> {
+    fn read<R: Read + Seek>(mut reader: R, _len: usize) -> Result<Self, DeError> {
         
         // Get the type name and the indices' width.
         let ty_name = reader.read_cstring_fixed(64)?;
-        let ty_long = ty_name == "list32";
+        let ty_long = match &ty_name[..] {
+            "list" => false,
+            "list32" => true,
+            _ => return Err(DeError::InvalidType(ty_name))
+        };
 
         // Read number of vertices and groups.
         let vertices_count = reader.read_u32()? / 3;
@@ -369,4 +397,42 @@ pub struct Group {
     pub vertices_offset: u32,
     /// Number of vertices in the group.
     pub vertices_count: u32,
+}
+
+
+/// Deserialization errors that can happen while deserializing sections.
+#[derive(Debug)]
+pub enum DeError {
+    /// Invalid magic signature for the file.
+    InvalidMagic,
+    /// Any section's type begins with a type describing data layout for
+    /// the section. This error is returned if such type cannot be resolved.
+    InvalidType(String),
+    /// Unhandled underlying I/O error.
+    Io(io::Error),
+}
+
+impl fmt::Display for DeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match *self {
+            Self::InvalidMagic => write!(f, "invalid magic"),
+            Self::InvalidType(ref s) => write!(f, "invalid type '{s}'"),
+            Self::Io(ref err) => write!(f, "io error: {err}"),
+        }
+    }
+}
+
+impl std::error::Error for DeError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Io(err) => Some(err),
+            _ => None
+        }
+    }
+}
+
+impl From<io::Error> for DeError {
+    fn from(e: io::Error) -> Self {
+        Self::Io(e)
+    }
 }

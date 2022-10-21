@@ -2,6 +2,8 @@
 
 use std::io::{Read, Seek};
 
+use thiserror::Error;
+
 pub mod primitive;
 pub mod visual;
 
@@ -10,25 +12,32 @@ use self::primitive::{PrimitiveReader, Vertices, Indices, Vertex, Primitive, Gro
 
 
 /// Decode and resolve a compiled model.
-pub fn from_readers<Rv, Rp>(visual_reader: Rv, primitive_reader: Rp) -> Result<Model, ()>
+pub fn from_readers<Rv, Rp>(visual_reader: Rv, primitive_reader: Rp) -> Result<Model, DeError>
 where
     Rv: Read + Seek,
     Rp: Read + Seek,
 {
 
-    let visual = visual::from_reader(visual_reader).unwrap();
-    let mut primitive_reader = PrimitiveReader::open(primitive_reader).unwrap();
+    let visual = visual::from_reader(visual_reader)?;
+    let mut primitive_reader = PrimitiveReader::open(primitive_reader)?;
     let mut render_sets_data = Vec::new();
 
     for render_set in &visual.render_sets {
 
-        let vertices = primitive_reader
-            .read_section::<Vertices>(&render_set.geometry.vertices_section)
-            .unwrap().unwrap();
+        let vertices_section = &render_set.geometry.vertices_section;
+        let indices_section = &render_set.geometry.indices_section;
 
-        let indices = primitive_reader
-            .read_section::<Indices>(&render_set.geometry.indices_section)
-            .unwrap().unwrap();
+        let vertices = match primitive_reader.read_section::<Vertices>(vertices_section) {
+            Some(Ok(v)) => v,
+            Some(Err(e)) => return Err(DeError::SectionPrimitive(vertices_section.clone(), e)),
+            None => return Err(DeError::MissingVerticesSection(vertices_section.clone())),
+        };
+
+        let indices = match primitive_reader.read_section::<Indices>(indices_section) {
+            Some(Ok(v)) => v,
+            Some(Err(e)) => return Err(DeError::SectionPrimitive(indices_section.clone(), e)),
+            None => return Err(DeError::MissingIndicesSection(indices_section.clone())),
+        };
 
         render_sets_data.push(RenderSetData {
             vertices: vertices.vertices,
@@ -68,131 +77,41 @@ pub struct RenderSetData {
 impl Model {
 
     /// Shortcut method to get a render set metadata together with its data.
-    pub fn get_render_set(&self, index: usize) -> (&RenderSet, &RenderSetData) {
-        (
-            &self.visual.render_sets[index],
-            &self.render_sets_data[index],
-        )
+    pub fn get_render_set(&self, index: usize) -> Option<(&RenderSet, &RenderSetData)> {
+        Some((
+            self.visual.render_sets.get(index)?,
+            self.render_sets_data.get(index)?,
+        ))
     }
 
 }
 
 impl RenderSetData {
 
-    pub fn get_group(&self, index: usize) -> (&[Vertex], &[Primitive]) {
-        let group = &self.groups[index];
-        (
+    /// Get a specific primitive group. Only its vertices and primitives are
+    /// returned.
+    pub fn get_group(&self, index: usize) -> Option<(&[Vertex], &[Primitive])> {
+        let group = self.groups.get(index)?;
+        Some((
             &self.vertices[group.vertices_offset as usize..][..group.vertices_count as usize],
             &self.primitives[group.primitives_offset as usize..][..group.primitives_count as usize],
-        )
+        ))
     }
 
 }
 
 
-// /// Internal recursive function used to read single layer of node,
-// /// and recurse reading its children.
-// fn read_node(elt: &Element, node: &mut Node) {
-//     for raw in &elt.children {
-//         if let Some(elt) = raw.as_element() {
-//             match &elt.name[..] {
-//                 "identifier" => {
-//                     if let Some(text) = elt.get_text() {
-//                         node.identifier.replace_range(.., &*text);
-//                     }
-//                 }
-//                 "transform" => {
-//                     if let Some(transform) = elt.to_affine3() {
-//                         node.transform = transform;
-//                     }
-//                 }
-//                 "node" => {
-//                     node.children.push(Node::default());
-//                     read_node(elt, &mut node.children.last_mut().unwrap());
-//                 }
-//                 _ => {}
-//             }
-//         }
-//     }
-// }
-
-
-// fn read_render_set(elt: &Element, model: &mut Model) {
-    
-//     for node in &elt.children {
-//         if let Some(elt) = node.as_element() {
-//             match &elt.name[..] {
-//                 "geometry" => {
-//                     if let Some(text) = elt.get_text() {
-                        
-//                     }
-//                 }
-//                 _ => {}
-//             }
-//         }
-//     }
-
-// }
-
-
-// #[derive(Debug)]
-// pub struct RenderSet {
-//     pub node: String,
-//     pub geometry: Geometry,
-//     pub treat_as_world_space_object: bool,
-// }
-
-// #[derive(Debug)]
-// pub struct Geometry {
-//     pub vertices: String,
-//     pub primitive: String,
-// }
-
-// #[derive(Debug, Default)]
-// pub struct Node {
-//     pub identifier: String,
-//     pub transform: Affine3A,
-//     pub children: Vec<Node>,
-// }
-
-// #[derive(Debug, Default)]
-// pub struct BoundingBox {
-//     pub min: Vec3A,
-//     pub max: Vec3A,
-// }
-
-// #[derive(Debug)]
-// pub struct Model {
-//     pub render_sets: Vec<RenderSet>,
-//     pub root_node: Node,
-//     pub bounding_box: BoundingBox,
-//     pub geometry_size: usize,
-//     pub min_uv_density: f32,
-// }
-
-
-// /// Type alias for result with a generic ok type and an [`XmlError`] error type.
-// pub type ModelResult<T> = Result<T, ModelError>;
-
-// /// An error that can happen while reading a model.
-// #[derive(Debug)]
-// pub enum ModelError {
-//     /// The XML visual data is malformed. 
-//     MalformedVisual,
-//     /// Underlying unhandled XML error, usually reading visual.
-//     Pxml(PxmlDeError),
-//     /// Underlying unhandled IO error.
-//     Io(io::Error),
-// }
-
-// impl From<PxmlDeError> for ModelError {
-//     fn from(err: PxmlDeError) -> Self {
-//         Self::Pxml(err)
-//     }
-// }
-
-// impl From<io::Error> for ModelError {
-//     fn from(err: io::Error) -> Self {
-//         Self::Io(err)
-//     }
-// }
+/// Deserialization errors that can happen while read a whole compiled model.
+#[derive(Debug, Error)]
+pub enum DeError {
+    #[error("the vertices section '{0}' is missing")]
+    MissingVerticesSection(String),
+    #[error("the indices section '{0}' is missing")]
+    MissingIndicesSection(String),
+    #[error("primitive error in section '{0}': {1}")]
+    SectionPrimitive(String, primitive::DeError),
+    #[error("visual error: {0}")]
+    Visual(#[from] visual::DeError),
+    #[error("primitive error: {0}")]
+    Primitive(#[from] primitive::DeError),
+}

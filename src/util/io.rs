@@ -60,9 +60,17 @@ pub trait WgReadExt: Read {
         ReadBytesExt::read_f32::<LE>(self)
     }
 
+    /// Check that the next `N` bytes are the exact same as the on given.
+    #[inline]
+    fn check_exact<const N: usize>(&mut self, bytes: &[u8; N]) -> io::Result<bool> {
+        let mut buf = [0; N];
+        self.read_exact(&mut buf[..])?;
+        Ok(&buf == bytes)
+    }
+
     /// Directly read a raw buffer of the given length.
     #[inline]
-    fn read_buffer(&mut self, len: usize) -> io::Result<Vec<u8>> {
+    fn read_vec(&mut self, len: usize) -> io::Result<Vec<u8>> {
         // TODO: Maybe use a better uninit approach in the future.
         let mut buf = vec![0; len];
         self.read_exact(&mut buf[..])?;
@@ -71,7 +79,7 @@ pub trait WgReadExt: Read {
 
     #[inline]
     fn read_string(&mut self, len: usize) -> io::Result<String> {
-        String::from_utf8(self.read_buffer(len)?)
+        String::from_utf8(self.read_vec(len)?)
             .map_err(|_| io::ErrorKind::InvalidData.into())
     }
 
@@ -79,7 +87,7 @@ pub trait WgReadExt: Read {
     /// are ignored and if no zero is encountered, an invalid data error
     /// is returned.
     fn read_cstring_fixed(&mut self, len: usize) -> io::Result<String> {
-        let mut buf = self.read_buffer(len)?;
+        let mut buf = self.read_vec(len)?;
         let pos = buf.iter().position(|&o| o == 0)
             .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidData))?;
         buf.truncate(pos); // Truncate trailing zeros.

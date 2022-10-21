@@ -12,6 +12,10 @@ use crate::util::io::WgWriteExt;
 use super::{MAGIC, Element, Value, DataType};
 
 
+/// Write the given Packed XML element to the given seekable writer.
+/// 
+/// *The content will be written starting from the inital position
+/// of the writer.*
 pub fn to_writer<W: Write + Seek>(mut writer: W, element: &Element) -> io::Result<()> {
 
     let mut dict = HashMap::new();

@@ -5,15 +5,19 @@ use std::io::{Seek, Read};
 
 use glam::{Affine3A, Vec3A, Vec4};
 use smallvec::SmallVec;
+use thiserror::Error;
 
 use crate::pxml::{self, Value, Element};
 
 
-/// Try to read a visual processed file.
+/// Try to read a visual processed file from a seekable reader.
+/// 
+/// *The content will be read starting from the inital position
+/// of the writer.*
 pub fn from_reader<R: Read + Seek>(reader: R) -> Result<Box<Visual>, DeError> {
 
     let root_elt = pxml::from_reader(reader)?;
-    println!("{root_elt:#?}");
+    
     let root_node_value = root_elt.get_child("node").ok_or(DeError::MissingRootNode)?;
     let root_node_elt = root_node_value.as_element().ok_or(DeError::MissingRootNode)?;
     let root_node = read_node(root_node_elt).ok_or(DeError::InvalidNode)?;
@@ -253,26 +257,27 @@ pub enum MaterialProperty {
 }
 
 /// Errors that can happend while deserializing a visual processed data.
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum DeError {
     /// The root node is missing.
+    #[error("the root node is missing")]
     MissingRootNode,
     /// A node is malformed.
+    #[error("a node is missing either identifier or transform")]
     InvalidNode,
     /// A render set is malformed.
+    #[error("values are missing in a render set")]
     InvalidRenderSet,
     /// The bounding box is missing.
+    #[error("the bounding box is missing or invalid")]
     MissingBoundingBox,
     /// The geometry size if missing.
+    #[error("the geometry size is missing or invalid")]
     MissingGeometrySize,
     /// The U/V density is missing.
+    #[error("the uv density is missing or invalid")]
     MissingUvDensity,
     /// Underlying Packed XML deserialization error.
-    Pxml(pxml::DeError),
-}
-
-impl From<pxml::DeError> for DeError {
-    fn from(e: pxml::DeError) -> Self {
-        Self::Pxml(e)
-    }
+    #[error("pxml error: {0}")]
+    Pxml(#[from] pxml::DeError),
 }

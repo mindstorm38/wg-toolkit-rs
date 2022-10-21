@@ -1,23 +1,24 @@
 //! Deserialization module for Packed XML.
 
 use std::io::{self, Read, Seek, Cursor};
-use std::fmt;
 
 use glam::{Affine3A, Vec3A};
 use smallvec::SmallVec;
+use thiserror::Error;
 
 use crate::util::io::{WgReadExt, WgReadSeekExt};
 
 use super::{MAGIC, Element, Value, DataType};
 
 
-/// Read a packed XML file from an readable and seekable input.
+/// Read a packed XML data from an readable and seekable object.
+/// 
+/// *The content will be read starting from the inital position
+/// of the writer.*
 pub fn from_reader<R: Read + Seek>(mut reader: R) -> Result<Box<Element>, DeError> {
 
     // Validate file's magic
-    let mut buf = [0; 4];
-    reader.read_exact(&mut buf)?;
-    if &buf != MAGIC {
+    if !reader.check_exact(MAGIC)? {
         return Err(DeError::InvalidMagic);
     }
 
@@ -141,7 +142,7 @@ fn read_string<R: Read>(reader: &mut R, len: usize) -> Result<String, DeError> {
 
 /// Internal function that reads a compressed string.
 fn read_compressed_string<R: Read>(reader: &mut R, len: usize) -> Result<String, DeError> {
-    let data = reader.read_buffer(len)?;
+    let data = reader.read_vec(len)?;
     Ok(base64::encode(&data[..]))
 }
 
@@ -207,46 +208,24 @@ struct ChildDescriptor {
 
 
 /// Deserialization error that can happen while deserializing
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum DeError {
     /// Invalid magic signature for the file.
+    #[error("invalid magic")]
     InvalidMagic,
     /// Invalid data type while parsing.
+    #[error("invalid data type id {0}")]
     InvalidDataType(u32),
     /// Invalid data size for a number.
+    #[error("invalid data length of {0} bytes for a number")]
     InvalidIntegerLen(usize),
     /// Invalid data size for a boolean.
+    #[error("invalid data length of {0} bytes for a boolean")]
     InvalidBoolLen(usize),
     /// Invalid vector length, not a multiple a 4 bytes (f32).
+    #[error("invalid data length of {0} bytes for a vector")]
     InvalidVectorLen(usize),
     /// IO error will unpacking.
-    Io(io::Error),
-}
-
-impl fmt::Display for DeError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match *self {
-            DeError::InvalidMagic => write!(f, "invalid magic"),
-            DeError::InvalidDataType(n) => write!(f, "invalid data type id {n}"),
-            DeError::InvalidIntegerLen(n) => write!(f, "invalid data length of {n} bytes for a number"),
-            DeError::InvalidBoolLen(n) => write!(f, "invalid data length of {n} bytes for a boolean"),
-            DeError::InvalidVectorLen(n) => write!(f, "invalid data length of {n} bytes for a vector"),
-            DeError::Io(ref err) => write!(f, "io error: {err:?}"),
-        }
-    }
-}
-
-impl std::error::Error for DeError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            DeError::Io(err) => Some(err),
-            _ => None
-        }
-    }
-}
-
-impl From<io::Error> for DeError {
-    fn from(e: io::Error) -> Self {
-        Self::Io(e)
-    }
+    #[error("io error: {0}")]
+    Io(#[from] io::Error),
 }
