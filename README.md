@@ -3,13 +3,9 @@ Toolkit crate providing various implementations for codecs distributed by [Warga
 These codecs are part of the [Core](https://wotencore.net/) engine *(previously known as BigWorld)* notably used by 
 World of Tanks. This crate also provides an implementation of the network protocol.
 
-[![Crates.io](https://img.shields.io/crates/v/wg-toolkit?style=flat-square)](https://crates.io/crates/wg-toolkit)&nbsp;&nbsp;[![Crates.io](https://img.shields.io/crates/d/wg-toolkit?style=flat-square)](https://crates.io/crates/wg-toolkit)
-
-## Links
+## Library
 - [Crate page](https://crates.io/crates/wg-toolkit)
 - [Crate documentation](https://docs.rs/wg-toolkit)
-
-## Features
 - Packed XML codec
   - Deserialization
   - Serialization
@@ -29,10 +25,12 @@ World of Tanks. This crate also provides an implementation of the network protoc
   - Appending elements to bundles
   - Assemble received packet in bundles
   - Iterate elements in a bundle
+- ***PLANNED*** Game's resource file system (automatic opening of packages)
 
-## Upcomming features
-- Command line utility crate
-- Game's resource file system (automatic opening of packages)
+## CLI
+- Packed XML
+  - Deserialization and display
+  - Value editing (string, integer, boolean, float)
 
 ## Contributing guidelines
 When contributing to the code base, some rules should be followed:

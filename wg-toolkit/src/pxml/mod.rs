@@ -20,7 +20,7 @@ pub const MAGIC: &[u8; 4] = b"\x45\x4E\xA1\x62";
 
 
 /// A packed XML untyped value.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Value {
     Element(Box<Element>),
     String(String),
@@ -32,7 +32,7 @@ pub enum Value {
 }
 
 /// A packed element.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Element {
     /// Proper value of a element.
     pub value: Value,
@@ -50,6 +50,10 @@ impl Element {
         }
     }
 
+    pub fn iter_children_all(&self) -> impl Iterator<Item = &'_ (String, Value)> {
+        self.children.iter()
+    }
+
     pub fn add_children<S: Into<String>>(&mut self, key: S, value: Value) {
         self.children.push((key.into(), value));
     }
@@ -58,8 +62,16 @@ impl Element {
         self.children.iter().filter_map(move |(k, v)| (k == key).then_some(v))
     }
 
-    pub fn get_child<'a, 'b: 'a>(&'a self, key: &'b str) -> Option<&'a Value> {
-        self.iter_children(key).next()
+    pub fn iter_children_mut<'a, 'b: 'a>(&'a mut self, key: &'b str) -> impl Iterator<Item = &'a mut Value> + 'a {
+        self.children.iter_mut().filter_map(move |(k, v)| (k == key).then_some(v))
+    }
+
+    pub fn get_child<'a, 'b>(&'a self, key: &'b str) -> Option<&'a Value> {
+        self.children.iter().find_map(|(k, v)| (k == key).then_some(v))
+    }
+
+    pub fn get_child_mut<'a, 'b>(&'a mut self, key: &'b str) -> Option<&'a mut Value> {
+        self.children.iter_mut().find_map(|(k, v)| (k == key).then_some(v))
     }
 
 }

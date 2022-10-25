@@ -18,19 +18,18 @@ use super::{MAGIC, Element, Value, DataType};
 /// of the writer.*
 pub fn to_writer<W: Write + Seek>(mut writer: W, element: &Element) -> io::Result<()> {
 
-    let mut dict = HashMap::new();
-    let mut next_index = 0;
-    fill_dict_recursively(element, &mut dict, &mut next_index);
-
     // Write the magic number.
     writer.write_all(MAGIC)?;
     writer.write_u8(0)?;
 
-    // Write the dictionary, finished by an empty string.
-    for k in dict.keys() {
-        writer.write_cstring(k)?;
-    }
+    let mut dict = HashMap::new();
+    // Walk the entire tree to map each child name to a unique index,
+    // each new index is also written to the writer as a cstring.
+    write_and_fill_dict(&mut writer, element, &mut dict, &mut 0)?;
+    // Write a last empty cstring to mark the end.
     writer.write_cstring("")?;
+
+    println!("{dict:?}");
 
     // Finally write the root element.
     write_element(&mut writer, element, &dict).map(|_| ())
@@ -39,20 +38,23 @@ pub fn to_writer<W: Write + Seek>(mut writer: W, element: &Element) -> io::Resul
 
 
 /// Internal function to analyze and fill the node's name dictionary.
-fn fill_dict_recursively<'a>(element: &'a Element, dict: &mut HashMap<&'a String, u16>, next_index: &mut u16) {
+fn write_and_fill_dict<'a, W: Write + Seek>(writer: &mut W, element: &'a Element, dict: &mut HashMap<&'a String, u16>, next_index: &mut u16) -> io::Result<()> {
     
     for (k, v) in &element.children {
 
         if let Entry::Vacant(v) = dict.entry(k) {
+            writer.write_cstring(k)?;
             v.insert(*next_index);
             *next_index += 1;
         }
 
         if let Value::Element(child_element) = v {
-            fill_dict_recursively(&*child_element, &mut *dict, &mut *next_index);
+            write_and_fill_dict(&mut *writer, &*child_element, &mut *dict, &mut *next_index)?;
         }
 
     }
+
+    Ok(())
 
 }
 
