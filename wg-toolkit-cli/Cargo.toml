@@ -4,10 +4,12 @@ version = "0.1.0"
 authors = ["Théo Rozier <contact@theorozier.fr>"]
 edition = "2021"
 license = "MIT"
+license-file = "../LICENSE"
 description = "Command line utility for interacting with codecs distributed by Wargaming.net"
 categories = ["games", "parsing", "data-structures", "command-line-utilities"]
 homepage = "https://github.com/mindstorm38/wg-toolkit-rs"
 repository = "https://github.com/mindstorm38/wg-toolkit-rs"
+readme = "../README.md"
 
 [dependencies]
 wg-toolkit = { path = "../wg-toolkit", version = "0.2" }
