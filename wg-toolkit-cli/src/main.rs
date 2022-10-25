@@ -4,12 +4,14 @@
 //! $ wgtk pxml show <FILE> [-p <PATH>]
 //! $ wgtk pxml edit <FILE> <PATH> <VALUE>
 
+use std::process::ExitCode;
+
 use clap::{Command, arg, ArgMatches};
 
 mod pxml;
 
 
-fn main() {
+fn main() -> ExitCode {
 
     let matches = Command::new("wgtk")
         .version("0.1.0")
@@ -24,7 +26,7 @@ fn main() {
             .subcommand_required(true)
             .subcommand(Command::new("show")
                 .about("Show a deserialized view of a given Packed XML file")
-                .arg(arg!(-p --path <PATH> "Path to a specific value to show"))
+                .arg(arg!(path: -p --path <PATH> "Path to a specific value to show"))
                 .arg(arg!(file: <FILE> "The Packed XML file to show")))
             .subcommand(Command::new("edit")
                 .about("Edit a terminal value of a given Packed XML file")
@@ -33,20 +35,29 @@ fn main() {
                 .arg(arg!(value: <VALUE> "The new value"))))
         .get_matches();
 
-    match matches.subcommand() {
+    let res = match matches.subcommand() {
         Some(("pxml", matches)) => cmd_pxml(matches),
         _ => unreachable!()
+    };
+
+    if let Err(message) = res {
+        eprintln!("{message}");
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
     }
     
 }
 
 
-fn cmd_pxml(matches: &ArgMatches) {
+fn cmd_pxml(matches: &ArgMatches) -> CmdResult<()> {
 
     match matches.subcommand() {
         Some(("show", matches)) => pxml::cmd_pxml_show(matches),
         Some(("edit", matches)) => pxml::cmd_pxml_edit(matches),
-        _ => {}
+        _ => unreachable!()
     }
 
 }
+
+type CmdResult<T> = Result<T, String>;

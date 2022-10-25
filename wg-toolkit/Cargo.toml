@@ -1,6 +1,6 @@
 [package]
 name = "wg-toolkit"
-version = "0.1.2"
+version = "0.2.0"
 authors = ["Théo Rozier <contact@theorozier.fr>"]
 edition = "2021"
 license = "GPL-3.0"

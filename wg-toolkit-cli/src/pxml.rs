@@ -1,45 +1,115 @@
+use std::path::Path;
 use std::fs::File;
+use std::time::SystemTime;
 
 use clap::ArgMatches;
+
 use wgtk::pxml::{self, Element, Value};
 
+use super::CmdResult;
 
-pub fn cmd_pxml_show(matches: &ArgMatches) {
 
-    let element_path = matches.get_one::<String>("path");
+pub fn cmd_pxml_show(matches: &ArgMatches) -> CmdResult<()> {
 
     let file_path = matches.get_one::<String>("file").unwrap();
-    let file = File::open(file_path).unwrap();
-    let mut root_elt = pxml::from_reader(file).unwrap();
+    let mut root_elt = cmd_read_pxml_file(file_path)?;
 
-    if let Some(path) = element_path {
-        if !path.is_empty() {
-            match resolve_element_path(&mut root_elt, &path, 0) {
-                Ok(elt) => {
-                    print!("{path}:");
-                    print_value(elt, &mut "  ".to_string());
-                }
-                Err(PathResolveError::ChildNotFound { child, parent }) => {
-                    eprintln!("error: can't find '{child}' in '{parent}'");
-                }
-                Err(PathResolveError::TerminalValue { child, parent }) => {
-                    eprintln!("error: can't find '{child}' in '{parent}' because the later a terminal value");
-                }
-            }
-            return
+    if let Some(value_path) = matches.get_one::<String>("path") {
+        if !value_path.is_empty() {
+            let value = cmd_resolve_element_path(&mut root_elt, &value_path)?;
+            print!("/{value_path}:");
+            print_value(value, &mut "  ".to_string());
+            return Ok(())
         }
     }
 
     // Print the whole root element.
     print_element(&root_elt, &mut String::new());
+    Ok(())
 
 }
 
 
-pub fn cmd_pxml_edit(matches: &ArgMatches) {
+pub fn cmd_pxml_edit(matches: &ArgMatches) -> CmdResult<()> {
 
-    
+    let file_path = matches.get_one::<String>("file").unwrap();
+    let backup_file_path = format!("{file_path}.{}", SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs());
 
+    let value_path = matches.get_one::<String>("path").unwrap();
+    let value_raw = matches.get_one::<String>("value").unwrap();
+
+    let mut root_elt = cmd_read_pxml_file(file_path)?;
+    let value = cmd_resolve_element_path(&mut root_elt, &value_path)?;
+
+    print!("/{value_path} (current):");
+    print_value(value, &mut "  ".to_string());
+
+    match value {
+        Value::String(s) => s.replace_range(.., &value_raw),
+        Value::Integer(n) => {
+            *n = value_raw.parse::<i64>()
+                .map_err(|_| format!("Invalid integer."))?;
+        }
+        Value::Boolean(b) => {
+            *b = match &value_raw[..] {
+                "true" => true,
+                "false" => false,
+                _ => return Err(format!("Invalid boolean."))
+            };
+        }
+        Value::Float(n) => {
+            *n = value_raw.parse::<f32>()
+                .map_err(|_| format!("Invalid float."))?;
+        }
+        _ => return Err(format!("It is not possible to edit such values."))
+    }
+
+    print!("/{value_path}     (new):");
+    print_value(value, &mut "  ".to_string());
+
+    // Make a backup file.
+    std::fs::copy(file_path, backup_file_path)
+        .map_err(|e| format!("Failed to backup Packed XML file, because of: {e}"))?;
+
+    let file = File::create(file_path)
+        .map_err(|e| format!("Failed to create file at {file_path:?}, because of: {e}"))?;
+
+    pxml::to_writer(file, &root_elt)
+        .map_err(|e| format!("Failed to write Packed XML file at {file_path:?}, because of: {e}"))?;
+
+    Ok(())
+
+}
+
+
+fn cmd_read_pxml_file<P: AsRef<Path>>(path: P) -> CmdResult<Box<Element>> {
+
+    let path = path.as_ref();
+
+    let file = File::open(path)
+        .map_err(|e| format!("Failed to open file at {path:?}, because of: {e}"))?;
+
+    pxml::from_reader(file)
+        .map_err(|e| format!("Failed to read Packed XML file at {path:?}, because of: {e}"))
+
+}
+
+
+fn cmd_resolve_element_path<'a, 'b>(
+    element: &'a mut Element, 
+    path: &'b str
+) -> CmdResult<&'a mut Value> {
+    resolve_element_path(element, path, 0)
+        .map_err(|e| {
+            match e {
+                PathResolveError::ChildNotFound { child, parent } => {
+                    format!("Can't find '{child}' in '/{parent}'")
+                }
+                PathResolveError::TerminalValue { child, parent } => {
+                    format!("Can't find '{child}' in '/{parent}' because the later a terminal value")
+                }
+            }
+        })
 }
 
 
