@@ -6,7 +6,7 @@
 
 use std::process::ExitCode;
 
-use clap::{Command, arg, ArgMatches};
+use clap::{Command, ArgMatches, arg};
 
 mod pxml;
 
