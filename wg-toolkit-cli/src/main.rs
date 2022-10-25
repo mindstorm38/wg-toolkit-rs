@@ -6,7 +6,7 @@
 
 use std::process::ExitCode;
 
-use clap::{Command, ArgMatches, arg};
+use clap::{Command, ArgMatches, arg, crate_version, crate_authors, crate_description};
 
 mod pxml;
 
@@ -14,9 +14,9 @@ mod pxml;
 fn main() -> ExitCode {
 
     let matches = Command::new("wgtk")
-        .version("0.1.0")
-        .author("Théo Rozier <contact@theorozier.fr>")
-        .about("WG Toolkit is a command line utility for codecs distributed by Wargaming.net")
+        .version(crate_version!())
+        .author(crate_authors!())
+        .about(crate_description!())
         .disable_help_subcommand(true)
         .arg_required_else_help(true)
         .subcommand_required(true)
