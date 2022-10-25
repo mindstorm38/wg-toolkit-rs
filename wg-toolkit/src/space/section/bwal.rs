@@ -1,6 +1,7 @@
 use std::io::{Read, Seek};
 
-use super::{Section, SectionId, ReadSectionExt};
+use super::{Section, SectionId};
+use crate::util::io::WgReadExt;
 
 
 /// AssetList section, defines a list of assets for this space.

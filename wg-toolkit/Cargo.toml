@@ -1,0 +1,28 @@
+[package]
+name = "wg-toolkit"
+version = "0.2.0"
+authors = ["Théo Rozier <contact@theorozier.fr>"]
+edition = "2021"
+license = "MIT"
+description = "Toolkit for various binary and text formats distributed by Wargaming.net (BigWorld, Core engine)."
+categories = ["games", "parsing", "data-structures"]
+homepage = "https://github.com/mindstorm38/wg-toolkit-rs"
+repository = "https://github.com/mindstorm38/wg-toolkit-rs"
+
+[dependencies]
+byteorder = "1.4"
+glam = "0.21"
+smallvec = "1.10"
+base64 = "0.13"
+thiserror = "1.0"
+rsa = { version = "0.5", optional = true }
+rand = { version = "0.8", optional = true }
+sha1 = { version = "0.10", optional = true }
+mio = { version = "0.8", features = ["net", "os-poll"], optional = true }
+
+[features]
+default = []
+network = ["dep:mio", "dep:sha1", "dep:rand", "dep:rsa"]
+
+[lib]
+name = "wgtk"
