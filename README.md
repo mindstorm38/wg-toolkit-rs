@@ -28,6 +28,7 @@ World of Tanks. This crate also provides an implementation of the network protoc
 - ***PLANNED*** Game's resource file system (automatic opening of packages)
 
 ## CLI
+- [Crate page](https://crates.io/crates/wg-toolkit-cli)
 - Packed XML
   - Deserialization and display
   - Value editing (string, integer, boolean, float)
