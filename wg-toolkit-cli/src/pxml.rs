@@ -127,8 +127,22 @@ fn print_element(element: &Element, indent: &mut String) {
 fn print_value(value: &Value, indent: &mut String) {
     match value {
         Value::Element(element) => {
-            println!();
+
+            match &element.value {
+                Value::String(s) if s.is_empty() => {
+                    // If the value is an empty string, just do not print te value
+                    // and go next line before printing children.
+                    println!();
+                }
+                val => {
+                    indent.push_str("  ");
+                    print_value(val, indent);
+                    indent.truncate(indent.len() - 2);
+                }
+            }
+
             print_element(&element, indent);
+
         }
         Value::String(s) => println!(" {s:?}"),
         &Value::Integer(n) => println!(" {n}"),
