@@ -4,7 +4,6 @@ version = "0.3.0"
 authors = ["Théo Rozier <contact@theorozier.fr>"]
 edition = "2021"
 license = "MIT"
-license-file = "../LICENSE"
 description = "Toolkit for various binary and text formats distributed by Wargaming.net (BigWorld, Core engine)."
 categories = ["games", "parsing", "data-structures"]
 homepage = "https://github.com/mindstorm38/wg-toolkit-rs"
