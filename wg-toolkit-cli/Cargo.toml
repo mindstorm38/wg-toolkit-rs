@@ -1,6 +1,6 @@
 [package]
 name = "wg-toolkit-cli"
-version = "0.1.0"
+version = "0.3.0"
 authors = ["Théo Rozier <contact@theorozier.fr>"]
 edition = "2021"
 license = "MIT"
@@ -12,7 +12,7 @@ repository = "https://github.com/mindstorm38/wg-toolkit-rs"
 readme = "../README.md"
 
 [dependencies]
-wg-toolkit = { path = "../wg-toolkit", version = "0.2" }
+wg-toolkit = { path = "../wg-toolkit", version = "0.3.0" }
 clap = { version = "4.0", features = ["derive", "cargo"] }
 
 [[bin]]
