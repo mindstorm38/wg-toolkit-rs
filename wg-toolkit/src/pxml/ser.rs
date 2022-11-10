@@ -29,8 +29,6 @@ pub fn to_writer<W: Write + Seek>(mut writer: W, element: &Element) -> io::Resul
     // Write a last empty cstring to mark the end.
     writer.write_cstring("")?;
 
-    println!("{dict:?}");
-
     // Finally write the root element.
     write_element(&mut writer, element, &dict).map(|_| ())
 
@@ -129,13 +127,14 @@ fn write_value<W: Write + Seek>(writer: &mut W, value: &Value, dict: &HashMap<&S
         }
         Value::String(s) => {
             // Here we check if the input can possibly be compressed.
-            if let Ok(compressed) = base64::decode(s.as_bytes()) {
-                writer.write_all(&compressed[..])?;
-                Ok((DataType::CompressedString, compressed.len()))
-            } else {
-                writer.write_string(s)?;
-                Ok((DataType::String, s.len()))
+            if !s.is_empty() && s.len() % 4 == 0 {
+                if let Ok(compressed) = base64::decode(s.as_bytes()) {
+                    writer.write_all(&compressed[..])?;
+                    return Ok((DataType::CompressedString, compressed.len()))
+                }
             }
+            writer.write_string(s)?;
+            Ok((DataType::String, s.len()))
         }
         &Value::Integer(n) => {
             let len = if n == 0 {
