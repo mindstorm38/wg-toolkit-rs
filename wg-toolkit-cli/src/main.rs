@@ -9,6 +9,7 @@ use std::process::ExitCode;
 use clap::{Command, ArgMatches, arg, crate_version, crate_authors, crate_description};
 
 mod pxml;
+mod res;
 
 
 fn main() -> ExitCode {
@@ -33,10 +34,18 @@ fn main() -> ExitCode {
                 .arg(arg!(file: <FILE> "The Packed XML file to edit"))
                 .arg(arg!(path: <PATH> "The path to the terminal value to edit"))
                 .arg(arg!(value: <VALUE> "The new value"))))
+        .subcommand(Command::new("res")
+            .about("Resources flatten filesystem utilities")
+            .arg_required_else_help(true)
+            .subcommand_required(true)
+            .subcommand(Command::new("ls")
+                .about("List files in a given directory")
+                .arg(arg!(res: <RES> "Path to the game's res/ directory"))))
         .get_matches();
 
     let res = match matches.subcommand() {
         Some(("pxml", matches)) => cmd_pxml(matches),
+        Some(("res", matches)) => cmd_res(matches),
         _ => unreachable!()
     };
 
@@ -51,13 +60,18 @@ fn main() -> ExitCode {
 
 
 fn cmd_pxml(matches: &ArgMatches) -> CmdResult<()> {
-
     match matches.subcommand() {
         Some(("show", matches)) => pxml::cmd_pxml_show(matches),
         Some(("edit", matches)) => pxml::cmd_pxml_edit(matches),
         _ => unreachable!()
     }
+}
 
+fn cmd_res(matches: &ArgMatches) -> CmdResult<()> {
+    match matches.subcommand() {
+        Some(("ls", matches)) => res::cmd_res_ls(matches),
+        _ => unreachable!()
+    }
 }
 
 type CmdResult<T> = Result<T, String>;

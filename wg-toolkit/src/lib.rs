@@ -9,6 +9,8 @@
 pub mod util;
 pub mod pxml;
 
+pub mod res;
+
 pub mod space;
 pub mod model;
 

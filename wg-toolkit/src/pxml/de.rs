@@ -14,7 +14,7 @@ use super::{MAGIC, Element, Value, DataType};
 /// Read a packed XML data from an readable and seekable object.
 /// 
 /// *The content will be read starting from the inital position
-/// of the writer.*
+/// of the reader.*
 pub fn from_reader<R: Read + Seek>(mut reader: R) -> Result<Box<Element>, DeError> {
 
     // Validate file's magic
@@ -225,7 +225,7 @@ pub enum DeError {
     /// Invalid vector length, not a multiple a 4 bytes (f32).
     #[error("invalid data length of {0} bytes for a vector")]
     InvalidVectorLen(usize),
-    /// IO error will unpacking.
+    /// IO error while unpacking.
     #[error("io error: {0}")]
     Io(#[from] io::Error),
 }
