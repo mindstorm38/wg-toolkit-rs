@@ -106,47 +106,46 @@ impl ResFilesystem {
         }
 
         for entry in fs::read_dir(dir_path.join(PACKAGES_DIR_NAME))? {
-            if let Ok(entry) = entry {
-                if entry.file_type()?.is_file() {
-                    if let Some(package_name) = entry.file_name().to_str() {
-                        if package_name.ends_with(".pkg") {
+            let entry = entry?;
+            if entry.file_type()?.is_file() {
+                if let Some(package_name) = entry.file_name().to_str() {
+                    if package_name.ends_with(".pkg") {
+                        
+                        println!("========= {package_name} =========");
+
+                        let mut pkg = PackageMetaReader::new(File::open(entry.path())?).unwrap();
+
+                        'files_it: 
+                        while let Some(meta) = pkg.read_file_meta().unwrap() {
                             
-                            println!("========= {package_name} =========");
-
-                            let mut pkg = PackageMetaReader::new(File::open(entry.path())?).unwrap();
-
-                            'files_it: 
-                            while let Some(meta) = pkg.read_file_meta().unwrap() {
-                                
-                                let mut depth = 0;
-                                for ch in meta.file_name.chars().rev() {
-                                    if ch == '/' {
-                                        if depth >= options.index_max_depth {
-                                            // Do not index this directory.
-                                            continue 'files_it;
-                                        }
-                                        depth += 1;
-                                    } else if depth == 0 {
-                                        // If the first character from the end if not a slash,
-                                        // it's not a directory, so ignore the file.
+                            let mut depth = 0;
+                            for ch in meta.file_name.chars().rev() {
+                                if ch == '/' {
+                                    if depth >= options.index_max_depth {
+                                        // Do not index this directory.
                                         continue 'files_it;
                                     }
+                                    depth += 1;
+                                } else if depth == 0 {
+                                    // If the first character from the end if not a slash,
+                                    // it's not a directory, so ignore the file.
+                                    continue 'files_it;
                                 }
+                            }
 
-                                // Directory name without terminal slash.
-                                let dir_name = &meta.file_name[..meta.file_name.len() - 1];
-                                if let Some(locs) = dir_index.get_mut(dir_name) {
-                                    locs.in_packages.push(package_name.to_string());
-                                } else {
-                                    dir_index.insert(dir_name.to_string(), DirLocations { 
-                                        in_root: false, 
-                                        in_packages: vec![package_name.to_string()],
-                                    });
-                                }
-
+                            // Directory name without terminal slash.
+                            let dir_name = &meta.file_name[..meta.file_name.len() - 1];
+                            if let Some(locs) = dir_index.get_mut(dir_name) {
+                                locs.in_packages.push(package_name.to_string());
+                            } else {
+                                dir_index.insert(dir_name.to_string(), DirLocations { 
+                                    in_root: false, 
+                                    in_packages: vec![package_name.to_string()],
+                                });
                             }
 
                         }
+
                     }
                 }
             }
@@ -162,19 +161,28 @@ impl ResFilesystem {
 
     }
 
+    /// Read a directory given a path. This method will success if at least
+    /// one of the packages (or root) actually contains the directory. If
+    /// not, a [`ResError::DirectoryNotFound`].
     pub fn read_dir(&mut self, path: &str) -> ResResult<ResReadDir> {
 
-        // Directory paths must end with '/'.
-        let full_path = path.trim_matches('/').to_string();
-        let mut path = full_path.as_str();
+        // The canonicalized path needs to end with a slash, this save
+        // some computations and simplify further operations.
+        let mut canon_path = path.trim_start_matches('/').to_string();
+        if !canon_path.ends_with('/') { canon_path.push('/') }
+        // Redefine dir_path as immutable.
+        let canon_path = canon_path;
+
+        // Note that the directory index don't store the last '/'.
+        let mut index_path = &canon_path.as_str()[..canon_path.len() - 1];
         
         loop {
 
-            if let Some(locs) = self.dir_index.get(path) {
+            if let Some(locs) = self.dir_index.get(index_path) {
 
                 let mut root_read_dir = None;
                 if locs.in_root {
-                    let file_path = self.dir_path.join(&full_path);
+                    let file_path = self.dir_path.join(&canon_path);
                     if file_path.is_dir() {
                         root_read_dir = Some(fs::read_dir(file_path)?);
                     }
@@ -182,30 +190,37 @@ impl ResFilesystem {
 
                 let mut packages = Vec::new();
                 for package in locs.in_packages.iter().rev() {
+                    // Get the opened package and check if it contains the directory.
                     let pkg = self.package_cache.ensure(package, &self.dir_path)?;
-                    packages.push(Arc::clone(&pkg));
+                    if let Some(dir_index) = pkg.index_from_name(&canon_path) {
+                        // The next file index is directly set to the file following the directory.
+                        packages.push((Arc::clone(&pkg), dir_index + 1));
+                    }
                 }
 
-                return Ok(ResReadDir {
-                    dir_path: full_path,
-                    root_read_dir,
-                    packages,
-                    package_next_file_index: 0,
-                })
+                if root_read_dir.is_none() && packages.is_empty() {
+                    return Err(ResError::DirectoryNotFound);
+                } else {
+                    return Ok(ResReadDir {
+                        dir_path: canon_path,
+                        root_read_dir,
+                        packages,
+                    })
+                }
 
             }
 
             // If we are already on the root directory but it isn't indexed.
-            if path.is_empty() {
+            if index_path.is_empty() {
                 return Err(ResError::DirectoryNotFound);
             }
 
             // If the current directory's path is not indexed,
             // check for its parent. Once we reached 
-            if let Some(pos) = path.rfind('/') {
-                path = &path[..pos];
+            if let Some(pos) = index_path.rfind('/') {
+                index_path = &index_path[..pos];
             } else {
-                path = "";
+                index_path = "";
             }
 
         }
@@ -289,16 +304,20 @@ enum ResFileKind {
 
 /// Iterator for a directory in resources.
 pub struct ResReadDir {
-    /// The full path to search for, in packages. Should not end
-    /// with a slash.
+    /// The full path to search for, in packages. 
+    /// **End with a slash.**
     dir_path: String,
+    /// When some, this std IO [`ReadDir`] should be consumed
+    /// before fetching packages.
     root_read_dir: Option<ReadDir>,
     /// Packages to fetch, in reverse order, the last one is the
-    /// current package being read.
-    packages: Vec<Arc<PackageReader<File>>>,
-    /// Next file index to read on the current package (see 
-    /// `packages`).
-    package_next_file_index: usize,
+    /// current package being read. Packages are associated to
+    /// the file index currently being read.
+    /// 
+    /// Because packages' files are ordered by directories, if 
+    /// the file index no longer points to a file of the dir,
+    /// this means that we finished reading the dir.
+    packages: Vec<(Arc<PackageReader<File>>, usize)>,
 }
 
 /// A directory entry returned from the [`ResReadDir`] iterator.
@@ -314,6 +333,8 @@ impl Iterator for ResReadDir {
 
     fn next(&mut self) -> Option<Self::Item> {
 
+        // FIXME: Remove duplicates from iteration.
+
         /// Internal function used to convert an std IO [`DirEntry`] result
         /// into a [`ResDirEntry`] result used by this iterator.
         fn convert_entry(entry: io::Result<DirEntry>, full_path: &str) -> ResResult<ResDirEntry> {
@@ -325,7 +346,7 @@ impl Iterator for ResReadDir {
                 .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "non-utf8 filename"))?;
 
             Ok(ResDirEntry { 
-                path: format!("{full_path}/{file_name}"),
+                path: format!("{full_path}{file_name}"),
                 dir: file_type.is_dir()
             })
 
@@ -348,19 +369,20 @@ impl Iterator for ResReadDir {
         // no more package is available, this is the end of the iterator.
         loop {
 
-            // Full length of the directory, + length of slash '/'.
-            let dir_path_len = self.dir_path.len() + 1;
+            if let Some((
+                current_package, 
+                file_index
+            )) = self.packages.last_mut() {
 
-            if let Some(current_package) = self.packages.last() {
-                while let Some(meta) = current_package.files().get(self.package_next_file_index) {
+                while let Some(meta) = current_package.files().get(*file_index) {
 
-                    self.package_next_file_index += 1;
+                    *file_index += 1;
 
                     // We only take the file if it starts with our full path.
-                    if meta.file_name.len() > dir_path_len && meta.file_name.starts_with(&self.dir_path[..]) {
+                    if meta.file_name.starts_with(&self.dir_path[..]) {
 
                         // Get the sub path after the common the directory path.
-                        let sub_path = &meta.file_name[dir_path_len..];
+                        let sub_path = &meta.file_name[self.dir_path.len()..];
                         // Test if this is a file directly contained by the directory.
                         let sub_direct = match sub_path.find('/') {
                             Some(pos) => pos == sub_path.len() - 1, // Directory
@@ -377,17 +399,23 @@ impl Iterator for ResReadDir {
                             }))
                         }
                         
+                    } else {
+                        // If the current file don't start with the directory path,
+                        // we reached the end of the directory.
+                        break;
                     }
 
                 }
+
+                // If we leave the previous loop without returning, this means that 
+                // the current package is exhausted, so we pop it.
+                if self.packages.pop().is_none() {
+                    return None; // Iterator end!
+                }
+
             } else {
-                // No package remaining to read, 
+                // No package remaining to read.
                 return None;
-            }
-            
-            match self.packages.pop() {
-                Some(_) => self.package_next_file_index = 0,
-                None => return None // Iterator end!
             }
 
         }
