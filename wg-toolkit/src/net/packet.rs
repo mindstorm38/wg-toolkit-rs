@@ -1,8 +1,9 @@
 //! Packet structure definition with synchronization methods.
 
 use std::fmt::{Debug, Formatter};
-use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 use std::io::{Cursor, Read};
+
+use byteorder::{ReadBytesExt, WriteBytesExt, LE};
 
 use super::PacketFlags;
 
@@ -24,6 +25,10 @@ pub const PACKET_MAX_BODY_LEN: usize =
     PACKET_PREFIX_LEN;
 
 
+/// Represent a raw packet with data, length and other properties.
+/// Note that a packet doesn't mean anything outside of a bundle.
+/// 
+/// *A packet must be boxed because of its size.*
 pub struct Packet {
     /// Raw data of the packet, header and footer data is not valid until
     /// finalization of the packet. This first 4 bytes are always reserved for
@@ -36,8 +41,6 @@ pub struct Packet {
     /// Some optional prefix in the first 4 bytes in `data`, if none the first 4
     /// bytes are unused.
     prefix: Option<u32>,
-    // /// If the data contains a 4-bytes prefix.
-    // has_prefix: bool,
     /// Offset of the footer when the packet is finalized or loaded.
     footer_offset: usize,
     /// The first request's offset in the packet. Zero if no request in the packet.
@@ -50,6 +53,8 @@ pub struct Packet {
     seq_last: u32,
     /// Sequence number of the owning packet.
     seq: u32,
+    /// Optional ack number for off-channel acking.
+    ack: u32,
     /// Enable or disable checksum.
     has_checksum: bool,
 }
@@ -66,6 +71,7 @@ impl Packet {
             seq_first: 0,
             seq_last: 0,
             seq: 0,
+            ack: 0,
             has_checksum: false,
         }
     }
@@ -131,20 +137,6 @@ impl Packet {
     pub fn get_footer_offset(&self) -> usize {
         self.footer_offset
     }
-
-    /*/// Returns the offset in data to the flags, varying between 0
-    /// and `PACKET_PREFIX_LEN` if the packet has prefix.
-    #[inline]
-    pub fn get_flags_offset(&self) -> usize {
-        // if self.has_prefix { PACKET_PREFIX_LEN } else { 0 }
-        PACKET_PREFIX_LEN
-    }
-
-    /// Returns the offset in data to the body (just after flags).
-    #[inline]
-    pub fn get_body_offset(&self) -> usize {
-        self.get_flags_offset() + PACKET_FLAGS_LEN
-    }*/
 
     // Raw data
 
@@ -260,6 +252,8 @@ impl Packet {
         self.seq = seq;
     }
 
+    /// Return the sequence/fragment number ranges and the number of this packet 
+    /// in this range: `(first, last, this)`. 
     pub fn get_seq(&self) -> (u32, u32, u32) {
         (self.seq_first, self.seq_last, self.seq)
     }
@@ -279,7 +273,7 @@ impl Packet {
     fn calc_checksum<R: Read>(reader: &mut R, mut len: u64) -> u32 {
         let mut checksum = 0;
         while len >= 4 {
-            checksum ^= reader.read_u32::<LittleEndian>().unwrap();
+            checksum ^= reader.read_u32::<LE>().unwrap();
             len -= 4;
         }
         checksum
@@ -304,7 +298,7 @@ impl Packet {
 
         // Immediately write the prefix if needed.
         if let Some(prefix) = self.prefix {
-            cursor.write_u32::<LittleEndian>(prefix).unwrap();
+            cursor.write_u32::<LE>(prefix).unwrap();
         }
 
         // Go to the end of the packet.
@@ -315,20 +309,23 @@ impl Packet {
         if has_seq {
             flags |= PacketFlags::IS_FRAGMENT;
             flags |= PacketFlags::HAS_SEQUENCE_NUMBER;
-            cursor.write_u32::<LittleEndian>(self.seq_first).unwrap();
-            cursor.write_u32::<LittleEndian>(self.seq_last).unwrap();
+            cursor.write_u32::<LE>(self.seq_first).unwrap();
+            cursor.write_u32::<LE>(self.seq_last).unwrap();
         }
 
         if self.request_first_offset != 0 {
             flags |= PacketFlags::HAS_REQUESTS;
-            cursor.write_u16::<LittleEndian>(self.request_first_offset as u16).unwrap();
+            cursor.write_u16::<LE>(self.request_first_offset as u16).unwrap();
         }
 
         if has_seq {
-            cursor.write_u32::<LittleEndian>(self.seq).unwrap();
+            cursor.write_u32::<LE>(self.seq).unwrap();
         }
 
-        // TODO: Acks
+        if self.ack != 0 {
+            flags |= PacketFlags::HAS_ACKS;
+            cursor.write_u32::<LE>(self.ack).unwrap();
+        }
 
         // Set the length, just before the checksum if enabled.
         self.len = cursor.position() as usize - PACKET_PREFIX_LEN;
@@ -337,18 +334,16 @@ impl Packet {
             flags |= PacketFlags::HAS_CHECKSUM;
         }
 
-        // let prefix_len = if self.has_prefix { PACKET_PREFIX_LEN as u64 } else { 0 };
-
         // Finally, write flags.
         cursor.set_position(PACKET_PREFIX_LEN as u64);
-        cursor.write_u16::<LittleEndian>(flags).unwrap();
+        cursor.write_u16::<LE>(flags).unwrap();
 
         // Calculate checksum and write it if enabled.
         // Placed here to take flags into checksum.
         if self.has_checksum {
             cursor.set_position(PACKET_PREFIX_LEN as u64);
             let checksum = Self::calc_checksum(&mut cursor, self.len as u64);
-            cursor.write_u32::<LittleEndian>(checksum).unwrap();
+            cursor.write_u32::<LE>(checksum).unwrap();
             self.len += 4;
         }
 
@@ -359,7 +354,7 @@ impl Packet {
     /// If this packet has prefix, the length given to this method must count additional 4.
     ///
     /// *If this function returns an error, the integrity of the internal state is not guaranteed.*
-    pub fn sync_state(&mut self, len: usize/*, has_prefix: bool*/) -> Result<(), PacketSyncError> {
+    pub fn sync_state(&mut self, len: usize) -> Result<(), PacketSyncError> {
 
         // Fix length if it contains a 4-bytes prefix.
         let real_len = len - if self.has_prefix() { PACKET_PREFIX_LEN } else { 0 };
@@ -368,12 +363,12 @@ impl Packet {
 
         // If we have a prefix, read it, if not just seek after it.
         if let Some(ref mut prefix) = self.prefix {
-            *prefix = cursor.read_u32::<LittleEndian>().unwrap();
+            *prefix = cursor.read_u32::<LE>().unwrap();
         } else {
             cursor.set_position(PACKET_PREFIX_LEN as u64);
         }
 
-        let flags = cursor.read_u16::<LittleEndian>().unwrap();
+        let flags = cursor.read_u16::<LE>().unwrap();
 
         const KNOWN_FLAGS: u16 =
             PacketFlags::HAS_CHECKSUM |
@@ -388,6 +383,7 @@ impl Packet {
         self.has_checksum = flags & PacketFlags::HAS_CHECKSUM != 0;
         let has_seq = flags & PacketFlags::HAS_SEQUENCE_NUMBER != 0;
         let has_requests = flags & PacketFlags::HAS_REQUESTS != 0;
+        let has_ack = flags & PacketFlags::HAS_ACKS != 0;
 
         if has_seq && flags & PacketFlags::IS_FRAGMENT == 0 {
             return Err(PacketSyncError::MissingFragmentFlag);
@@ -396,7 +392,8 @@ impl Packet {
         let footer_len =
             if self.has_checksum { 4 } else { 0 } +
             if has_seq { 12 } else { 0 } +
-            if has_requests { 2 } else { 0 };
+            if has_requests { 2 } else { 0 } +
+            if has_ack { 4 } else { 0 };
 
         if real_len < footer_len + PACKET_FLAGS_LEN {
             return Err(PacketSyncError::TooShort);
@@ -409,28 +406,32 @@ impl Packet {
         cursor.set_position((PACKET_PREFIX_LEN + self.footer_offset) as u64);
 
         if has_seq {
-            self.seq_first = cursor.read_u32::<LittleEndian>().unwrap();
-            self.seq_last = cursor.read_u32::<LittleEndian>().unwrap();
+            self.seq_first = cursor.read_u32::<LE>().unwrap();
+            self.seq_last = cursor.read_u32::<LE>().unwrap();
         } else {
             self.seq_last = 0;  // Clear sequence number.
         }
 
         // self.request_previous_link_offset = 0;
         if has_requests {
-            self.request_first_offset = cursor.read_u16::<LittleEndian>().unwrap() as usize;
+            self.request_first_offset = cursor.read_u16::<LE>().unwrap() as usize;
         } else {
             self.request_first_offset = 0;  // Clear requests.
         }
 
         if has_seq {
-            self.seq = cursor.read_u32::<LittleEndian>().unwrap();
+            self.seq = cursor.read_u32::<LE>().unwrap();
         }
 
-        // TODO: Acks
+        if has_ack {
+            self.ack = cursor.read_u32::<LE>().unwrap();
+        } else {
+            self.ack = 0;
+        }
 
         if self.has_checksum {
             let pos = cursor.position();
-            let checksum = cursor.read_u32::<LittleEndian>().unwrap();
+            let checksum = cursor.read_u32::<LE>().unwrap();
             cursor.set_position(PACKET_PREFIX_LEN as u64);
             let real_checksum = Self::calc_checksum(&mut cursor, pos);
             if checksum != real_checksum {

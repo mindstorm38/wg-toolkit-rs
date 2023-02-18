@@ -6,6 +6,7 @@ pub mod bundle;
 // pub mod interface;
 pub mod proxy;
 pub mod filter;
+pub mod cuckoo;
 
 
 /// Packet's flags.
@@ -24,4 +25,13 @@ impl PacketFlags {
     const HAS_CHECKSUM: u16        = 0x0100;
     const CREATE_CHANNEL: u16      = 0x0200;
     const HAS_CUMULATIVE_ACK: u16  = 0x0400;
+}
+
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReliableType {
+    None = 0,
+    Driver = 1,
+    Passenger = 2,
+    Critical = 3,
 }

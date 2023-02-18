@@ -1,13 +1,16 @@
 //! Definitions for elements contained in bundles (and so in packets).
 
 use std::io::{self, Read, Seek, Write};
+use std::net::{SocketAddrV4, Ipv4Addr};
 
-use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
+use byteorder::{ReadBytesExt, WriteBytesExt, LE};
 
 pub mod login;
 pub mod reply;
 
 
+/// A codec trait to be implemented on structures that acts as codec for a given
+/// element type.
 pub trait ElementCodec {
 
     /// Length codec used for this element.
@@ -28,7 +31,7 @@ pub trait ElementCodec {
 /// This describes how the length of an element should be encoded in the packet.
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum ElementLength {
-    /// The size of the element is fixed, and every writen element must be of this size.
+    /// The size of the element is fixed, and every written element must be of this size.
     Fixed(u32),
     /// The size of the element is variable, and is encoded on 8 bits.
     Variable8,
@@ -47,9 +50,9 @@ impl ElementLength {
         match self {
             Self::Fixed(len) => Ok(*len),
             Self::Variable8 => reader.read_u8().map(|n| n as u32),
-            Self::Variable16 => reader.read_u16::<LittleEndian>().map(|n| n as u32),
-            Self::Variable24 => reader.read_u24::<LittleEndian>(),
-            Self::Variable32 => reader.read_u32::<LittleEndian>(),
+            Self::Variable16 => reader.read_u16::<LE>().map(|n| n as u32),
+            Self::Variable24 => reader.read_u24::<LE>(),
+            Self::Variable32 => reader.read_u32::<LE>(),
         }
     }
 
@@ -58,9 +61,9 @@ impl ElementLength {
         match self {
             Self::Fixed(fixed_len) => { assert_eq!(*fixed_len, len); Ok(()) },
             Self::Variable8 => writer.write_u8(len as u8),
-            Self::Variable16 => writer.write_u16::<LittleEndian>(len as u16),
-            Self::Variable24 => writer.write_u24::<LittleEndian>(len),
-            Self::Variable32 => writer.write_u32::<LittleEndian>(len),
+            Self::Variable16 => writer.write_u16::<LE>(len as u16),
+            Self::Variable24 => writer.write_u24::<LE>(len),
+            Self::Variable32 => writer.write_u32::<LE>(len),
         }
     }
 
@@ -84,7 +87,7 @@ pub trait ElementReadExt: Read {
     /// Read a packed 32-bits integer.
     fn read_packed_u32(&mut self) -> io::Result<u32> {
         match self.read_u8()? {
-            255 => self.read_u24::<LittleEndian>(),
+            255 => self.read_u24::<LE>(),
             n => Ok(n as u32)
         }
     }
@@ -104,6 +107,13 @@ pub trait ElementReadExt: Read {
         }
     }
 
+    fn read_sock_addr_v4(&mut self) -> io::Result<SocketAddrV4> {
+        let ip = self.read_u32::<LE>()?;
+        let port = self.read_u16::<LE>()?;
+        let _salt = self.read_u16::<LE>()?;
+        Ok(SocketAddrV4::new(Ipv4Addr::from(u32::to_be_bytes(ip)), port))
+    }
+
 }
 
 
@@ -114,7 +124,7 @@ pub trait ElementWriteExt: Write {
     fn write_packed_u32(&mut self, n: u32) -> io::Result<()> {
         if n >= 255 {
             self.write_u8(255)?;
-            self.write_u24::<LittleEndian>(n)
+            self.write_u24::<LE>(n)
         } else {
             self.write_u8(n as u8)
         }
@@ -129,6 +139,12 @@ pub trait ElementWriteExt: Write {
     /// Write a string with its packed length before.
     fn write_rich_string(&mut self, s: &str) -> io::Result<()> {
         self.write_rich_blob(s.as_bytes())
+    }
+    fn write_sock_addr_v4(&mut self, addr: SocketAddrV4) -> io::Result<()> {
+        self.write_u32::<LE>(u32::from_be_bytes(addr.ip().octets()))?;
+        self.write_u16::<LE>(addr.port())?;
+        self.write_u16::<LE>(0)?; // Salt
+        Ok(())
     }
 
 }

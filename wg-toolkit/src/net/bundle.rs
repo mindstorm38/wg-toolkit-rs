@@ -12,7 +12,7 @@ use super::packet::{Packet, PACKET_MAX_BODY_LEN, PACKET_FLAGS_LEN};
 use super::element::reply::{ReplyHeaderCodec, ReplyCodec, Reply, REPLY_ID};
 use super::element::ElementCodec;
 
-use crate::util::SubCursor;
+use crate::util::cursor::SubCursor;
 
 
 pub const BUNDLE_FRAGMENT_MAX_AGE: Duration = Duration::from_secs(10);
@@ -309,7 +309,7 @@ impl<'a> BundleReader<'a> {
         self.pos
     }
 
-    /// Internal function to discord all head packets until there is one
+    /// Internal function to discard all head packets until there is one
     /// with a non-empty body.
     fn discard_packets_until_non_empty(&mut self) {
         let mut packets = self.packets;
@@ -655,7 +655,7 @@ impl SimpleElementReader<'_, '_> {
     /// Read the element using the given codec. This method take self by value and automatically
     /// go the next element if read is successful, if not successful you will need to call
     /// `Bundle::next_element` again.
-    pub fn read<E: ElementCodec>(mut self, codec: &E) -> Result<Element<E::Element>, ReadElementError> {
+    pub fn read<E: ElementCodec>(self, codec: &E) -> Result<Element<E::Element>, ReadElementError> {
         self.0.read_element(codec, true)
     }
 
@@ -680,7 +680,7 @@ impl<'reader, 'bundle> ReplyElementReader<'reader, 'bundle> {
     /// will need to call `Bundle::next_element` again.
     ///
     /// This method doesn't returns the reply element but the final element.
-    pub fn read<E: ElementCodec>(mut self, codec: &E) -> Result<Element<E::Element>, ReadElementError> {
+    pub fn read<E: ElementCodec>(self, codec: &E) -> Result<Element<E::Element>, ReadElementError> {
         self.0.read_element(&ReplyCodec::new(codec), true).map(Into::into)
     }
 

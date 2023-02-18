@@ -3,8 +3,8 @@
 use std::fmt::Write;
 
 pub mod cursor;
-pub mod fnv;
 pub mod io;
+pub mod fnv;
 
 
 /// Make a string from an escaped sequence of bytes.
