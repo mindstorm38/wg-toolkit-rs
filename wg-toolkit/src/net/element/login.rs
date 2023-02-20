@@ -272,6 +272,26 @@ impl ElementCodec for LoginResponseCodec {
 }
 
 
+/// Internal function for encoding login success. It is extracted here
+/// in order to be usable with optional encryption.
+fn encode_login_success<W: Write>(mut write: W, success: &LoginSuccess) -> io::Result<()> {
+    write.write_sock_addr_v4(success.addr)?;
+    write.write_u32::<LE>(success.session_key)?;
+    write.write_rich_string(&success.server_message)?;
+    Ok(())
+}
+
+/// Internal function for decoding login success. It is extracted here
+/// in order to be usable with optional encryption.
+fn decode_login_success<R: Read>(mut read: R) -> io::Result<LoginSuccess> {
+    Ok(LoginSuccess { 
+        addr: read.read_sock_addr_v4()?, 
+        session_key: read.read_u32::<LE>()?, 
+        server_message: read.read_rich_string()?,
+    })
+}
+
+
 pub struct ChallengeResponseCodec; // ID 3
 
 impl ChallengeResponseCodec {
@@ -293,24 +313,4 @@ impl ElementCodec for ChallengeResponseCodec {
         todo!()
     }
     
-}
-
-
-/// Internal function for encoding login success. It is extracted here
-/// in order to be usable with optional encryption.
-fn encode_login_success<W: Write>(mut write: W, success: &LoginSuccess) -> io::Result<()> {
-    write.write_sock_addr_v4(success.addr)?;
-    write.write_u32::<LE>(success.session_key)?;
-    write.write_rich_string(&success.server_message)?;
-    Ok(())
-}
-
-/// Internal function for decoding login success. It is extracted here
-/// in order to be usable with optional encryption.
-fn decode_login_success<R: Read>(mut read: R) -> io::Result<LoginSuccess> {
-    Ok(LoginSuccess { 
-        addr: read.read_sock_addr_v4()?, 
-        session_key: read.read_u32::<LE>()?, 
-        server_message: read.read_rich_string()?,
-    })
 }
