@@ -15,10 +15,12 @@ use super::element::ElementCodec;
 use crate::util::cursor::SubCursor;
 
 
-pub const BUNDLE_FRAGMENT_MAX_AGE: Duration = Duration::from_secs(10);
+/// The default timeout duration for bundle fragments before being forgotten.
+pub const BUNDLE_FRAGMENT_TIMEOUT: Duration = Duration::from_secs(10);
 
 
 /// A elements bundle, used to pack elements and encode them.
+#[derive(Debug)]
 pub struct Bundle {
     /// Chain of packets.
     packets: Vec<Box<Packet>>,
@@ -33,9 +35,6 @@ pub struct Bundle {
     has_prefix: bool,
     /// Offset of the link of the last request, `0` if not request yet.
     last_request_header_offset: usize,
-    // /// Offsets to all requests' headers in this bundle, it's used to add replay IDs.
-    // /// Each tuple in the vec are of the form `(packet_index, request_header_offset)`.
-    // request_header_offsets: Vec<(usize, usize)>
 }
 
 impl Bundle {
@@ -49,7 +48,6 @@ impl Bundle {
             force_new_packet: true,
             has_prefix,
             last_request_header_offset: 0,
-            // request_header_offsets: Vec::new()
         }
     }
 
@@ -146,7 +144,9 @@ impl Bundle {
 
     /// Finalize the bundle by synchronizing all packets in it and setting
     /// their sequence id.
-    /// This can be called multiple times, the result is stable.
+    /// 
+    /// This can be called multiple times, the result is stable if same
+    /// sequence id is given.
     pub fn finalize(&mut self, seq_id: &mut u32) {
 
         // Sequence IDs
@@ -299,10 +299,10 @@ impl<'a> BundleReader<'a> {
         ret
     }
 
-    #[inline]
-    fn len(&self) -> u64 {
-        self.len
-    }
+    // #[inline]
+    // fn len(&self) -> u64 {
+    //     self.len
+    // }
 
     #[inline]
     fn pos(&self) -> u64 {
@@ -478,9 +478,7 @@ impl<'bundle> BundleElementReader<'bundle> {
                         debug_assert!(elt.request_id.is_none(), "Replies should not be request at the same time.");
                         Some(BundleElement::Reply(elt.element, ReplyElementReader(self)))
                     }
-                    Err(_) => {
-                        None
-                    }
+                    Err(_) => None
                 }
             }
             Some(id) => {
@@ -694,20 +692,23 @@ pub struct BundleAssembler<O = ()> {
     /// Fragments tracker.
     fragments: HashMap<(O, u32), BundleFragments>,
     /// If packets in this bundle has a prefix.
-    has_prefix: bool
+    has_prefix: bool,
 }
 
-impl<O> BundleAssembler<O>
-where
-    O: Hash + Eq
-{
+impl<O> BundleAssembler<O> {
 
     pub fn new(has_prefix: bool) -> Self {
         Self {
             fragments: HashMap::new(),
-            has_prefix
+            has_prefix,
         }
     }
+
+}
+
+// Requires copy to ensure that `from` is small and can be copied
+// for each packet when draining old bundles.
+impl<O: Hash + Eq + Copy> BundleAssembler<O> {
 
     /// Add the given packet to internal fragments and try to make a bundle if all fragments
     /// were received. *Special case for packet with no sequence number, in such case a bundle
@@ -737,9 +738,23 @@ where
         }
     }
 
-    /// Clean all incomplete outdated fragments.
-    pub fn cleanup(&mut self) {
-        self.fragments.retain(|_, v| !v.is_old());
+    /// Drain all timed out bundles, a bundle is timed out if it was not updated
+    /// (a packed being received) in the past [`BUNDLE_FRAGMENT_TIMEOUT`] duration.
+    /// 
+    /// The discarded packets are returned.
+    pub fn drain_old(&mut self) -> Vec<(O, Box<Packet>)> {
+        let mut packets = Vec::new();
+        self.fragments.retain(|(o, _), v| {
+            if v.is_old() {
+                packets.extend(v.fragments.drain(..)
+                    .filter_map(|p| p)
+                    .map(|p| (*o, p)));
+                false
+            } else {
+                true
+            }
+        });
+        packets
     }
 
 }
@@ -781,7 +796,7 @@ impl BundleFragments {
 
     #[inline]
     fn is_old(&self) -> bool {
-        self.last_update.elapsed() > BUNDLE_FRAGMENT_MAX_AGE
+        self.last_update.elapsed() > BUNDLE_FRAGMENT_TIMEOUT
     }
 
     #[inline]

@@ -39,3 +39,7 @@ network = [
 
 [lib]
 name = "wgtk"
+
+[[example]]
+name = "loginapp"
+required-features = ["network"]

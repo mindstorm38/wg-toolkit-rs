@@ -5,8 +5,6 @@ use std::io::{Cursor, Read};
 
 use byteorder::{ReadBytesExt, WriteBytesExt, LE};
 
-use super::PacketFlags;
-
 
 /// According to disassembly of WoT, outside of a channel, the max size if always
 /// `1500 - 28 = 1472`, this includes the 4-bytes prefix.
@@ -307,14 +305,14 @@ impl Packet {
         let mut flags = 0u16;
 
         if has_seq {
-            flags |= PacketFlags::IS_FRAGMENT;
-            flags |= PacketFlags::HAS_SEQUENCE_NUMBER;
+            flags |= flags::IS_FRAGMENT;
+            flags |= flags::HAS_SEQUENCE_NUMBER;
             cursor.write_u32::<LE>(self.seq_first).unwrap();
             cursor.write_u32::<LE>(self.seq_last).unwrap();
         }
 
         if self.request_first_offset != 0 {
-            flags |= PacketFlags::HAS_REQUESTS;
+            flags |= flags::HAS_REQUESTS;
             cursor.write_u16::<LE>(self.request_first_offset as u16).unwrap();
         }
 
@@ -323,7 +321,7 @@ impl Packet {
         }
 
         if self.ack != 0 {
-            flags |= PacketFlags::HAS_ACKS;
+            flags |= flags::HAS_ACKS;
             cursor.write_u32::<LE>(self.ack).unwrap();
         }
 
@@ -331,7 +329,7 @@ impl Packet {
         self.len = cursor.position() as usize - PACKET_PREFIX_LEN;
 
         if self.has_checksum {
-            flags |= PacketFlags::HAS_CHECKSUM;
+            flags |= flags::HAS_CHECKSUM;
         }
 
         // Finally, write flags.
@@ -371,21 +369,21 @@ impl Packet {
         let flags = cursor.read_u16::<LE>().unwrap();
 
         const KNOWN_FLAGS: u16 =
-            PacketFlags::HAS_CHECKSUM |
-            PacketFlags::HAS_SEQUENCE_NUMBER |
-            PacketFlags::HAS_REQUESTS |
-            PacketFlags::IS_FRAGMENT;
+            flags::HAS_CHECKSUM |
+            flags::HAS_SEQUENCE_NUMBER |
+            flags::HAS_REQUESTS |
+            flags::IS_FRAGMENT;
 
         if flags & !KNOWN_FLAGS != 0 {
             return Err(PacketSyncError::UnknownFlags(flags & !KNOWN_FLAGS));
         }
 
-        self.has_checksum = flags & PacketFlags::HAS_CHECKSUM != 0;
-        let has_seq = flags & PacketFlags::HAS_SEQUENCE_NUMBER != 0;
-        let has_requests = flags & PacketFlags::HAS_REQUESTS != 0;
-        let has_ack = flags & PacketFlags::HAS_ACKS != 0;
+        self.has_checksum = flags & flags::HAS_CHECKSUM != 0;
+        let has_seq = flags & flags::HAS_SEQUENCE_NUMBER != 0;
+        let has_requests = flags & flags::HAS_REQUESTS != 0;
+        let has_ack = flags & flags::HAS_ACKS != 0;
 
-        if has_seq && flags & PacketFlags::IS_FRAGMENT == 0 {
+        if has_seq && flags & flags::IS_FRAGMENT == 0 {
             return Err(PacketSyncError::MissingFragmentFlag);
         }
 
@@ -483,13 +481,30 @@ impl Debug for Packet {
 }
 
 
+/// Internal module defining flags for packets.
+#[allow(unused)]
+mod flags {
+    pub const HAS_REQUESTS: u16        = 0x0001;
+    pub const HAS_PIGGYBACKS: u16      = 0x0002;
+    pub const HAS_ACKS: u16            = 0x0004;
+    pub const ON_CHANNEL: u16          = 0x0008;
+    pub const IS_RELIABLE: u16         = 0x0010;
+    pub const IS_FRAGMENT: u16         = 0x0020;
+    pub const HAS_SEQUENCE_NUMBER: u16 = 0x0040;
+    pub const INDEXED_CHANNEL: u16     = 0x0080;
+    pub const HAS_CHECKSUM: u16        = 0x0100;
+    pub const CREATE_CHANNEL: u16      = 0x0200;
+    pub const HAS_CUMULATIVE_ACK: u16  = 0x0400;
+}
+
+
 /// Packet synchronization error.
 #[derive(Debug)]
 pub enum PacketSyncError {
     /// Unknown flags are used, the packet can't be decoded because this usually
     /// increase length of the footer.
     UnknownFlags(u16),
-    /// The packet has sequence number but is not is missing fragment flag.
+    /// The packet has sequence number but is missing fragment flag.
     MissingFragmentFlag,
     /// Not enough length available to decode this packet's footers correctly.
     TooShort,
