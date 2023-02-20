@@ -28,6 +28,7 @@ fn main() -> ExitCode {
             .subcommand(Command::new("show")
                 .about("Show a deserialized view of a given Packed XML file")
                 .arg(arg!(path: -p --path <PATH> "Path to a specific value to show"))
+                .arg(arg!(xml: -x --xml "Enable XML output style"))
                 .arg(arg!(file: <FILE> "The Packed XML file to show")))
             .subcommand(Command::new("edit")
                 .about("Edit a terminal value of a given Packed XML file")

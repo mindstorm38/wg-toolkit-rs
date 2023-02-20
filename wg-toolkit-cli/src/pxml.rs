@@ -12,21 +12,35 @@ use super::CmdResult;
 pub fn cmd_pxml_show(matches: &ArgMatches) -> CmdResult<()> {
 
     let file_path = matches.get_one::<String>("file").unwrap();
+    let xml = matches.get_flag("xml");
+
     let mut root_elt = cmd_read_pxml_file(file_path)?;
 
     if let Some(value_path) = matches.get_one::<String>("path") {
         if !value_path.is_empty() {
             let value = cmd_resolve_element_path(&mut root_elt, &value_path)?;
             print!("{value_path}: ");
-            print_value(value, &mut "  ".to_string());
+            print_value(value, &mut "  ".to_string(), xml);
             println!(); // Because 'print_value' don't print a line feed.
             return Ok(())
         }
     }
 
+    let mut indent = String::new();
+
+    if xml {
+        print!("<root>");
+        indent.push_str("  ");
+    }
+
     // Print the whole root element.
-    print_element(&root_elt, &mut String::new());
-    println!(); // Because 'print_element' don't print a line feed.
+    print_element(&root_elt, &mut indent, xml);
+
+    if xml {
+        println!("</root>");
+    } else {
+        println!(); // Because 'print_element' don't print a line feed.
+    }
 
     Ok(())
 
@@ -70,9 +84,9 @@ pub fn cmd_pxml_edit(matches: &ArgMatches) -> CmdResult<()> {
     };
 
     print!("{value_path}: ");
-    print_value(value, &mut "  ".to_string());
+    print_value(value, &mut "  ".to_string(), false);
     print!(" -> ");
-    print_value(&new_value, &mut "  ".to_string());
+    print_value(&new_value, &mut "  ".to_string(), false);
     println!();
 
     // Finally set the new value.
@@ -117,7 +131,7 @@ fn cmd_resolve_element_path<'a, 'b>(
                     format!("Can't find '{child}' in '/{parent}'")
                 }
                 PathResolveError::TerminalValue { child, parent } => {
-                    format!("Can't find '{child}' in '/{parent}' because the later a terminal value")
+                    format!("Can't find '{child}' in '/{parent}' because the latter is a terminal value")
                 }
             }
         })
@@ -126,46 +140,79 @@ fn cmd_resolve_element_path<'a, 'b>(
 
 /// Print an element and its children, children are printed
 /// prefixed with the given indent. No terminal line feed.
-fn print_element(element: &Element, indent: &mut String) {
+fn print_element(element: &Element, indent: &mut String, xml: bool) {
 
     match &element.value {
         // If the value is an empty string, just do not print the value
         Value::String(s) if s.is_empty() => {}
         val => {
             // Incrementing indent is not really needed because the proper value 
-            // should not be another element, but it can theorically happen.
+            // should not be another element, but it can theoretically happen.
             indent.push_str("  ");
-            print_value(val, indent);
+            print_value(val, indent, xml);
             indent.truncate(indent.len() - 2);
         }
     }
+    
+    println!();
 
     let rollback_len = indent.len();
     for (i, (child_key, child_value)) in element.iter_children_all().enumerate() {
-        if i > 0 {
-            println!();
+        
+        if xml {
+            print!("{indent}<{child_key}>")
+        } else {
+            if i > 0 {
+                println!();
+            }
+            print!("{indent}{child_key}: ");
         }
-        print!("{indent}{child_key}: ");
+
         indent.push_str("  ");
-        print_value(child_value, &mut *indent);
+        print_value(child_value, &mut *indent, xml);
         indent.truncate(rollback_len);
+
+        if xml {
+            println!("</{child_key}>");
+        }
+
     }
 
 }
 
 
 /// Print a Packed XML value inline -no terminal line feed-.
-fn print_value(value: &Value, indent: &mut String) {
+fn print_value(value: &Value, indent: &mut String, xml: bool) {
     match value {
         Value::Element(element) => {
-            println!();
-            print_element(&element, indent);
+            print_element(&element, indent, xml);
+            if xml {
+                print!("{}", &indent[..indent.len() - 2]);
+            }
         }
-        Value::String(s) => print!("{s:?}"),
+        Value::String(s) => {
+            if xml {
+                print!("{s}");
+            } else {
+                print!("{s:?}");
+            }
+        }
         &Value::Integer(n) => print!("{n}"),
         &Value::Boolean(b) => print!("{b}"),
-        &Value::Float(n) => print!("{n}f"),
-        Value::Vec3(v) => print!("{}/{}/{}", v.x, v.y, v.z),
+        &Value::Float(n) => {
+            if xml {
+                print!("{n}");
+            } else {
+                print!("{n}f");
+            }
+        }
+        Value::Vec3(v) => {
+            if xml {
+                print!("{} {} {}", v.x, v.y, v.z);
+            } else {
+                print!("{}/{}/{}", v.x, v.y, v.z);
+            }
+        }
         Value::Affine3(v) => {
             let mat = &v.matrix3;
             let vec = &v.translation;
@@ -175,7 +222,6 @@ fn print_value(value: &Value, indent: &mut String) {
             println!("{indent}| {:.02} | {:.02} | {:.02} | {:.02} |", mat.x_axis.z, mat.y_axis.z, mat.z_axis.z, vec.z);
         }
     }
-
 }
 
 
