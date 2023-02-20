@@ -16,7 +16,12 @@ use blowfish::Blowfish;
 use wgtk::net::bundle::{BundleElement, Bundle};
 use wgtk::net::app::{App, EventKind};
 
-use wgtk::net::element::login::{PingCodec, LoginCodec, LoginResponseCodec, LoginResponse, LoginChallenge, LoginChallenge};
+use wgtk::net::element::login::{
+    PingCodec, 
+    LoginCodec, 
+    LoginResponseCodec, LoginResponse, LoginChallenge, 
+    ChallengeResponseCodec,
+};
 
 
 fn main() {
@@ -89,7 +94,10 @@ fn main() {
                                 app.send(&mut bundle, event.addr).unwrap();
 
                             }
-                            BundleElement::Simple(, )
+                            BundleElement::Simple(ChallengeResponseCodec::ID, reader) => {
+                                println!("- Challenge -> ?");
+                                break;
+                            }
                             BundleElement::Simple(id, _) => {
                                 println!("- Unknown simple #{id}");
                                 break
