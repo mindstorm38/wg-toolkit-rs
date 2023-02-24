@@ -28,6 +28,16 @@ pub trait BlockWriteFilter {
     /// method after the internal buffer is filled with data to filter.
     fn block_size(&self) -> usize;
 
+    /// An optional padding if the input is not of the block size.
+    fn block_padding(&self) -> Option<u8> { None }
+
+    /// Combine the given input block with the given "into" buffer.
+    /// 
+    /// The default implementation doesn't do anything particular.
+    fn block_combine(&self, input: &[u8], into: &mut [u8]) {
+        let _ = (input, into);
+    }
+
     /// Filter the given block and produces new data derived from it
     /// when written data size reaches the block size returned from 
     /// `block_size` method **or** if flushed.
@@ -36,9 +46,6 @@ pub trait BlockWriteFilter {
     /// size because of an early flush. However the block will never
     /// be larger than the block size.
     fn filter_write(&mut self, input: &[u8], output: &mut Vec<u8>);
-
-    /// An optional padding if the input is not of the block size.
-    fn block_padding(&self) -> Option<u8> { None }
 
 }
 
@@ -82,7 +89,7 @@ pub struct BlockReader<R: Read, F: BlockReadFilter> {
     filter: F,
     cipher_block: Vec<u8>,
     clear_block: Vec<u8>,
-    pos: usize
+    pos: usize,
 }
 
 impl<R: Read, F: BlockReadFilter> BlockReader<R, F> {
@@ -145,7 +152,7 @@ pub struct BlockWriter<W: Write, F: BlockWriteFilter> {
     filter: F,
     clear_block: Vec<u8>,
     clear_block_cap: usize,
-    cipher_buf: Vec<u8>,
+    cipher_block: Vec<u8>,
 }
 
 impl<W: Write, F: BlockWriteFilter> BlockWriter<W, F> {
@@ -154,7 +161,7 @@ impl<W: Write, F: BlockWriteFilter> BlockWriter<W, F> {
         Self {
             clear_block: Vec::new(),
             clear_block_cap: filter.block_size(),
-            cipher_buf: Vec::new(),
+            cipher_block: Vec::new(),
             inner,
             filter,
         }
@@ -177,7 +184,6 @@ impl<W: Write, F: BlockWriteFilter> Write for BlockWriter<W, F> {
     }
 
     fn flush(&mut self) -> io::Result<()> {
-
         // Note that 'len' will never be greater than block size.
         let len = self.clear_block.len();
         if len > 0 {
@@ -185,14 +191,12 @@ impl<W: Write, F: BlockWriteFilter> Write for BlockWriter<W, F> {
                 let missing = self.filter.block_size() - len;
                 self.clear_block.extend(std::iter::repeat(pad).take(missing));
             }
-            self.cipher_buf.clear();
-            self.filter.filter_write(&self.clear_block, &mut self.cipher_buf);
-            self.inner.write_all(&self.cipher_buf)?;
+            self.cipher_block.clear();
+            self.filter.filter_write(&self.clear_block, &mut self.cipher_block);
+            self.inner.write_all(&self.cipher_block)?;
             self.clear_block.clear();
         }
-
         Ok(())
-
     }
 
 }

@@ -10,7 +10,7 @@ use rsa::{RsaPrivateKey, RsaPublicKey};
 use blowfish::Blowfish;
 
 use crate::net::filter::{BlockReader, BlockWriter, rsa::{RsaReadFilter, RsaWriteFilter}};
-use crate::net::filter::blowfish::BlowfishFilter;
+use crate::net::filter::blowfish::{BlowfishWriter, BlowfishReader};
 
 use super::{TopElementCodec, ElementCodec, ElementLength, ElementReadExt, ElementWriteExt};
 
@@ -35,7 +35,7 @@ pub enum LoginResponse {
     /// The login is successful.
     Success(LoginSuccess),
     /// An error happened server-side and the login process cannot succeed.
-    Error(LoginError),
+    Error(LoginError, String),
     /// A challenge must be completed in order to have a response.
     Challenge(LoginChallenge),
     /// Unknown response code.
@@ -72,8 +72,26 @@ pub enum LoginChallenge {
 pub enum LoginError {
     MalformedRequest = 64,
     BadProtocolVersion = 65,
+    // ChallengeIssued = 66, handled by a specific variant of LoginResponse.
     InvalidUser = 67,
     InvalidPassword = 68,
+    AlreadyLoggedIn = 69,
+    BadDigest = 70,
+    DatabaseGeneralFailure = 71,
+    DatabaseNotReady = 72,
+    IllegalCharacters = 73,
+    ServerNotReady = 74,
+    UpdaterNotReady = 75, // No longer used
+    NoBaseApp = 76,
+    BaseAppOverload = 77,
+    CellAppOverload = 78,
+    BaseAppTimeout = 79,
+    BaseAppManagerTimeout = 80,
+    DatabaseAppOverload = 81,
+    LoginNotAllowed = 82,
+    RateLimited = 83,
+    Banned = 84,
+    ChallengeError = 85,
 }
 
 /// Describe a generic challenge response of a given generic type.
@@ -208,14 +226,15 @@ impl ElementCodec for LoginResponseCodec {
                 write.write_u8(1)?; // Logged-on
                 
                 if let Self::Encrypted(bf) = self {
-                    encode_login_success(BlockWriter::new(write, BlowfishFilter::new(&bf)), &success)?;
+                    encode_login_success(BlowfishWriter::new(write, &bf), &success)?;
                 } else {
                     encode_login_success(write, &success)?;
                 }
 
             }
-            LoginResponse::Error(err) => {
+            LoginResponse::Error(err, message) => {
                 write.write_u8(err as _)?;
+                write.write_rich_string(&message)?;
             }
             LoginResponse::Challenge(challenge) => {
 
@@ -243,7 +262,7 @@ impl ElementCodec for LoginResponseCodec {
             1 => {
                 
                 let success = if let Self::Encrypted(bf) = self {
-                    decode_login_success(BlockReader::new(read, BlowfishFilter::new(&bf)))?
+                    decode_login_success(BlowfishReader::new(read, &bf))?
                 } else {
                     decode_login_success(read)?
                 };
@@ -270,10 +289,17 @@ impl ElementCodec for LoginResponseCodec {
             65 => LoginError::BadProtocolVersion,
             67 => LoginError::InvalidUser,
             68 => LoginError::InvalidPassword,
+            // TODO: Implement other variants
             code => return Ok(LoginResponse::Unknown(code))
         };
 
-        Ok(LoginResponse::Error(error))
+        let message = match read.read_rich_string() {
+            Ok(msg) => msg,
+            Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => String::new(),
+            Err(e) => return Err(e),
+        };
+
+        Ok(LoginResponse::Error(error, message))
 
     }
 
