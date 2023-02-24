@@ -30,8 +30,8 @@ impl BlockReadFilter for BlowfishFilter<'_> {
 
     fn filter_read(&mut self, input: &[u8], output: &mut Vec<u8>) {
         let block_size = BlockReadFilter::block_size(self);
+        output.extend(std::iter::repeat(0).take(block_size));
         let in_block = Block::<Blowfish>::from_slice(&input[..block_size]);
-        output.reserve_exact(block_size);
         let out_block = Block::<Blowfish>::from_mut_slice(&mut output[..block_size]);
         self.0.decrypt_block_b2b(in_block, out_block);
     }
@@ -46,10 +46,19 @@ impl BlockWriteFilter for BlowfishFilter<'_> {
     }
 
     fn filter_write(&mut self, input: &[u8], output: &mut Vec<u8>) {
-        let block_size = BlockWriteFilter::block_size(self);
-        let in_block = Block::<Blowfish>::from_slice(&input[..block_size]);
-        output.reserve_exact(block_size);
+
+        println!("¤¤¤¤ {}", crate::util::str_from_escaped(input));
+
+        let block_size = BlockReadFilter::block_size(self);
+        output.extend(std::iter::repeat(0).take(block_size));
+        let in_block = Block::<Blowfish>::from_slice(input);
         let out_block = Block::<Blowfish>::from_mut_slice(&mut output[..block_size]);
         self.0.encrypt_block_b2b(in_block, out_block);
+
     }
+
+    fn block_padding(&self) -> Option<u8> {
+        Some(0)
+    }
+
 }

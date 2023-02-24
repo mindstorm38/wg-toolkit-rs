@@ -9,7 +9,7 @@ use wgtk::net::proxy::{Proxy, ProxyListener, ProxyDirectTransfer, ProxySideOutpu
 use wgtk::net::bundle::{Bundle, BundleElement, BundleAssembler};
 use wgtk::net::packet::Packet;
 
-use wgtk::net::element::login::{LoginCodec, PingCodec, ChallengeCodec, ChallengeResponseCodec};
+use wgtk::net::element::login::{LoginRequestCodec, PingCodec, ChallengeCodec, ChallengeResponseCodec};
 use wgtk::net::element::reply::{ReplyCodec};
 use wgtk::net::element::{Var16ElementCodec, Var32ElementCodec};
 
@@ -51,7 +51,7 @@ fn main() {
 
 struct LoginAppClientListener<'ek, 'dk, 'rt> {
     asm: BundleAssembler,
-    login_codec: LoginCodec<'ek, 'dk>,
+    login_codec: LoginRequestCodec<'ek, 'dk>,
     reply_tracker: &'rt RefCell<RequestTracker>
 }
 
@@ -59,7 +59,7 @@ impl<'ek, 'dk, 'rt> LoginAppClientListener<'ek, 'dk, 'rt> {
     pub fn new(server_pubkey: &'ek RsaPublicKey, client_privkey: &'dk RsaPrivateKey, reply_tracker: &'rt RefCell<RequestTracker>) -> Self {
         Self {
             asm: BundleAssembler::new(true),
-            login_codec: LoginCodec::new_encrypted(server_pubkey, client_privkey),
+            login_codec: LoginRequestCodec::new_encrypted(server_pubkey, client_privkey),
             reply_tracker
         }
     }
@@ -85,14 +85,14 @@ impl ProxyListener for LoginAppClientListener<'_, '_, '_> {
 
                 while let Some(elt) = reader.next_element() {
                     match elt {
-                        BundleElement::Simple(LoginCodec::ID, reader) => {
+                        BundleElement::Simple(LoginRequestCodec::ID, reader) => {
                             let login = reader.read(&self.login_codec).unwrap();
                             println!("[CLIENT -> SERVER] Received login: {:?}", login.element);
                             let request_id = login.request_id.unwrap();
                             let mut new_bundle = Bundle::new_empty(true);
-                            new_bundle.add_request(LoginCodec::ID, &self.login_codec, login.element, request_id);
+                            new_bundle.add_request(LoginRequestCodec::ID, &self.login_codec, login.element, request_id);
                             new_bundle.get_packets_mut()[0].set_prefix(Some(prefix));
-                            self.reply_tracker.borrow_mut().push_request(RequestSide::Client, request_id, LoginCodec::ID);
+                            self.reply_tracker.borrow_mut().push_request(RequestSide::Client, request_id, LoginRequestCodec::ID);
                             new_bundle.finalize(&mut 0);
                             out.send_finalized_bundle(&new_bundle).unwrap();
                         }
@@ -161,7 +161,7 @@ impl ProxyListener for LoginAppServerListener<'_> {
                                     println!("[SERVER -> CLIENT] Received ping ack: {}", ping.element);
                                     out.send_finalized_bundle(&bundle).unwrap();
                                 }
-                                Some(LoginCodec::ID) => {
+                                Some(LoginRequestCodec::ID) => {
                                     let challenge = reader.read(&ChallengeCodec).unwrap();
                                     println!("[SERVER -> CLIENT] Challenge: {:?}", challenge.element);
                                     out.send_finalized_bundle(&bundle).unwrap();

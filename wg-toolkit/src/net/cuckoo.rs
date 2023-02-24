@@ -5,14 +5,14 @@ use std::collections::HashSet;
 use sha2::{Sha256, Digest};
 
 
-const SHIFT_SIZE: usize = 25;
-const PROOF_SIZE: usize = 42;
-const MAX_PATH_LEN: usize = 8192;
+pub const SHIFT_SIZE: usize = 25;
+pub const PROOF_SIZE: usize = 42;
+pub const MAX_PATH_LEN: usize = 8192;
 
-const FULL_SIZE: usize = 1 << SHIFT_SIZE;
-const HALF_SIZE: usize = FULL_SIZE / 2;
-const NODE_MASK: usize = HALF_SIZE - 1;
-const CUCKOO_SIZE: usize = FULL_SIZE + 1;
+pub const FULL_SIZE: usize = 1 << SHIFT_SIZE;
+pub const HALF_SIZE: usize = FULL_SIZE / 2;
+pub const NODE_MASK: usize = HALF_SIZE - 1;
+pub const CUCKOO_SIZE: usize = FULL_SIZE + 1;
 
 
 #[derive(Clone)]

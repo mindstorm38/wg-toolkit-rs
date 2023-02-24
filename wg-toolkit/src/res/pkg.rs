@@ -16,6 +16,7 @@ use crate::util::io::WgReadExt;
 
 
 /// Signature for the Local File Header structure.
+#[allow(unused)]
 const LOCAL_FILE_HEADER_SIGNATURE: u32 = 0x04034b50;
 
 /// Signature for the Central Directory Header structure.

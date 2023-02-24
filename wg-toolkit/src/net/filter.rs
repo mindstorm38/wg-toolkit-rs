@@ -37,6 +37,9 @@ pub trait BlockWriteFilter {
     /// be larger than the block size.
     fn filter_write(&mut self, input: &[u8], output: &mut Vec<u8>);
 
+    /// An optional padding if the input is not of the block size.
+    fn block_padding(&self) -> Option<u8> { None }
+
 }
 
 impl<'a, F: BlockReadFilter> BlockReadFilter for &'a mut F {
@@ -174,13 +177,22 @@ impl<W: Write, F: BlockWriteFilter> Write for BlockWriter<W, F> {
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        if !self.clear_block.is_empty() {
+
+        // Note that 'len' will never be greater than block size.
+        let len = self.clear_block.len();
+        if len > 0 {
+            if let Some(pad) = self.filter.block_padding() {
+                let missing = self.filter.block_size() - len;
+                self.clear_block.extend(std::iter::repeat(pad).take(missing));
+            }
             self.cipher_buf.clear();
-            self.filter.filter_write(&self.clear_block[..], &mut self.cipher_buf);
-            self.inner.write_all(&self.cipher_buf[..])?;
+            self.filter.filter_write(&self.clear_block, &mut self.cipher_buf);
+            self.inner.write_all(&self.cipher_buf)?;
             self.clear_block.clear();
         }
+
         Ok(())
+
     }
 
 }

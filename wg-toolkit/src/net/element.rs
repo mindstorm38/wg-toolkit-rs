@@ -1,28 +1,42 @@
 //! Definitions for elements contained in bundles (and so in packets).
 
-use std::io::{self, Read, Seek, Write};
+use std::io::{self, Read, Write};
 use std::net::{SocketAddrV4, Ipv4Addr};
 
 use byteorder::{ReadBytesExt, WriteBytesExt, LE};
 
+
+pub mod ping;
 pub mod login;
 pub mod reply;
 
 
-/// A codec trait to be implemented on structures that acts as codec for a given
-/// element type.
+/// A trait to be implemented on structures that acts as codec 
+/// for a given element type.
 pub trait ElementCodec {
 
-    /// Length codec used for this element.
-    const LEN: ElementLength;
-    /// Type of the element.
+    /// Type of the element that is being encoded and decoded.
     type Element;
 
     /// Encode an element.
     fn encode<W: Write>(&self, write: W, input: Self::Element) -> io::Result<()>;
 
-    /// Decode an element, the given reader is seek-able and its length is given separately.
-    fn decode<R: Read + Seek>(&self, read: R, len: u64) -> io::Result<Self::Element>;
+    /// Decode an element, its length is given separately.
+    fn decode<R: Read>(&self, read: R, len: usize) -> io::Result<Self::Element>;
+
+}
+
+/// An extension trait for implementor of [`ElementCodec`] that
+/// can be decoded as top elements. 
+/// 
+/// For example, you don't need such top element for decoding 
+/// or encoding a reply, because a reply is always of varying
+/// 32 bit length.
+pub trait TopElementCodec: ElementCodec {
+
+    /// If this element is being decoded as top element, this
+    /// length describe how to decode it.
+    const LEN: ElementLength;
 
 }
 
@@ -103,12 +117,12 @@ pub trait ElementReadExt: Read {
         let blob = self.read_rich_blob()?;
         match String::from_utf8(blob) {
             Ok(s) => Ok(s),
-            Err(_) => Err(io::ErrorKind::InvalidData.into())
+            Err(_) => Err(io::Error::new(io::ErrorKind::InvalidData, "invalid utf8 string"))
         }
     }
 
     fn read_sock_addr_v4(&mut self) -> io::Result<SocketAddrV4> {
-        let ip = self.read_u32::<LE>()?;
+        let ip = self.read_u32::<LE>()?; // FIXME:
         let port = self.read_u16::<LE>()?;
         let _salt = self.read_u16::<LE>()?;
         Ok(SocketAddrV4::new(Ipv4Addr::from(u32::to_be_bytes(ip)), port))
@@ -141,7 +155,7 @@ pub trait ElementWriteExt: Write {
         self.write_rich_blob(s.as_bytes())
     }
     fn write_sock_addr_v4(&mut self, addr: SocketAddrV4) -> io::Result<()> {
-        self.write_u32::<LE>(u32::from_be_bytes(addr.ip().octets()))?;
+        self.write_all(&addr.ip().octets()[..])?;
         self.write_u16::<LE>(addr.port())?;
         self.write_u16::<LE>(0)?; // Salt
         Ok(())
@@ -159,19 +173,22 @@ pub struct RawElementCodec<I: RawElementCodecLen>(I);
 
 impl<I: RawElementCodecLen> ElementCodec for RawElementCodec<I> {
 
-    const LEN: ElementLength = I::LEN;
     type Element = Vec<u8>;
 
     fn encode<W: Write>(&self, mut write: W, input: Self::Element) -> io::Result<()> {
         write.write_all(&input[..])
     }
 
-    fn decode<R: Read + Seek>(&self, mut read: R, len: u64) -> io::Result<Self::Element> {
-        let mut buf = Vec::with_capacity(len as usize);
+    fn decode<R: Read>(&self, mut read: R, len: usize) -> io::Result<Self::Element> {
+        let mut buf = Vec::with_capacity(len);
         read.read_to_end(&mut buf)?;
         Ok(buf)
     }
 
+}
+
+impl<I: RawElementCodecLen> TopElementCodec for RawElementCodec<I> {
+    const LEN: ElementLength = I::LEN;
 }
 
 impl<I: RawElementCodecLen + Default> RawElementCodec<I> {
