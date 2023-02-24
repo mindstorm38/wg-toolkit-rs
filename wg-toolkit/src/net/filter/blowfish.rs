@@ -47,13 +47,15 @@ impl BlockWriteFilter for BlowfishFilter<'_> {
 
     fn filter_write(&mut self, input: &[u8], output: &mut Vec<u8>) {
 
-        println!("¤¤¤¤ {}", crate::util::str_from_escaped(input));
+        println!("¤¤¤¤ {}", crate::util::get_hex_str_from(input, 100));
 
         let block_size = BlockReadFilter::block_size(self);
         output.extend(std::iter::repeat(0).take(block_size));
         let in_block = Block::<Blowfish>::from_slice(input);
         let out_block = Block::<Blowfish>::from_mut_slice(&mut output[..block_size]);
         self.0.encrypt_block_b2b(in_block, out_block);
+        
+        println!("==== {}", crate::util::get_hex_str_from(&output, 100));
 
     }
 

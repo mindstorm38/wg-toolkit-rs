@@ -3,7 +3,7 @@
 use std::io::{self, Read, Write};
 use std::net::{SocketAddrV4, Ipv4Addr};
 
-use byteorder::{ReadBytesExt, WriteBytesExt, LE};
+use byteorder::{ReadBytesExt, WriteBytesExt, LE, BE};
 
 
 pub mod ping;
@@ -122,10 +122,11 @@ pub trait ElementReadExt: Read {
     }
 
     fn read_sock_addr_v4(&mut self) -> io::Result<SocketAddrV4> {
-        let ip = self.read_u32::<LE>()?; // FIXME:
-        let port = self.read_u16::<LE>()?;
+        let mut ip_raw = [0; 4];
+        self.read_exact(&mut ip_raw[..])?;
+        let port = self.read_u16::<BE>()?;
         let _salt = self.read_u16::<LE>()?;
-        Ok(SocketAddrV4::new(Ipv4Addr::from(u32::to_be_bytes(ip)), port))
+        Ok(SocketAddrV4::new(Ipv4Addr::from(ip_raw), port))
     }
 
 }
@@ -156,7 +157,7 @@ pub trait ElementWriteExt: Write {
     }
     fn write_sock_addr_v4(&mut self, addr: SocketAddrV4) -> io::Result<()> {
         self.write_all(&addr.ip().octets()[..])?;
-        self.write_u16::<LE>(addr.port())?;
+        self.write_u16::<BE>(addr.port())?;
         self.write_u16::<LE>(0)?; // Salt
         Ok(())
     }

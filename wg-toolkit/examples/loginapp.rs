@@ -127,7 +127,7 @@ fn main() {
                                     let success = LoginResponse::Success(LoginSuccess {
                                         addr: "127.0.0.1:20017".parse().unwrap(),
                                         session_key: 12345678,
-                                        server_message: "Hello world from Rust!".to_string(),
+                                        server_message: String::new(),
                                     });
 
                                     bundle.add_reply(&LoginResponseCodec::Encrypted(bf.clone()), success, elt.request_id.unwrap());
