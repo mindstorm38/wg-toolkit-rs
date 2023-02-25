@@ -14,6 +14,7 @@ use super::element::reply::{ReplyHeaderCodec, ReplyCodec, Reply, REPLY_ID};
 use super::element::{TopElementCodec, ElementCodec};
 
 use crate::util::cursor::SubCursor;
+use crate::util::BytesFmt;
 
 
 /// The default timeout duration for bundle fragments before being forgotten.
@@ -358,7 +359,7 @@ impl fmt::Debug for BundleReader<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("BundleReader")
             .field("packets", &self.packets)
-            .field("body", &crate::util::get_hex_str_from(self.body, 24))
+            .field("body", &format_args!("{:X}", BytesFmt(self.body)))
             .field("pos", &self.pos)
             .finish()
     }

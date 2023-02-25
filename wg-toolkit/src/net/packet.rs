@@ -5,6 +5,8 @@ use std::io::{Cursor, Read};
 
 use byteorder::{ReadBytesExt, WriteBytesExt, LE};
 
+use crate::util::BytesFmt;
+
 
 /// According to disassembly of WoT, outside of a channel, the max size if always
 /// `1500 - 28 = 1472`, this includes the 4-bytes prefix.
@@ -27,6 +29,7 @@ pub const PACKET_MAX_BODY_LEN: usize =
 /// Note that a packet doesn't mean anything outside of a bundle.
 /// 
 /// *A packet must be boxed because of its size.*
+#[derive(Clone)]
 pub struct Packet {
     /// Raw data of the packet, header and footer data is not valid until
     /// finalization of the packet. This first 4 bytes are always reserved for
@@ -454,7 +457,7 @@ impl Debug for Packet {
         s.field("raw_len", &self.raw_len());
         s.field("body_len", &self.body_len());
 
-        s.field("body", &crate::util::get_hex_str_from(self.get_body_data(), 24));
+        s.field("body", &format_args!("{:X}", BytesFmt(self.get_body_data())));
 
         if let Some(prefix) = self.prefix {
             s.field("prefix", &format!("{:08X}", prefix));

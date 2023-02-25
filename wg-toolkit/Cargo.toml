@@ -41,5 +41,5 @@ network = [
 name = "wgtk"
 
 [[example]]
-name = "loginapp"
+name = "server"
 required-features = ["network"]
