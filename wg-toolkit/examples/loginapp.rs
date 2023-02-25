@@ -1,4 +1,3 @@
-use std::io::{Cursor, Read};
 use std::net::{SocketAddr, Ipv4Addr, IpAddr};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
@@ -21,13 +20,8 @@ use wgtk::net::element::ping::PingCodec;
 use wgtk::net::element::login::{
     LoginRequestCodec, 
     LoginResponseCodec, LoginResponse, LoginChallenge, 
-    ChallengeResponseCodec, CuckooCycleResponseCodec, LoginSuccess, LoginError
+    ChallengeResponseCodec, CuckooCycleResponseCodec, LoginSuccess
 };
-
-use wgtk::net::filter::BlockReader;
-use wgtk::net::element::FixedElementCodec;
-use wgtk::net::filter::blowfish::BlowfishReader;
-use wgtk::net::packet::Packet;
 
 
 fn main() {
