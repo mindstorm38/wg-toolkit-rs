@@ -10,9 +10,11 @@ use blowfish::Blowfish;
 use mio::{Events, Poll, Interest, Token};
 use mio::net::UdpSocket;
 
-use super::packet::{Packet, PacketSyncError};
+use super::packet::{Packet, PacketSyncError, PACKET_BODY_OFFSET};
 use super::bundle::{BundleAssembler, Bundle};
 use super::filter::blowfish::BlowfishReader;
+
+use crate::util::BytesFmt;
 
 
 const COMMON_EVENT: Token = Token(0);
@@ -58,7 +60,7 @@ impl App {
             socket,
             socket_poll,
             socket_events: Events::with_capacity(128),
-            bundle_assembler: BundleAssembler::new(true),
+            bundle_assembler: BundleAssembler::new(),
             next_seq_id: 0,
             channels: HashMap::new(),
         })
@@ -81,8 +83,9 @@ impl App {
         bundle.finalize(&mut self.next_seq_id);
 
         let mut size = 0;
-        for packet in bundle.get_packets() {
-            size += self.socket.send_to(packet.get_raw_data(), to)?;
+        for packet in bundle.packets() {
+            println!("Sending {:X}", crate::util::BytesFmt(packet.net_data()));
+            size += self.socket.send_to(packet.net_data(), to)?;
         }
 
         Ok(size)
@@ -103,9 +106,9 @@ impl App {
 
                 loop {
 
-                    let mut packet = Packet::new_boxed(true);
+                    let mut packet = Packet::new_boxed();
                     
-                    let (len, addr) = match self.socket.recv_from(packet.get_raw_data_mut()) {
+                    let (len, addr) = match self.socket.recv_from(packet.raw_data_mut()) {
                         Ok(t) => t,
                         Err(e) if e.kind() == io::ErrorKind::WouldBlock => break,
                         Err(e) => return Err(e),
@@ -113,17 +116,29 @@ impl App {
 
                     if let Some(bf) = self.channels.get(&addr) {
                         
-                        let mut clear_packet = Packet::new_boxed(true);
+                        let mut clear_packet = Packet::new_boxed();
 
                         // Decrypt the incoming packet into the new clear packet.
                         // We don't need to set the length yet because this packet 
                         // will be synchronized just after
-                        let src = Cursor::new(packet.get_data());
-                        let mut dst = Cursor::new(clear_packet.get_raw_data_mut());
-                        io::copy(&mut BlowfishReader::new(src, &bf), &mut dst).unwrap();
+                        let src = &packet.raw_data()[PACKET_BODY_OFFSET..len];
+                        let dst = &mut clear_packet.raw_data_mut()[PACKET_BODY_OFFSET..len];
+                        
+                        assert!(src.len() % 8 == 0);
 
-                        println!("packet: {:?}", packet.get_raw_data());
-                        println!("clear_packet: {:?}", clear_packet.get_raw_data_mut());
+                        io::copy(
+                            &mut BlowfishReader::new(Cursor::new(src), &bf), 
+                            &mut Cursor::new(dst),
+                        ).unwrap();
+
+                        // Copy the prefix and flags directly because they are clear.
+                        clear_packet.raw_data_mut()[..PACKET_BODY_OFFSET]
+                            .copy_from_slice(&packet.raw_data()[..PACKET_BODY_OFFSET]);
+
+                        println!("raw:   {:X}", BytesFmt(&packet.raw_data()[..len]));
+                        println!("clear: {:X}", BytesFmt(&clear_packet.raw_data()[..len]));
+
+                        // The packet is now clear, replace the old encrypted one.
                         packet = clear_packet;
 
                     }

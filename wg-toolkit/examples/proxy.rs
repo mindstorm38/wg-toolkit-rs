@@ -58,7 +58,7 @@ struct LoginAppClientListener<'ek, 'dk, 'rt> {
 impl<'ek, 'dk, 'rt> LoginAppClientListener<'ek, 'dk, 'rt> {
     pub fn new(server_pubkey: &'ek RsaPublicKey, client_privkey: &'dk RsaPrivateKey, reply_tracker: &'rt RefCell<RequestTracker>) -> Self {
         Self {
-            asm: BundleAssembler::new(true),
+            asm: BundleAssembler::new(),
             login_codec: LoginRequestCodec::new_encrypted(server_pubkey, client_privkey),
             reply_tracker
         }
@@ -77,9 +77,9 @@ impl ProxyListener for LoginAppClientListener<'_, '_, '_> {
 
                 assert_eq!(bundle.len(), 1);
 
-                let prefix = bundle.get_packets()[0].get_prefix().unwrap();
-                println!("[CLIENT -> SERVER] Received bundle: {:?}", bundle.get_packets());
-                println!("[CLIENT -> SERVER] Received packet: {}", wgtk::util::get_hex_str_from(&bundle.get_packets()[0].get_raw_data()[..bundle.get_packets()[0].raw_len()], 1000));
+                let prefix = bundle.packets()[0].get_prefix().unwrap();
+                println!("[CLIENT -> SERVER] Received bundle: {:?}", bundle.packets());
+                println!("[CLIENT -> SERVER] Received packet: {}", wgtk::util::get_hex_str_from(&bundle.packets()[0].raw_data()[..bundle.packets()[0].net_len()], 1000));
 
                 let mut reader = bundle.get_element_reader();
 
@@ -89,9 +89,9 @@ impl ProxyListener for LoginAppClientListener<'_, '_, '_> {
                             let login = reader.read(&self.login_codec).unwrap();
                             println!("[CLIENT -> SERVER] Received login: {:?}", login.element);
                             let request_id = login.request_id.unwrap();
-                            let mut new_bundle = Bundle::new_empty(true);
+                            let mut new_bundle = Bundle::new_empty();
                             new_bundle.add_request(LoginRequestCodec::ID, &self.login_codec, login.element, request_id);
-                            new_bundle.get_packets_mut()[0].set_prefix(Some(prefix));
+                            new_bundle.packets_mut()[0].set_prefix(Some(prefix));
                             self.reply_tracker.borrow_mut().push_request(RequestSide::Client, request_id, LoginRequestCodec::ID);
                             new_bundle.finalize(&mut 0);
                             out.send_finalized_bundle(&new_bundle).unwrap();
@@ -131,7 +131,7 @@ struct LoginAppServerListener<'rt> {
 impl<'rt> LoginAppServerListener<'rt> {
     pub fn new(reply_tracker: &'rt RefCell<RequestTracker>) -> Self {
         Self {
-            asm: BundleAssembler::new(true),
+            asm: BundleAssembler::new(),
             reply_tracker
         }
     }
@@ -144,7 +144,7 @@ impl ProxyListener for LoginAppServerListener<'_> {
         if let Err(e) = packet.sync_state(len) {
             eprintln!("[SERVER -> CLIENT] Failed to sync packet state: {:?}", e);
         } else {
-            println!("[SERVER -> CLIENT] Received packet: {}", wgtk::util::get_hex_str_from(&packet.get_raw_data()[..packet.raw_len()], 1000));
+            println!("[SERVER -> CLIENT] Received packet: {}", wgtk::util::get_hex_str_from(&packet.raw_data()[..packet.net_len()], 1000));
             if let Some(bundle) = self.asm.try_assemble((), packet) {
 
                 assert_eq!(bundle.len(), 1);

@@ -119,8 +119,8 @@ where
         TL: ProxyListener
     {
         loop {
-            let mut packet = Packet::new_boxed(true);
-            match self.handler.recv(&self.sock, packet.get_raw_data_mut()) {
+            let mut packet = Packet::new_boxed();
+            match self.handler.recv(&self.sock, packet.raw_data_mut()) {
                 Ok(len) => {
                     self.listener.received(packet, len, to)?;
                 },
@@ -141,11 +141,11 @@ pub trait ProxySideOutput {
     fn send_data(&mut self, data: &[u8]) -> io::Result<()>;
 
     fn send_synced_packet(&mut self, packet: &Packet) -> io::Result<()> {
-        self.send_data(&packet.get_raw_data()[..packet.raw_len()])
+        self.send_data(&packet.raw_data()[..packet.net_len()])
     }
 
     fn send_finalized_bundle(&mut self, bundle: &Bundle) -> io::Result<()> {
-        for packet in bundle.get_packets() {
+        for packet in bundle.packets() {
             self.send_synced_packet(&**packet)?;
         }
         Ok(())
@@ -181,7 +181,7 @@ pub trait ProxyListener {
 pub struct ProxyDirectTransfer;
 impl ProxyListener for ProxyDirectTransfer {
     fn received<O: ProxySideOutput>(&mut self, packet: Box<Packet>, len: usize, out: &mut O) -> io::Result<()> {
-        out.send_data(&packet.get_raw_data()[..len])
+        out.send_data(&packet.raw_data()[..len])
     }
 }
 

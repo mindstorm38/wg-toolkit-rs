@@ -33,8 +33,6 @@ pub struct Bundle {
     force_new_packet: bool,
     /// Available length on the last packet, used to avoid borrowing issues.
     available_len: usize,
-    /// If packets in this bundle has a prefix.
-    has_prefix: bool,
     /// Offset of the link of the last request, `0` if not request yet.
     last_request_header_offset: usize,
 }
@@ -43,30 +41,29 @@ impl Bundle {
 
     /// Internal common function to create new bundle.
     #[inline]
-    fn new(packets: Vec<Box<Packet>>, has_prefix: bool) -> Self {
+    fn new(packets: Vec<Box<Packet>>) -> Self {
         Bundle {
             available_len: packets.last().map(|p| p.available_len()).unwrap_or(0),
             packets,
             force_new_packet: true,
-            has_prefix,
             last_request_header_offset: 0,
         }
     }
 
     /// Construct a new empty bundle, this bundle doesn't
     /// allocate until you add the first element.
-    pub fn new_empty(has_prefix: bool) -> Bundle {
-        Self::new(Vec::new(), has_prefix)
+    pub fn new_empty() -> Bundle {
+        Self::new(Vec::new())
     }
 
     /// Create a new bundle with one predefined packet.
-    pub fn from_single(packet: Box<Packet>, has_prefix: bool) -> Self {
-        Self::new(vec![packet], has_prefix)
+    pub fn from_single(packet: Box<Packet>) -> Self {
+        Self::new(vec![packet])
     }
 
     /// Create a new bundle with multiple predefined packets.
-    pub fn from_packets(packets: Vec<Box<Packet>>, has_prefix: bool) -> Self {
-        Self::new(packets, has_prefix)
+    pub fn from_packets(packets: Vec<Box<Packet>>) -> Self {
+        Self::new(packets)
     }
 
     /// Add a basic element to this bundle.
@@ -123,7 +120,7 @@ impl Bundle {
                 cur_packet.set_request_first_offset(cur_packet_elt_offset);
             } else {
                 let mut next_request_offset_cursor = Cursor::new(
-                    &mut cur_packet.get_data_mut()[self.last_request_header_offset + 4..]);
+                    &mut cur_packet.data_mut()[self.last_request_header_offset + 4..]);
                 next_request_offset_cursor.write_u16::<LE>(cur_packet_elt_offset as u16).unwrap();
             }
             self.last_request_header_offset = cur_request_header_offset;
@@ -138,7 +135,7 @@ impl Bundle {
 
         // Finally write length.
         let cur_packet = &mut self.packets[cur_packet_idx];
-        let cur_len_slice = &mut cur_packet.get_data_mut()[cur_packet_elt_offset + 1..];
+        let cur_len_slice = &mut cur_packet.data_mut()[cur_packet_elt_offset + 1..];
         // Unwrap because we now there is enough space at the given position.
         E::LEN.write(Cursor::new(cur_len_slice), length).unwrap();
 
@@ -180,12 +177,12 @@ impl Bundle {
 
     /// Get a slice of all packets of this bundle.
     #[inline]
-    pub fn get_packets(&self) -> &[Box<Packet>] {
+    pub fn packets(&self) -> &[Box<Packet>] {
         &self.packets[..]
     }
 
     #[inline]
-    pub fn get_packets_mut(&mut self) -> &mut [Box<Packet>] {
+    pub fn packets_mut(&mut self) -> &mut [Box<Packet>] {
         &mut self.packets[..]
     }
 
@@ -196,7 +193,7 @@ impl Bundle {
 
     /// Internal method to add a new packet at the end of the chain.
     fn add_packet(&mut self) {
-        let packet = Packet::new_boxed(self.has_prefix);
+        let packet = Packet::new_boxed();
         self.available_len = packet.available_len();
         self.packets.push(packet);
         self.last_request_header_offset = 0;
@@ -285,11 +282,11 @@ struct BundleReader<'a> {
 impl<'a> BundleReader<'a> {
 
     fn new(bundle: &'a Bundle) -> Self {
-        let packets = bundle.get_packets();
+        let packets = bundle.packets();
         Self {
             packets,
             body: packets.get(0)
-                .map(|p| p.get_body_data())
+                .map(|p| p.body_data())
                 .unwrap_or(&[]),
             pos: 0,
         }
@@ -313,7 +310,7 @@ impl<'a> BundleReader<'a> {
                 self.packets = &self.packets[1..];
                 // And if there is one packet, set the body from this packet.
                 if let Some(p) = self.packets.get(0) {
-                    self.body = p.get_body_data();
+                    self.body = p.body_data();
                 }
             }
         }
@@ -378,7 +375,7 @@ impl<'a> BundleElementReader<'a> {
         let bundle_reader = BundleReader::new(bundle);
         Self {
             next_request_offset: bundle_reader.packet()
-                .map(Packet::get_request_first_offset)
+                .map(Packet::request_first_offset)
                 .unwrap_or(0),
             bundle_reader
         }
@@ -496,7 +493,7 @@ impl<'a> BundleElementReader<'a> {
             match self.bundle_reader.packet() {
                 Some(end_packet) => {
                     if !std::ptr::eq(start_packet, end_packet) {
-                        self.next_request_offset = end_packet.get_request_first_offset();
+                        self.next_request_offset = end_packet.request_first_offset();
                     }
                     // Else, we are still in the same packet so we don't need to change this.
                 }
@@ -635,16 +632,13 @@ impl<'reader, 'bundle> ReplyElementReader<'reader, 'bundle> {
 pub struct BundleAssembler<O = ()> {
     /// Fragments tracker.
     fragments: HashMap<(O, u32), BundleFragments>,
-    /// If packets in this bundle has a prefix.
-    has_prefix: bool,
 }
 
 impl<O> BundleAssembler<O> {
 
-    pub fn new(has_prefix: bool) -> Self {
+    pub fn new() -> Self {
         Self {
             fragments: HashMap::new(),
-            has_prefix,
         }
     }
 
@@ -659,7 +653,7 @@ impl<O: Hash + Eq + Copy> BundleAssembler<O> {
     /// with this single packet is returned.*
     pub fn try_assemble(&mut self, from: O, packet: Box<Packet>) -> Option<Bundle> {
         if packet.has_seq() {
-            let (seq_first, seq_last, seq) = packet.get_seq();
+            let (seq_first, seq_last, seq) = packet.seq();
             match self.fragments.entry((from, seq_first)) {
                 Entry::Occupied(mut o) => {
                     if o.get().is_old() {
@@ -667,7 +661,7 @@ impl<O: Hash + Eq + Copy> BundleAssembler<O> {
                     }
                     o.get_mut().set(seq, packet);
                     if o.get().is_full() {
-                        Some(o.remove().into_bundle(self.has_prefix))
+                        Some(o.remove().into_bundle())
                     } else {
                         None
                     }
@@ -678,7 +672,7 @@ impl<O: Hash + Eq + Copy> BundleAssembler<O> {
                 }
             }
         } else {
-            Some(Bundle::from_single(packet, self.has_prefix))
+            Some(Bundle::from_single(packet))
         }
     }
 
@@ -749,12 +743,12 @@ impl BundleFragments {
     }
 
     /// Convert this structure to a bundle, **safe to call only if `is_full() == true`**.
-    fn into_bundle(self, has_prefix: bool) -> Bundle {
+    fn into_bundle(self) -> Bundle {
         debug_assert!(self.is_full());
         let packets = self.fragments.into_iter()
             .map(|o| o.unwrap())
             .collect();
-        Bundle::from_packets(packets, has_prefix)
+        Bundle::from_packets(packets)
     }
 
 }

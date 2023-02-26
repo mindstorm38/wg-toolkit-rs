@@ -110,7 +110,7 @@ impl LoginApp {
                 println!("{prefix} --> Ping #{}", elt.element);
                 println!("{prefix} <-- Pong #{}", elt.element);
     
-                let mut bundle = Bundle::new_empty(true);
+                let mut bundle = Bundle::new_empty();
                 bundle.add_reply(&PingCodec, elt.element, elt.request_id.unwrap());
                 self.app.send(&mut bundle, client.addr).unwrap();
                 
@@ -127,7 +127,7 @@ impl LoginApp {
                 // Ensure that blowfish key is set.
                 let bf = client.blowfish.insert(Arc::new(Blowfish::new_from_slice(&elt.element.blowfish_key).unwrap()));
                 
-                let mut bundle = Bundle::new_empty(true);
+                let mut bundle = Bundle::new_empty();
                 
                 if !client.challenge_complete {
                     
@@ -249,7 +249,7 @@ impl BaseApp {
             let key = OsRng.next_u32();
             match self.clients_keys.entry(key) {
                 Entry::Vacant(v) => {
-                    self.app.set_channel(addr, bf.clone());
+                    // self.app.set_channel(addr, bf.clone());
                     self.clients.insert(addr, BaseClient::new(addr, key, bf.clone()));
                     v.insert(addr);
                     break key

@@ -9,6 +9,7 @@ use byteorder::{ReadBytesExt, WriteBytesExt, LE, BE};
 pub mod ping;
 pub mod login;
 pub mod reply;
+mod base;
 
 
 /// A trait to be implemented on structures that acts as codec 
