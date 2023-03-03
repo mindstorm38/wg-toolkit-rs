@@ -7,6 +7,10 @@ use blowfish::cipher::{BlockEncrypt, BlockDecrypt, Block};
 use blowfish::Blowfish;
 
 
+/// Size of a single blowfish block.
+pub const BLOCK_SIZE: usize = 8;
+
+
 /// A reader that filters the underlying reader through a blowfish 
 /// symmetric encryption.
 pub struct BlowfishReader<'a, R: Read> {
@@ -30,7 +34,7 @@ impl<'a, R: Read> BlowfishReader<'a, R> {
             inner,
             blowfish,
             cur_block: BlowfishBlock::new(),
-            cur_pos: BlowfishBlock::SIZE,
+            cur_pos: BLOCK_SIZE,
             last_block: BlowfishBlock::new(),
         }
     }
@@ -45,10 +49,10 @@ impl<'a, R: Read> Read for BlowfishReader<'a, R> {
             return Ok(0)
         }
 
-        debug_assert!(self.cur_pos <= BlowfishBlock::SIZE);
+        debug_assert!(self.cur_pos <= BLOCK_SIZE);
 
         // Position 'BLOCK_SIZE' inform us that we should read and decode a new block.
-        if self.cur_pos == BlowfishBlock::SIZE {
+        if self.cur_pos == BLOCK_SIZE {
 
             // The a whole block before decrypting it.
             match self.inner.read_exact(self.cur_block.slice_mut()) {
@@ -67,7 +71,7 @@ impl<'a, R: Read> Read for BlowfishReader<'a, R> {
         }
 
         // Actual length we can read.
-        let len = buf.len().min(BlowfishBlock::SIZE - self.cur_pos);
+        let len = buf.len().min(BLOCK_SIZE - self.cur_pos);
         buf[..len].copy_from_slice(&self.cur_block.slice()[self.cur_pos..]);
         self.cur_pos += len;
 
@@ -116,14 +120,14 @@ impl<'a, W: Write> Write for BlowfishWriter<'a, W> {
 
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
 
-        let len = buf.len().min(BlowfishBlock::SIZE - self.tmp_pos);
+        let len = buf.len().min(BLOCK_SIZE - self.tmp_pos);
         self.tmp_block.slice_mut()[self.tmp_pos..][..len].copy_from_slice(&buf[..len]);
         self.tmp_pos += len;
 
-        debug_assert!(self.tmp_pos <= BlowfishBlock::SIZE);
+        debug_assert!(self.tmp_pos <= BLOCK_SIZE);
 
         // Flush when the block is filled.
-        if self.tmp_pos == BlowfishBlock::SIZE {
+        if self.tmp_pos == BLOCK_SIZE {
             self.flush()?;
         }
 
@@ -186,8 +190,6 @@ union BlowfishBlock {
 }
 
 impl BlowfishBlock {
-
-    const SIZE: usize = 8;
 
     #[inline]
     fn new() -> Self {

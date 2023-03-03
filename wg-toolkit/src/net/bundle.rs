@@ -9,7 +9,7 @@ use std::fmt;
 
 use byteorder::{ReadBytesExt, WriteBytesExt, LE};
 
-use super::packet::{Packet, PACKET_MAX_BODY_LEN, PACKET_FLAGS_LEN};
+use super::packet::{Packet, PACKET_FLAGS_LEN};
 use super::element::reply::{ReplyHeaderCodec, ReplyCodec, Reply, REPLY_ID};
 use super::element::{TopElementCodec, ElementCodec};
 
@@ -79,9 +79,9 @@ impl Bundle {
     }
 
     /// Add a reply element to this bundle, for a given request ID.
-    /// Such elements are special and don't require an ID, such elements are always of
-    /// a 32-bit variable length and prefixed with the request ID. The length codec from
-    /// the given codec is not used.
+    /// 
+    /// Such elements are special and don't require an ID, because they are always of
+    /// a 32-bit variable length and prefixed with the request ID.
     #[inline]
     pub fn add_reply<E: ElementCodec>(&mut self, codec: &E, elt: E::Element, request_id: u32) {
         self.add_element(REPLY_ID, &ReplyCodec::new(codec), Reply::new(request_id, elt))
@@ -101,7 +101,7 @@ impl Bundle {
         let header_len = E::LEN.len() + 1 + if request.is_some() { 6 } else { 0 };
         let header_slice = self.reserve_exact(header_len);
         header_slice[0] = id;
-
+        // TODO: Rework offset here for the new Packet/RawPacket structure !!!!!!
         if let Some(request_id) = request {
             let mut request_header_cursor = Cursor::new(&mut header_slice[header_len - 6..]);
             request_header_cursor.write_u32::<LE>(request_id).unwrap();
@@ -117,7 +117,7 @@ impl Bundle {
         if request.is_some() {
             let cur_request_header_offset = cur_packet_end - 6;
             if self.last_request_header_offset == 0 { 
-                cur_packet.set_request_first_offset(cur_packet_elt_offset);
+                cur_packet.set_first_request_offset(cur_packet_elt_offset);
             } else {
                 let mut next_request_offset_cursor = Cursor::new(
                     &mut cur_packet.data_mut()[self.last_request_header_offset + 4..]);
@@ -141,29 +141,29 @@ impl Bundle {
 
     }
 
-    /// Finalize the bundle by synchronizing all packets in it and setting
-    /// their sequence id.
-    /// 
-    /// This can be called multiple times, the result is stable if same
-    /// sequence id is given.
-    pub fn finalize(&mut self, seq_id: &mut u32) {
+    // /// Finalize the bundle by synchronizing all packets in it and setting
+    // /// their sequence id.
+    // /// 
+    // /// This can be called multiple times, the result is stable if same
+    // /// sequence id is given.
+    // pub fn finalize(&mut self, seq_id: &mut u32) {
 
-        // Sequence IDs
-        let multi_packet = self.packets.len() > 1;
-        let seq_first = *seq_id;
-        let seq_last = seq_first + self.packets.len() as u32 - 1;
+    //     // Sequence IDs
+    //     let multi_packet = self.packets.len() > 1;
+    //     let seq_first = *seq_id;
+    //     let seq_last = seq_first + self.packets.len() as u32 - 1;
 
-        for packet in &mut self.packets {
-            if multi_packet {
-                packet.set_seq(seq_first, seq_last, *seq_id);
-                *seq_id += 1;
-            } else {
-                packet.clear_seq();
-            }
-            packet.sync_data();
-        }
+    //     for packet in &mut self.packets {
+    //         if multi_packet {
+    //             packet.set_seq(seq_first, seq_last, *seq_id);
+    //             *seq_id += 1;
+    //         } else {
+    //             packet.clear_seq();
+    //         }
+    //         packet.sync_data();
+    //     }
 
-    }
+    // }
 
     #[inline]
     pub fn len(&self) -> usize {
@@ -203,14 +203,14 @@ impl Bundle {
     /// this such space is not available in the current packet. **An exact
     /// reservation must not exceed maximum packet size.**
     fn reserve_exact(&mut self, len: usize) -> &mut [u8] {
-        debug_assert!(len <= PACKET_MAX_BODY_LEN);
+        // debug_assert!(len <= PACKET_MAX_BODY_LEN); TODO: Re-enable this check
         let new_packet = self.available_len < len;
         if new_packet {
             self.add_packet();
         }
         let packet = self.packets.last_mut().unwrap();
         self.available_len -= len;
-        packet.reserve_unchecked(len)
+        packet.grow(len)
     }
 
     /// Reserve up to the given length in the current packet, if 0 byte is
@@ -224,7 +224,7 @@ impl Bundle {
         let packet = self.packets.last_mut().unwrap();
         let len = len.min(self.available_len);
         self.available_len -= len;
-        packet.reserve_unchecked(len)
+        packet.grow(len)
     }
 
 }
@@ -286,7 +286,7 @@ impl<'a> BundleReader<'a> {
         Self {
             packets,
             body: packets.get(0)
-                .map(|p| p.body_data())
+                .map(|p| p.data())
                 .unwrap_or(&[]),
             pos: 0,
         }
@@ -310,7 +310,7 @@ impl<'a> BundleReader<'a> {
                 self.packets = &self.packets[1..];
                 // And if there is one packet, set the body from this packet.
                 if let Some(p) = self.packets.get(0) {
-                    self.body = p.body_data();
+                    self.body = p.data();
                 }
             }
         }
@@ -375,7 +375,7 @@ impl<'a> BundleElementReader<'a> {
         let bundle_reader = BundleReader::new(bundle);
         Self {
             next_request_offset: bundle_reader.packet()
-                .map(Packet::request_first_offset)
+                .map(|p| p.first_request_offset().unwrap_or(0))
                 .unwrap_or(0),
             bundle_reader
         }
@@ -493,7 +493,7 @@ impl<'a> BundleElementReader<'a> {
             match self.bundle_reader.packet() {
                 Some(end_packet) => {
                     if !std::ptr::eq(start_packet, end_packet) {
-                        self.next_request_offset = end_packet.request_first_offset();
+                        self.next_request_offset = end_packet.first_request_offset().unwrap_or(0);
                     }
                     // Else, we are still in the same packet so we don't need to change this.
                 }

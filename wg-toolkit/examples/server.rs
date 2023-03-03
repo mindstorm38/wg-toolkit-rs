@@ -23,6 +23,7 @@ use wgtk::net::element::login::{
     LoginResponseCodec, LoginResponse, LoginChallenge, 
     ChallengeResponseCodec, CuckooCycleResponseCodec, LoginSuccess
 };
+use wgtk::net::element::base::{ClientAuthCodec, ServerAuthCodec, ServerAuth};
 
 use wgtk::util::TruncateFmt;
 
@@ -41,8 +42,9 @@ fn main() {
 
     let mut base_app = BaseApp {
         app: App::new("127.0.0.1:20017".parse().unwrap()).unwrap(),
-        clients: HashMap::new(),
-        clients_keys: HashMap::new(),
+        pending_clients: HashMap::new(),
+        logged_clients: HashMap::new(),
+        logged_counter: 0,
     };
 
     let mut events = Vec::new();
@@ -140,7 +142,7 @@ impl LoginApp {
                         max_nonce: ((1 << 20) as f32 * cuckoo_easiness) as _
                     };
     
-                    println!("{prefix} <-- Cuckoo Cycle Challenge");
+                    println!("{prefix} <-- Cuckoo cycle challenge");
 
                     bundle.add_reply(
                         &LoginResponseCodec::Encrypted(bf.clone()), 
@@ -155,7 +157,7 @@ impl LoginApp {
     
                     let success = LoginSuccess {
                         addr: base_app.app.addr(),
-                        session_key: base_app.alloc_client(client.addr, &*bf),
+                        session_key: base_app.alloc_pending_client(client.addr, &*bf),
                         server_message: String::new(),
                     };
     
@@ -177,7 +179,7 @@ impl LoginApp {
             BundleElement::Simple(ChallengeResponseCodec::ID, reader) => {
                 let codec = ChallengeResponseCodec::new(CuckooCycleResponseCodec);
                 let _ = reader.read(&codec).unwrap();
-                println!("{prefix} --> Challenge Response");
+                println!("{prefix} --> Challenge response");
                 client.challenge_complete = true;
                 true
             }
@@ -200,9 +202,12 @@ impl LoginApp {
 pub struct BaseApp {
     /// Underlying application.
     app: App,
-    /// List of clients logged in the base app.
-    clients: HashMap<SocketAddr, BaseClient>,
-    clients_keys: HashMap<u32, SocketAddr>,
+    /// List of clients pending for switching from login app to base app.
+    pending_clients: HashMap<u32, PendingBaseClient>,
+    /// List of clients logged in the base app mapped to their unique key.
+    logged_clients: HashMap<u32, BaseClient>,
+    /// A counter for allocating the unique key for logged Client.
+    logged_counter: u32,
 }
 
 impl BaseApp {
@@ -228,9 +233,49 @@ impl BaseApp {
     fn handle_element(&mut self, addr: SocketAddr, element: BundleElement) -> bool {
 
         let prefix = format!("[BASE/{addr}]");
-        println!("{prefix} --> {element:?}");
 
         match element {
+            BundleElement::Simple(ClientAuthCodec::ID, reader) => {
+
+                let client_auth = reader.read(&ClientAuthCodec).unwrap();
+
+                println!("{prefix} --> Auth, key: {}, attempt: {}, unk: {}", 
+                    client_auth.element.session_key, 
+                    client_auth.element.attempts_count,
+                    client_auth.element.unk
+                );
+
+                if let Some(pending_login) = self.pending_clients.remove(&client_auth.element.session_key) {
+                    if pending_login.addr == addr {
+
+                        println!("{prefix}     Enabling channel encryption");
+                        self.app.set_channel(addr, pending_login.blowfish);
+
+                        self.logged_counter = self.logged_counter.checked_add(1).expect("too much logged clients");
+                        let logged_key = self.logged_counter;
+
+                        self.logged_clients.insert(logged_key, BaseClient::new(addr));
+
+                        // Create a bundle with a single reply.
+                        let mut bundle = Bundle::new_empty();
+
+                        bundle.add_reply(&ServerAuthCodec, ServerAuth {
+                            session_key: logged_key,
+                        }, client_auth.request_id.unwrap());
+
+                        println!("{prefix} <-- Auth, key: {logged_key}");
+                        self.app.send(&mut bundle, addr).unwrap();
+
+                    } else {
+                        println!("{prefix}     Incoherent address, expected {}", pending_login.addr);
+                    }
+                } else {
+                    println!("{prefix}     Invalid key, discarding");
+                }
+
+                true
+
+            }
             BundleElement::Simple(id, _) => {
                 println!("{prefix} --> Unknown #{id}");
                 false
@@ -243,15 +288,13 @@ impl BaseApp {
 
     }
 
-    /// Allocate a new client and returns its session key.
-    pub fn alloc_client(&mut self, addr: SocketAddr, bf: &Arc<Blowfish>) -> u32 {
+    /// Allocate a new pending client for the given socket address and blowfish key.
+    pub fn alloc_pending_client(&mut self, addr: SocketAddr, bf: &Arc<Blowfish>) -> u32 {
         loop {
             let key = OsRng.next_u32();
-            match self.clients_keys.entry(key) {
+            match self.pending_clients.entry(key) {
                 Entry::Vacant(v) => {
-                    // self.app.set_channel(addr, bf.clone());
-                    self.clients.insert(addr, BaseClient::new(addr, key, bf.clone()));
-                    v.insert(addr);
+                    v.insert(PendingBaseClient::new(addr, bf.clone()));
                     break key
                 }
                 _ => continue
@@ -264,7 +307,7 @@ impl BaseApp {
 
 /// Internal structure used to track a client through login process.
 #[derive(Debug)]
-struct LoginClient {
+pub struct LoginClient {
     addr: SocketAddr,
     blowfish: Option<Arc<Blowfish>>,
     challenge_complete: bool,
@@ -273,7 +316,7 @@ struct LoginClient {
 impl LoginClient {
 
     #[inline]
-    fn new(addr: SocketAddr) -> Self {
+    pub fn new(addr: SocketAddr) -> Self {
         Self {
             addr,
             blowfish: None,
@@ -283,24 +326,35 @@ impl LoginClient {
 
 }
 
+/// Internal structure used to keep track of a client that is switching
+/// from the login app after a successful login. 
+#[derive(Debug)]
+pub struct PendingBaseClient {
+    addr: SocketAddr,
+    blowfish: Arc<Blowfish>,
+}
+
+impl PendingBaseClient {
+
+    #[inline]
+    pub fn new(addr: SocketAddr, blowfish: Arc<Blowfish>) -> Self {
+        Self { addr, blowfish, }
+    }
+
+}
 
 /// Internal structure used to track a client logged in the base app.
 #[derive(Debug)]
-struct BaseClient {
+pub struct BaseClient {
+    #[allow(unused)]
     addr: SocketAddr,
-    session_key: u32,
-    blowfish: Arc<Blowfish>,
 }
 
 impl BaseClient {
 
     #[inline]
-    fn new(addr: SocketAddr, session_key: u32, blowfish: Arc<Blowfish>) -> Self {
-        Self {
-            addr,
-            session_key,
-            blowfish,
-        }
+    pub fn new(addr: SocketAddr) -> Self {
+        Self { addr, }
     }
 
 }

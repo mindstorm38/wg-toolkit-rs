@@ -43,9 +43,12 @@ pub struct ReplyCodec<'a, C: ElementCodec> {
 }
 
 impl<'a, C: ElementCodec> ReplyCodec<'a, C> {
+
+    #[inline]
     pub fn new(codec: &'a C) -> Self {
         Self { codec }
     }
+    
 }
 
 impl<C: ElementCodec> ElementCodec for ReplyCodec<'_, C> {
