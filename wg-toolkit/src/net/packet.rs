@@ -28,15 +28,10 @@ pub const PACKET_MIN_LEN: usize = PACKET_PREFIX_LEN + PACKET_FLAGS_LEN;
 /// - 4 for cumulative ack
 /// - 8 for indexed channel (not yet supported in sync data/state)
 /// - 4 for checksum
-pub const PACKET_MAX_FOOTER_LEN: usize = 8 + 4 + 4 + 1 + 4 + 4 /*+ 8*/ + 4;
+pub const PACKET_MAX_FOOTER_LEN: usize = 8 + 4 + 4 + 1 + 4 + 4 + 8 + 4;
 
 /// The theoretical maximum length for the body, if maximum length is used by header + footer.
 pub const PACKET_MAX_BODY_LEN: usize = PACKET_MAX_LEN - PACKET_MIN_LEN - PACKET_MAX_FOOTER_LEN;
-
-// /// The offset of the 16 bit flags in the raw data of a packet.
-// pub const PACKET_FLAGS_OFFSET: usize = PACKET_PREFIX_LEN;
-// /// The offset of the packet's body in the raw data of a packet.
-// pub const PACKET_BODY_OFFSET: usize = PACKET_PREFIX_LEN + PACKET_FLAGS_LEN;
 
 
 /// Raw packet layout with only data and length. This structure provides functions for
@@ -429,7 +424,10 @@ impl Packet {
             self.raw.grow_write(2).write_u16::<LE>(request_offset as u16).unwrap();
         }
 
-        // TODO: The 0x1000 flag's value go here.
+        if let Some(val) = config.unk_1000() {
+            flags |= flags::UNK_1000;
+            self.raw.grow_write(4).write_u32::<LE>(val).unwrap();
+        }
 
         if config.reliable() || config.sequence_range().is_some() {
             flags |= flags::HAS_SEQUENCE_NUMBER;
@@ -441,9 +439,9 @@ impl Packet {
             flags |= flags::HAS_ACKS;
 
             // Compute the remaining footer length for acks.
-            // TODO: Add indexed channel bytes count when supported.
             let available_len = self.footer_available_len()
                 - if config.cumulative_ack().is_some() { 4 } else { 0 }
+                - if config.indexed_channel().is_some() { 8 } else { 0 }
                 - if config.has_checksum() { 4 } else { 0 }
                 - 1; // Acks count
 
@@ -467,7 +465,12 @@ impl Packet {
             self.raw.grow_write(4).write_u32::<LE>(num).unwrap();
         }
 
-        // TODO: Indexed channel flag's value go here.
+        if let Some((id, version)) = config.indexed_channel() {
+            flags |= flags::INDEXED_CHANNEL;
+            let mut cursor = self.raw.grow_write(8);
+            cursor.write_u32::<LE>(version).unwrap();
+            cursor.write_u32::<LE>(id).unwrap();
+        }
 
         if config.has_checksum() {
             flags |= flags::HAS_CHECKSUM;
@@ -503,9 +506,11 @@ impl Packet {
         // This list of flags contains all flags supported by this function.
         const KNOWN_FLAGS: u16 =
             flags::HAS_CHECKSUM |
+            flags::INDEXED_CHANNEL |
             flags::HAS_CUMULATIVE_ACK |
             flags::HAS_ACKS |
             flags::HAS_SEQUENCE_NUMBER |
+            flags::UNK_1000 |
             flags::HAS_REQUESTS |
             flags::IS_FRAGMENT |
             flags::ON_CHANNEL |
@@ -528,16 +533,19 @@ impl Packet {
 
         }
 
-        // TODO: Indexed channel flag's value go here.
+        if flags & flags::INDEXED_CHANNEL != 0 {
+            let mut cursor = self.raw.shrink_read(8);
+            let version = cursor.read_u32::<LE>().unwrap();
+            let id = cursor.read_u32::<LE>().unwrap();
+            config.set_indexed_channel(id, version);
+        } else {
+            config.clear_indexed_channel();
+        }
 
         if flags & flags::HAS_CUMULATIVE_ACK != 0 {
-            let ack = self.raw.shrink_read(4).read_u32::<LE>().unwrap();
-            if ack == 0 {
-                // Zero is a sentinel value that isn't valid.
-                return Err(PacketSyncError::Corrupted)
-            } else {
-                config.set_cumulative_ack(ack);
-            }
+            config.set_cumulative_ack(self.raw.shrink_read(4).read_u32::<LE>().unwrap());
+        } else {
+            config.clear_cumulative_ack();
         }
 
         if flags & flags::HAS_ACKS != 0 {
@@ -556,10 +564,15 @@ impl Packet {
         // let mut has_sequence_num = false;
         if flags & flags::HAS_SEQUENCE_NUMBER != 0 {
             config.set_sequence_num(self.raw.shrink_read(4).read_u32::<LE>().unwrap());
-            // has_sequence_num = true;
+        } else {
+            config.set_sequence_num(0);
         }
 
-        // TODO: The 0x1000 flag's value go here.
+        if flags & flags::UNK_1000 != 0 {
+            config.set_unk_1000(self.raw.shrink_read(4).read_u32::<LE>().unwrap());
+        } else {
+            config.clear_unk_1000();
+        }
 
         if flags & flags::HAS_REQUESTS != 0 {
             let offset = self.raw.shrink_read(2).read_u16::<LE>().unwrap() as usize;
@@ -568,6 +581,8 @@ impl Packet {
             } else {
                 self.set_first_request_offset(offset);
             }
+        } else {
+            self.clear_first_request_offset();
         }
 
         if flags & flags::IS_FRAGMENT != 0 {
@@ -579,6 +594,8 @@ impl Packet {
             } else {
                 config.set_sequence_range(first_num, last_num);
             }
+        } else {
+            config.clear_sequence_range();
         }
 
         config.set_reliable(flags & flags::IS_RELIABLE != 0);
@@ -631,14 +648,20 @@ pub struct PacketConfig {
     reliable: bool,
     /// The cumulative ack number. This number is sent for acknowledging that
     /// all sequence numbers up to (but excluding) this ack have been received.
-    /// Because it is excluding, **it should not be equal to zero**.
-    cumulative_ack: u32,
+    /// 
+    /// The cumulative ack 0 is apparently used when opening a channel.
+    cumulative_ack: Option<u32>,
     /// Individual acks to send.
     single_acks: VecDeque<u32>,
     /// Set to true when this packet is being transferred on a channel.
     on_channel: bool,
+    /// Indexed channel is a combination of the channel id and version.
+    indexed_channel: Option<(u32, u32)>,
     /// Enable or disable checksum.
     has_checksum: bool,
+    /// The usage of this value and flag 0x1000 is unknown. It will be
+    /// renamed in the future if its purpose is discovered.
+    unk_1000: Option<u32>,
 }
 
 impl PacketConfig {
@@ -651,10 +674,12 @@ impl PacketConfig {
             sequence_first_num: 0,
             sequence_last_num: 0,
             reliable: false,
-            cumulative_ack: 0,
+            cumulative_ack: None,
             single_acks: VecDeque::new(),
             on_channel: false,
+            indexed_channel: None,
             has_checksum: false,
+            unk_1000: None,
         }
     }
 
@@ -724,7 +749,21 @@ impl PacketConfig {
     /// excluding) this ack have been received.
     #[inline]
     pub fn cumulative_ack(&self) -> Option<u32> {
-        (self.cumulative_ack != 0).then_some(self.cumulative_ack)
+        self.cumulative_ack
+    }
+
+    /// Set the cumulative ack if this packet. Because this value is an excluded
+    /// bound, you should not set this to 0. If you want to reset the cumulative
+    /// ack, use `clear_cumulative_ack` instead.
+    #[inline]
+    pub fn set_cumulative_ack(&mut self, num: u32) {
+        self.cumulative_ack = Some(num);
+    }
+
+    /// Clear the cumulative ack from this packet.
+    #[inline]
+    pub fn clear_cumulative_ack(&mut self) {
+        self.cumulative_ack = None;
     }
 
     #[inline]
@@ -737,24 +776,25 @@ impl PacketConfig {
         &mut self.single_acks
     }
 
-    /// Set the cumulative ack if this packet. Because this value is an excluded
-    /// bound, you should not set this to 0. If you want to reset the cumulative
-    /// ack, use `clear_cumulative_ack` instead.
-    #[inline]
-    pub fn set_cumulative_ack(&mut self, num: u32) {
-        assert_ne!(num, 0, "ack number is zero");
-        self.cumulative_ack = num;
-    }
-
-    /// Clear the cumulative ack from this packet.
-    #[inline]
-    pub fn clear_cumulative_ack(&mut self) {
-        self.cumulative_ack = 0;
-    }
-
     #[inline]
     pub fn on_channel(&self) -> bool {
         self.on_channel
+    }
+
+    /// Return the indexed channel, if existing, using tuple `(id, version)`.
+    #[inline]
+    pub fn indexed_channel(&self) -> Option<(u32, u32)> {
+        self.indexed_channel
+    }
+
+    #[inline]
+    pub fn set_indexed_channel(&mut self, id: u32, version: u32) {
+        self.indexed_channel = Some((id, version))
+    }
+
+    #[inline]
+    pub fn clear_indexed_channel(&mut self) {
+        self.indexed_channel = None;
     }
 
     #[inline]
@@ -770,6 +810,27 @@ impl PacketConfig {
     #[inline]
     pub fn set_checksum(&mut self, enabled: bool) {
         self.has_checksum = enabled;
+    }
+
+    /// The usage of this value and flag 0x1000 is unknown. It will be
+    /// renamed in the future if its purpose is discovered.
+    #[inline]
+    pub fn unk_1000(&self) -> Option<u32> {
+        self.unk_1000
+    }
+
+    /// The usage of this value and flag 0x1000 is unknown. It will be
+    /// renamed in the future if its purpose is discovered.
+    #[inline]
+    pub fn set_unk_1000(&mut self, val: u32) {
+        self.unk_1000 = Some(val);
+    }
+
+    /// The usage of this value and flag 0x1000 is unknown. It will be
+    /// renamed in the future if its purpose is discovered.
+    #[inline]
+    pub fn clear_unk_1000(&mut self) {
+        self.unk_1000 = None;
     }
 
 }
@@ -789,17 +850,19 @@ fn calc_checksum(mut reader: impl Read) -> u32 {
 /// Internal module defining flags for packets.
 #[allow(unused)]
 mod flags {
-    pub const HAS_REQUESTS: u16        = 0x0001;
-    pub const HAS_PIGGYBACKS: u16      = 0x0002;
-    pub const HAS_ACKS: u16            = 0x0004;
-    pub const ON_CHANNEL: u16          = 0x0008;
-    pub const IS_RELIABLE: u16         = 0x0010;
-    pub const IS_FRAGMENT: u16         = 0x0020;
-    pub const HAS_SEQUENCE_NUMBER: u16 = 0x0040;
-    pub const INDEXED_CHANNEL: u16     = 0x0080;
-    pub const HAS_CHECKSUM: u16        = 0x0100;
-    pub const CREATE_CHANNEL: u16      = 0x0200;
-    pub const HAS_CUMULATIVE_ACK: u16  = 0x0400;
+    pub const HAS_REQUESTS: u16         = 0x0001;
+    pub const HAS_PIGGYBACKS: u16       = 0x0002;
+    pub const HAS_ACKS: u16             = 0x0004;
+    pub const ON_CHANNEL: u16           = 0x0008;
+    pub const IS_RELIABLE: u16          = 0x0010;
+    pub const IS_FRAGMENT: u16          = 0x0020;
+    pub const HAS_SEQUENCE_NUMBER: u16  = 0x0040;
+    pub const INDEXED_CHANNEL: u16      = 0x0080;
+    pub const HAS_CHECKSUM: u16         = 0x0100;
+    pub const CREATE_CHANNEL: u16       = 0x0200;
+    pub const HAS_CUMULATIVE_ACK: u16   = 0x0400;
+    pub const UNK_0800: u16             = 0x0800;
+    pub const UNK_1000: u16             = 0x1000;
 }
 
 

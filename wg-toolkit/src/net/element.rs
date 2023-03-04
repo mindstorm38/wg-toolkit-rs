@@ -5,6 +5,8 @@ use std::net::{SocketAddrV4, Ipv4Addr};
 
 use byteorder::{ReadBytesExt, WriteBytesExt, LE, BE};
 
+use glam::Vec3A;
+
 
 pub mod ping;
 pub mod login;
@@ -130,6 +132,14 @@ pub trait ElementReadExt: Read {
         Ok(SocketAddrV4::new(Ipv4Addr::from(ip_raw), port))
     }
 
+    fn read_vec3(&mut self) -> io::Result<Vec3A> {
+        Ok(Vec3A::new(
+            self.read_f32::<LE>()?,
+            self.read_f32::<LE>()?,
+            self.read_f32::<LE>()?,
+        ))
+    }
+
 }
 
 
@@ -156,10 +166,18 @@ pub trait ElementWriteExt: Write {
     fn write_rich_string(&mut self, s: &str) -> io::Result<()> {
         self.write_rich_blob(s.as_bytes())
     }
+
     fn write_sock_addr_v4(&mut self, addr: SocketAddrV4) -> io::Result<()> {
         self.write_all(&addr.ip().octets()[..])?;
         self.write_u16::<BE>(addr.port())?;
         self.write_u16::<LE>(0)?; // Salt
+        Ok(())
+    }
+
+    fn write_vec3(&mut self, vec: Vec3A) -> io::Result<()> {
+        self.write_f32::<LE>(vec.x)?;
+        self.write_f32::<LE>(vec.y)?;
+        self.write_f32::<LE>(vec.z)?;
         Ok(())
     }
 

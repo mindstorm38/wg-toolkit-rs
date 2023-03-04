@@ -45,7 +45,7 @@ pub struct App {
     next_sequence_num: u32,
     /// Registered channels on the app that defines a particular blowfish
     /// key for packet encryption and decryption.
-    channels: HashMap<SocketAddr, Arc<Blowfish>>,
+    channels: HashMap<SocketAddr, Channel>,
     /// A raw packet used as a temporary buffer for blowfish encryption.
     encryption_packet: Box<RawPacket>,
 }
@@ -77,8 +77,10 @@ impl App {
         self.addr
     }
 
-    pub fn set_channel(&mut self, addr: SocketAddr, bf: Arc<Blowfish>) {
-        self.channels.insert(addr, bf);
+    /// Associate a new channel to the given address with the given blowfish
+    /// encryption.
+    pub fn set_channel(&mut self, addr: SocketAddr, blowfish: Arc<Blowfish>) {
+        self.channels.insert(addr, Channel::new(blowfish));
     }
 
     /// Send a bundle to a given address. Note that the bundle is finalized by
@@ -94,7 +96,7 @@ impl App {
             return Ok(0)
         }
 
-        let bf = self.channels.get(&to);
+        let mut channel = self.channels.get_mut(&to);
 
         // Compute first and last sequence num and directly update next sequence num.
         let sequence_first_num = self.next_sequence_num;
@@ -102,7 +104,18 @@ impl App {
         let sequence_last_num = self.next_sequence_num - 1;
 
         let mut packet_config = PacketConfig::new();
-        packet_config.set_on_channel(bf.is_some());
+
+        // When on channel, we set appropriate flags and values.
+        if let Some(channel) = channel.as_mut() {
+
+            packet_config.set_on_channel(true);
+            packet_config.set_reliable(true);
+
+            // If cumulative ack is found for the channel, send +1, if there
+            // is not ack yet, send 0.
+            packet_config.set_cumulative_ack(channel.get_cumulative_ack().map(|n| n + 1).unwrap_or(0));
+
+        }
 
         // If multi-packet bundle, set sequence range.
         if sequence_last_num > sequence_first_num {
@@ -117,20 +130,25 @@ impl App {
             // Set sequence number and sync data.
             packet_config.set_sequence_num(sequence_num);
             packet.sync_data(&mut packet_config);
-            sequence_num += 1;
 
             // Reference to the actual raw packet to send.
             let raw_packet;
 
-            if let Some(bf) = &bf {
-                encrypt_packet(packet.raw(), &bf, &mut self.encryption_packet);
+            if let Some(channel) = channel.as_mut() {
+
+                channel.add_sent_ack(sequence_num);
+
+                encrypt_packet(packet.raw(), &channel.blowfish, &mut self.encryption_packet);
                 raw_packet = &*self.encryption_packet;
+
             } else {
                 raw_packet = packet.raw()
             }
             
-            println!("Sending {:X}", BytesFmt(raw_packet.data()));
+            println!("Sending {:X}", BytesFmt(raw_packet.body()));
+
             size += self.socket.send_to(raw_packet.data(), to)?;
+            sequence_num += 1;
 
         }
 
@@ -154,18 +172,21 @@ impl App {
 
                     let mut packet = Packet::new_boxed();
                     
-                    let (mut len, addr) = match self.socket.recv_from(packet.raw_mut().raw_data_mut()) {
+                    let (len, addr) = match self.socket.recv_from(packet.raw_mut().raw_data_mut()) {
                         Ok(t) => t,
                         Err(e) if e.kind() == io::ErrorKind::WouldBlock => break,
                         Err(e) => return Err(e),
                     };
 
-                    if let Some(bf) = self.channels.get(&addr) {
-                        match decrypt_packet(&packet, len, &bf) {
-                            Ok((clear_packet, clear_len)) => {
-                                packet = clear_packet;
-                                len = clear_len;
-                            }
+                    let mut channel = self.channels.get_mut(&addr);
+
+                    // Set the raw data length here, it's just temporary and will 
+                    // be overwritten by 'sync_state'.
+                    packet.raw_mut().set_data_len(len);
+
+                    if let Some(channel) = channel.as_mut() {
+                        match decrypt_packet(&packet, &channel.blowfish) {
+                            Ok(clear_packet) => packet = clear_packet,
                             Err(()) => {
                                 events.push(Event::new(addr, EventKind::PacketError(packet, PacketError::InvalidEncryption)));
                                 continue
@@ -173,11 +194,31 @@ impl App {
                         }
                     }
 
+                    println!("Received {:X}", BytesFmt(packet.raw().body()));
+
+                    // Get length again because it might be modified by decrypt.
+                    let len = packet.raw().data_len();
                     let mut packet_config = PacketConfig::new();
 
                     if let Err(error) = packet.sync_state(len, &mut packet_config) {
                         events.push(Event::new(addr, EventKind::PacketError(packet, PacketError::Sync(error))));
-                    } else if let Some(bundle) = self.bundle_assembler.try_assemble(addr, packet, &packet_config) {
+                        continue
+                    }
+
+                    if let Some(channel) = channel.as_mut() {
+
+                        // If packet is reliable, take its ack number and store it for future acknowledging.
+                        if packet_config.reliable() {
+                            channel.add_received_ack(packet_config.sequence_num());
+                        }
+
+                        if let Some(ack) = packet_config.cumulative_ack() {
+                            channel.remove_cumulative_ack(ack);
+                        }
+
+                    }
+
+                    if let Some(bundle) = self.bundle_assembler.try_assemble(addr, packet, &packet_config) {
                         events.push(Event::new(addr, EventKind::Bundle(bundle)));
                     }
 
@@ -189,6 +230,12 @@ impl App {
         events.extend(self.bundle_assembler.drain_old()
             .into_iter()
             .map(|(addr, p)| Event::new(addr, EventKind::PacketError(p, PacketError::BundleTimeout))));
+
+        // for (addr, channel) in &mut self.channels {
+        //     if channel.take_auto_ack() {
+                
+        //     }
+        // }
 
         Ok(())
 
@@ -208,9 +255,13 @@ const ENCRYPTION_FOOTER_LEN: usize = ENCRYPTION_MAGIC.len() + 1;
 /// This returns an empty error if the encryption is invalid.
 /// If successful the clear packet is returned with its size, the size can then
 /// be used to synchronize the packet's state to its data.
-fn decrypt_packet(packet: &Packet, len: usize, bf: &Blowfish) -> Result<(Box<Packet>, usize), ()> {
+fn decrypt_packet(packet: &Packet, bf: &Blowfish) -> Result<Box<Packet>, ()> {
 
+    let len = packet.raw().data_len();
+
+    // Create a packet that have the same length as input packet.
     let mut clear_packet = Packet::new_boxed();
+    clear_packet.raw_mut().set_data_len(len);
 
     // Decrypt the incoming packet into the new clear packet.
     // We don't need to set the length yet because this packet 
@@ -244,12 +295,11 @@ fn decrypt_packet(packet: &Packet, len: usize, bf: &Blowfish) -> Result<(Box<Pac
     let wastage = dst[wastage_begin];
     assert!(wastage <= BLOCK_SIZE as u8, "temporary check that wastage is not greater than block size");
 
-    let new_len = len - wastage as usize - ENCRYPTION_MAGIC.len();
-
+    clear_packet.raw_mut().set_data_len(len - wastage as usize - ENCRYPTION_MAGIC.len());
     // Copy the prefix directly because it is clear.
     clear_packet.raw_mut().write_prefix(packet.raw().read_prefix());
 
-    Ok((clear_packet, new_len))
+    Ok(clear_packet)
 
 }
 
@@ -286,6 +336,107 @@ fn encrypt_packet(src_packet: &RawPacket, bf: &Blowfish, dst_packet: &mut RawPac
     
     // Copy the prefix directly because it is clear.
     dst_packet.write_prefix(src_packet.read_prefix());
+
+}
+
+
+/// Represent a channel between the app and a client with specific socket address.
+#[derive(Debug)]
+pub struct Channel {
+    /// The blowfish key used for encryption of this channel.
+    blowfish: Arc<Blowfish>,
+    /// The list of acks that are pending for completion. They should be ordered
+    /// in the vector, so a simple binary search is enough.
+    sent_acks: Vec<u32>,
+    /// The list of received acks, it's used for sending. 
+    received_acks: Vec<u32>,
+    // /// Set to true when an ack should be sent even if not bundle is set.
+    // auto_ack: bool,
+}
+
+impl Channel {
+
+    fn new(blowfish: Arc<Blowfish>) -> Self {
+        Self {
+            blowfish,
+            sent_acks: Vec::new(),
+            received_acks: Vec::new(),
+            // auto_ack: false,
+        }
+    }
+
+    fn add_sent_ack(&mut self, sequence_num: u32) {
+
+        debug_assert!(
+            self.sent_acks.is_empty() || *self.sent_acks.last().unwrap() < sequence_num,
+            "sequence number is not ordered"
+        );
+
+        self.sent_acks.push(sequence_num);
+        println!("[AFTER ADD] sent_acks: {:?}", self.sent_acks);
+
+    }
+
+    fn remove_cumulative_ack(&mut self, ack: u32) {
+        
+        let discard_offset = match self.sent_acks.binary_search(&ack) {
+            Ok(index) => index,
+            Err(index) => index,
+        };
+
+        self.sent_acks.drain(..discard_offset);
+        println!("[AFTER REM] sent_acks: {:?}", self.sent_acks);
+
+    }
+
+    fn add_received_ack(&mut self, sequence_num: u32) {
+
+        match self.received_acks.binary_search(&sequence_num) {
+            Ok(_) => {
+                // Maybe an error to receive the same ack twice?
+            }
+            Err(index) => {
+                self.received_acks.insert(index, sequence_num);
+            }
+        }
+
+        println!("[AFTER ADD] received_acks: {:?}", self.received_acks);
+
+    }
+
+    // #[inline]
+    // fn set_auto_ack(&mut self) {
+    //     self.auto_ack = true;
+    // }
+
+    // /// Take the auto ack and disable it anyway.
+    // #[inline]
+    // fn take_auto_ack(&mut self) -> bool {
+    //     std::mem::replace(&mut self.auto_ack, false)
+    // }
+
+    /// Return the last ack that is part of an chain.
+    fn get_cumulative_ack(&mut self) -> Option<u32> {
+
+        let first_ack = *self.received_acks.get(0)?;
+        let mut cumulative_ack = first_ack;
+
+        for &sequence_num in &self.received_acks[1..] {
+            if sequence_num == cumulative_ack + 1 {
+                cumulative_ack += 1;
+            } else {
+                break
+            }
+        }
+
+        if cumulative_ack > first_ack {
+            let diff = cumulative_ack - first_ack;
+            self.received_acks.drain(..diff as usize);
+        }
+
+        Some(cumulative_ack)
+
+    }
 
 }
 

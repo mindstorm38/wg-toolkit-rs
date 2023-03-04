@@ -23,7 +23,11 @@ use wgtk::net::element::login::{
     LoginResponseCodec, LoginResponse, LoginChallenge, 
     ChallengeResponseCodec, CuckooCycleResponseCodec, LoginSuccess
 };
-use wgtk::net::element::base::{ClientAuthCodec, ServerAuthCodec, ServerAuth};
+use wgtk::net::element::base::{
+    ClientAuthCodec, 
+    ServerSessionKeyCodec, ServerSessionKey,
+    ClientSessionKeyCodec,
+};
 
 use wgtk::util::TruncateFmt;
 
@@ -35,13 +39,13 @@ fn main() {
     let priv_key = RsaPrivateKey::from_pkcs8_pem(priv_key_content.as_str()).unwrap();
 
     let mut login_app = LoginApp {
-        app: App::new("127.0.0.1:20016".parse().unwrap()).unwrap(),
+        app: App::new("192.168.1.100:20016".parse().unwrap()).unwrap(),
         priv_key: Arc::new(priv_key),
         clients: HashMap::new(),
     };
 
     let mut base_app = BaseApp {
-        app: App::new("127.0.0.1:20017".parse().unwrap()).unwrap(),
+        app: App::new("192.168.1.100:20017".parse().unwrap()).unwrap(),
         pending_clients: HashMap::new(),
         logged_clients: HashMap::new(),
         logged_counter: 0,
@@ -157,11 +161,11 @@ impl LoginApp {
     
                     let success = LoginSuccess {
                         addr: base_app.app.addr(),
-                        session_key: base_app.alloc_pending_client(client.addr, &*bf),
+                        login_key: base_app.alloc_pending_client(client.addr, &*bf),
                         server_message: String::new(),
                     };
     
-                    println!("{prefix} <-- Success, addr: {}, key: {}", success.addr, success.session_key);
+                    println!("{prefix} <-- Success, addr: {}, login key: {}", success.addr, success.login_key);
 
                     bundle.add_reply(
                         &LoginResponseCodec::Encrypted(bf.clone()), 
@@ -239,13 +243,13 @@ impl BaseApp {
 
                 let client_auth = reader.read(&ClientAuthCodec).unwrap();
 
-                println!("{prefix} --> Auth, key: {}, attempt: {}, unk: {}", 
-                    client_auth.element.session_key, 
+                println!("{prefix} --> Auth, login key: {}, attempt: {}, unk: {}", 
+                    client_auth.element.login_key, 
                     client_auth.element.attempts_count,
                     client_auth.element.unk
                 );
 
-                if let Some(pending_login) = self.pending_clients.remove(&client_auth.element.session_key) {
+                if let Some(pending_login) = self.pending_clients.remove(&client_auth.element.login_key) {
                     if pending_login.addr == addr {
 
                         println!("{prefix}     Enabling channel encryption");
@@ -259,11 +263,11 @@ impl BaseApp {
                         // Create a bundle with a single reply.
                         let mut bundle = Bundle::new_empty();
 
-                        bundle.add_reply(&ServerAuthCodec, ServerAuth {
+                        bundle.add_reply(&ServerSessionKeyCodec, ServerSessionKey {
                             session_key: logged_key,
                         }, client_auth.request_id.unwrap());
 
-                        println!("{prefix} <-- Auth, key: {logged_key}");
+                        println!("{prefix} <-- Session key: {logged_key}");
                         self.app.send(&mut bundle, addr).unwrap();
 
                     } else {
@@ -272,6 +276,16 @@ impl BaseApp {
                 } else {
                     println!("{prefix}     Invalid key, discarding");
                 }
+
+                true
+
+            }
+            BundleElement::Simple(ClientSessionKeyCodec::ID, reader) => {
+                
+                let client_session_auth = reader.read(&ClientSessionKeyCodec).unwrap();
+                let session_key = client_session_auth.element.session_key;
+
+                println!("{prefix} --> Session key: {session_key}");
 
                 true
 
