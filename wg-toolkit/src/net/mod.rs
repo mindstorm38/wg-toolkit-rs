@@ -3,7 +3,7 @@
 pub mod packet;
 pub mod element;
 pub mod bundle;
-pub mod proxy;
+// pub mod proxy;
 pub mod filter;
 pub mod cuckoo;
 

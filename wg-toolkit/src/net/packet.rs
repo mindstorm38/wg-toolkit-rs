@@ -1,12 +1,12 @@
 //! Packet structure definition with synchronization methods.
 
 use std::io::{Cursor, Read, Write, Seek};
-use std::fmt::{Debug, Formatter};
 use std::collections::VecDeque;
+use std::fmt;
 
 use byteorder::{ReadBytesExt, WriteBytesExt, LE};
 
-// use crate::util::BytesFmt;
+use crate::util::BytesFmt;
 
 
 /// According to disassembly of WoT, outside of a channel, the max size if always
@@ -30,12 +30,8 @@ pub const PACKET_MIN_LEN: usize = PACKET_PREFIX_LEN + PACKET_FLAGS_LEN;
 /// - 4 for checksum
 pub const PACKET_MAX_FOOTER_LEN: usize = 8 + 4 + 4 + 1 + 4 + 4 /*+ 8*/ + 4;
 
-// /// The theoretical maximum length for the body, if maximum length is used by header + footer.
-// pub const PACKET_MAX_BODY_LEN: usize =
-//     PACKET_MAX_LEN -
-//     PACKET_MAX_FOOTER_LEN -
-//     PACKET_FLAGS_LEN -
-//     PACKET_PREFIX_LEN;
+/// The theoretical maximum length for the body, if maximum length is used by header + footer.
+pub const PACKET_MAX_BODY_LEN: usize = PACKET_MAX_LEN - PACKET_MIN_LEN - PACKET_MAX_FOOTER_LEN;
 
 // /// The offset of the 16 bit flags in the raw data of a packet.
 // pub const PACKET_FLAGS_OFFSET: usize = PACKET_PREFIX_LEN;
@@ -56,10 +52,10 @@ pub const PACKET_MAX_FOOTER_LEN: usize = 8 + 4 + 4 + 1 + 4 + 4 /*+ 8*/ + 4;
 /// 
 /// - *Data*, it contains all the data up to the packet's length;
 /// 
-/// - *Body data*, it contains all the data starting with the packet's flags up to the
+/// - *Body*, it contains all the data starting with the packet's flags up to the
 ///   packet's length.
 /// 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct RawPacket {
     /// Full raw data of the packet.
     data: [u8; PACKET_MAX_LEN],
@@ -96,29 +92,29 @@ impl RawPacket {
 
     /// Return the maximum size of a packet.
     #[inline]
-    pub fn max_len(&self) -> usize {
+    pub fn data_max_len(&self) -> usize {
         self.data.len()
     }
 
     /// Return the length of this packet.
     #[inline]
-    pub fn len(&self) -> usize {
+    pub fn data_len(&self) -> usize {
         self.len
+    }
+
+    /// Return the available length in this packet.
+    #[inline]
+    pub fn data_available_len(&self) -> usize {
+        self.data_max_len() - self.data_len()
     }
 
     /// Set the length of this packet. The function panics if the length
     /// is not at least `PACKET_MIN_LEN` or at most `PACKET_MAX_LEN`.
     #[inline]
-    pub fn set_len(&mut self, len: usize) {
+    pub fn set_data_len(&mut self, len: usize) {
         assert!(len >= PACKET_MIN_LEN, "given length too small");
         assert!(len <= PACKET_MAX_LEN, "given length too high");
         self.len = len;
-    }
-
-    /// Return the available length in this packet.
-    #[inline]
-    pub fn available_len(&self) -> usize {
-        self.max_len() - self.len()
     }
 
     /// Get a slice to the data, with the packet's length.
@@ -138,30 +134,30 @@ impl RawPacket {
     /// Return the maximum size of the body of a packet.
     #[inline]
     pub fn max_body_len(&self) -> usize {
-        self.max_len() - PACKET_PREFIX_LEN
+        self.data_max_len() - PACKET_PREFIX_LEN
     }
 
     /// Return the length of this packet.
     #[inline]
     pub fn body_len(&self) -> usize {
-        self.len() - PACKET_PREFIX_LEN
+        self.data_len() - PACKET_PREFIX_LEN
     }
 
     /// Get a slice to the data from after the prefix to the end.
     #[inline]
-    pub fn body_data(&self) -> &[u8] {
+    pub fn body(&self) -> &[u8] {
         &self.data[PACKET_PREFIX_LEN..self.len]
     }
 
     /// Get a mutable slice to the data from after the prefix to the end.
     #[inline]
-    pub fn body_data_mut(&mut self) -> &[u8] {
+    pub fn body_mut(&mut self) -> &mut [u8] {
         &mut self.data[PACKET_PREFIX_LEN..self.len]
     }
 
     /// Reset this packet's length, flags and prefix.
     #[inline]
-    pub fn reset(&self) {
+    pub fn reset(&mut self) {
         self.len = PACKET_MIN_LEN;
         self.data[..PACKET_MIN_LEN].fill(0);
     }
@@ -173,7 +169,7 @@ impl RawPacket {
     /// requested length.
     #[inline]
     pub fn grow(&mut self, len: usize) -> &mut [u8] {
-        assert!(self.available_len() >= len, "not enough available data");
+        assert!(self.data_available_len() >= len, "not enough available data");
         let ptr = &mut self.data[self.len..][..len];
         self.len += len;
         ptr
@@ -242,11 +238,25 @@ impl RawPacket {
 
 }
 
+impl fmt::Debug for RawPacket {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RawPacket")
+            .field("raw_data", &format_args!("{:X}", BytesFmt(self.raw_data())))
+            .field("data", &format_args!("{:X}", BytesFmt(self.data())))
+            .field("len", &self.len)
+            .finish()
+    }
+}
+
 
 /// Represent a [`RawPacket`] with additional state. The additional state keeps
 /// track of different offsets in the packet's raw data. Like footer and first
 /// request element offsets. This structure also provides functions for
 /// synchronizing data from the state and vice-versa.
+/// 
+/// This structure only expose a single slice of data which contain the content
+/// data, starting after the flags and ending before the footer. To access more
+/// low-level slices you can should use the raw packet.
 #[derive(Clone)]
 pub struct Packet {
     /// The internal raw packet used for data manipulation.
@@ -285,7 +295,10 @@ impl Packet {
     }
 
     /// Return a mutable reference to the internal raw packet.
-    /// **You should** be really careful when manipulating the internal data.
+    /// 
+    /// **You should** be really careful when manipulating the internal data and
+    /// always prefer using methods of this structure over manipulating the raw
+    /// data from external modules.
     #[inline]
     pub fn raw_mut(&mut self) -> &mut RawPacket {
         &mut self.raw
@@ -293,44 +306,58 @@ impl Packet {
 
     /// Return the maximum content length.
     #[inline]
-    pub fn max_len(&self) -> usize {
+    pub fn content_max_len(&self) -> usize {
         // Subtract length of prefix + flags + max footer.
-        self.raw.max_len() - PACKET_MIN_LEN - PACKET_MAX_FOOTER_LEN
+        self.raw.data_max_len() - PACKET_MIN_LEN - PACKET_MAX_FOOTER_LEN
     }
 
     /// Return the length of the content.
     #[inline]
-    pub fn len(&self) -> usize {
+    pub fn content_len(&self) -> usize {
         self.footer_offset - PACKET_MIN_LEN
     }
 
     /// Return the available body length for writing elements. The rest of the
     /// length might be used for the footer.
     #[inline]
-    pub fn available_len(&self) -> usize {
-        self.max_len() - self.len()
+    pub fn content_available_len(&self) -> usize {
+        self.content_max_len() - self.content_len()
     }
 
+    /// Return a slice to the content of this packet. The content starts after
+    /// the flags and finish before the footer.
     #[inline]
-    pub fn data(&self) -> &[u8] {
+    pub fn content(&self) -> &[u8] {
         &self.raw.raw_data()[PACKET_MIN_LEN..self.footer_offset]
     }
 
+    /// Return a mutable slice to the content of this packet. The content starts
+    /// after the flags and finish before the footer.
     #[inline]
-    pub fn data_mut(&mut self) -> &mut [u8] {
-        &mut self.raw.raw_data()[PACKET_MIN_LEN..self.footer_offset]
+    pub fn content_mut(&mut self) -> &mut [u8] {
+        &mut self.raw.raw_data_mut()[PACKET_MIN_LEN..self.footer_offset]
     }
 
+    /// Grow this packet's content by the given size. You must ensure that there
+    /// is enough space for such size, you can obtain remaining length using the 
+    /// `content_available_len` function.
+    /// 
+    /// Note that because growing the body might overwrite the footer, this
+    /// function reset the footer to zero length. Calling `footer_len()` after
+    /// this function returns 0.
     #[inline]
     pub fn grow(&mut self, len: usize) -> &mut [u8] {
-        assert!(self.available_len() >= len, "not enough available data");
-        let ptr = &mut self.raw.raw_data()[self.footer_offset..][..len];
+        assert!(self.content_available_len() >= len, "not enough available data");
+        // Reset length to footer offset, so we overwrite the footer.
+        self.raw.set_data_len(self.footer_offset);
+        // Advance the footer by the same amount raw.grow will do.
         self.footer_offset += len;
-        // Reset len to footer offset because we could've override footers.
-        self.raw.set_len(self.footer_offset);
-        ptr
+        // Grow should not panic because we checked available length.
+        self.raw.grow(len)
     }
 
+    /// Grow this packet's content by the given size and return a writer to the
+    /// location to write. See `grow` function for more information.
     #[inline]
     pub fn grow_write(&mut self, len: usize) -> impl Write + '_ {
         Cursor::new(self.grow(len))
@@ -339,9 +366,10 @@ impl Packet {
     /// Return the length of the footer. It should not exceed `PACKET_MAX_FOOTER_LEN`.
     #[inline]
     pub fn footer_len(&self) -> usize {
-        self.raw.len() - self.footer_offset
+        self.raw.data_len() - self.footer_offset
     }
 
+    /// Return the available length remaining in the footer.
     #[inline]
     pub fn footer_available_len(&self) -> usize {
         PACKET_MAX_FOOTER_LEN - self.footer_len()
@@ -376,8 +404,8 @@ impl Packet {
     pub fn sync_data(&mut self, config: &mut PacketConfig) {
 
         // If the footer is already filled
-        if self.footer_offset < self.raw.len() {
-            self.raw.set_len(self.footer_offset);
+        if self.footer_offset < self.raw.data_len() {
+            self.raw.set_data_len(self.footer_offset);
         }
 
         // Note that in this function we are intentionally using the function 
@@ -414,7 +442,7 @@ impl Packet {
 
             // Compute the remaining footer length for acks.
             // TODO: Add indexed channel bytes count when supported.
-            let mut available_len = self.footer_available_len()
+            let available_len = self.footer_available_len()
                 - if config.cumulative_ack().is_some() { 4 } else { 0 }
                 - if config.has_checksum() { 4 } else { 0 }
                 - 1; // Acks count
@@ -452,7 +480,7 @@ impl Packet {
         // which range from flags to the end of the footer. The checksum will be
         // appended to the footer after computing the checksum.
         if config.has_checksum() {
-            let checksum = calc_checksum(Cursor::new(self.raw.body_data()));
+            let checksum = calc_checksum(Cursor::new(self.raw.body()));
             self.raw.grow_write(4).write_u32::<LE>(checksum).unwrap();
         }
 
@@ -467,7 +495,7 @@ impl Packet {
 
         // We set the length of the raw packet, it allow us to use 
         // 'shrink_read' on it to read each footer element.
-        self.raw.set_len(len);
+        self.raw.set_data_len(len);
 
         // Start by reading flags.
         let flags = self.raw.read_flags();
@@ -487,12 +515,12 @@ impl Packet {
             return Err(PacketSyncError::UnknownFlags(flags & !KNOWN_FLAGS));
         }
 
-        if flags | flags::HAS_CHECKSUM != 0 {
+        if flags & flags::HAS_CHECKSUM != 0 {
 
             // We shrink the packet to read the checksum and then compute the checksum 
             // from the body data, which no longer contains the checksum itself!
             let expected_checksum = self.raw.shrink_read(4).read_u32::<LE>().unwrap();
-            let computed_checksum = calc_checksum(Cursor::new(self.raw.body_data()));
+            let computed_checksum = calc_checksum(Cursor::new(self.raw.body()));
 
             if expected_checksum != computed_checksum {
                 return Err(PacketSyncError::InvalidChecksum)
@@ -502,7 +530,7 @@ impl Packet {
 
         // TODO: Indexed channel flag's value go here.
 
-        if flags | flags::HAS_CUMULATIVE_ACK != 0 {
+        if flags & flags::HAS_CUMULATIVE_ACK != 0 {
             let ack = self.raw.shrink_read(4).read_u32::<LE>().unwrap();
             if ack == 0 {
                 // Zero is a sentinel value that isn't valid.
@@ -512,7 +540,7 @@ impl Packet {
             }
         }
 
-        if flags | flags::HAS_ACKS != 0 {
+        if flags & flags::HAS_ACKS != 0 {
 
             let count = self.raw.shrink(1)[0];
             if count == 0 {
@@ -525,15 +553,15 @@ impl Packet {
 
         }
 
-        let mut has_sequence_num = false;
-        if flags | flags::HAS_SEQUENCE_NUMBER != 0 {
+        // let mut has_sequence_num = false;
+        if flags & flags::HAS_SEQUENCE_NUMBER != 0 {
             config.set_sequence_num(self.raw.shrink_read(4).read_u32::<LE>().unwrap());
-            has_sequence_num = true;
+            // has_sequence_num = true;
         }
 
         // TODO: The 0x1000 flag's value go here.
 
-        if flags | flags::HAS_REQUESTS != 0 {
+        if flags & flags::HAS_REQUESTS != 0 {
             let offset = self.raw.shrink_read(2).read_u16::<LE>().unwrap() as usize;
             if offset < PACKET_FLAGS_LEN {
                 return Err(PacketSyncError::Corrupted)
@@ -542,7 +570,7 @@ impl Packet {
             }
         }
 
-        if flags | flags::IS_FRAGMENT != 0 {
+        if flags & flags::IS_FRAGMENT != 0 {
             let mut cursor = self.raw.shrink_read(8);
             let first_num = cursor.read_u32::<LE>().unwrap();
             let last_num = cursor.read_u32::<LE>().unwrap();
@@ -553,13 +581,13 @@ impl Packet {
             }
         }
 
-        config.set_reliable(flags | flags::IS_RELIABLE != 0);
-        config.set_on_channel(flags | flags::ON_CHANNEL != 0);
+        config.set_reliable(flags & flags::IS_RELIABLE != 0);
+        config.set_on_channel(flags & flags::ON_CHANNEL != 0);
 
         // Now that we shrunk all the footer, set the footer offset.
-        self.footer_offset = self.raw.len();
+        self.footer_offset = self.raw.data_len();
         // Rollback the length.
-        self.raw.set_len(len);
+        self.raw.set_data_len(len);
 
         // Check that the footer length is coherent.
         debug_assert!(self.footer_len() <= PACKET_MAX_FOOTER_LEN);
@@ -570,36 +598,14 @@ impl Packet {
 
 }
 
-impl Debug for Packet {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-
-        let mut s = f.debug_struct("Packet");
-
-        s.field("len", &self.len());
-        // s.field("raw_len", &self.net_len());
-        // s.field("body_len", &self.body_len());
-        
-        // s.field("prefix", &format_args!("{:X}", BytesFmt(&self.raw_data()[..PACKET_PREFIX_LEN])));
-        // s.field("body", &format_args!("{:X}", BytesFmt(self.body_data())));
-
-        // if self.footer_offset < self.len {
-        //     s.field("footer_offset", &self.footer_offset);
-        //     s.field("footer_len", &(self.len - self.footer_offset));
-        // }
-
-        // if let Some(request_offset) = self.first_request_offset() {
-        //     s.field("request_offset", &request_offset);
-        // }
-
-        // s.field("seq", &self.sequence_num());
-
-        // if let Some((first_num, last_num)) = self.sequence_range() {
-        //     s.field("seq_first", &first_num);
-        //     s.field("seq_last", &last_num);
-        // }
-
-        s.finish()
-
+impl fmt::Debug for Packet {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Packet")
+            .field("content", &format_args!("{:X}", BytesFmt(self.content())))
+            .field("content_len", &self.content_len())
+            .field("footer_len", &self.footer_len())
+            .field("first_request_offset", &self.first_request_offset())
+            .finish()
     }
 }
 
@@ -727,7 +733,7 @@ impl PacketConfig {
     }
 
     #[inline]
-    pub fn single_acks_mut(&self) -> &mut VecDeque<u32> {
+    pub fn single_acks_mut(&mut self) -> &mut VecDeque<u32> {
         &mut self.single_acks
     }
 

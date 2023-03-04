@@ -9,7 +9,7 @@ use std::fmt;
 
 use byteorder::{ReadBytesExt, WriteBytesExt, LE};
 
-use super::packet::{Packet, PACKET_FLAGS_LEN};
+use super::packet::{Packet, PacketConfig, PACKET_FLAGS_LEN, PACKET_MAX_BODY_LEN};
 use super::element::reply::{ReplyHeaderCodec, ReplyCodec, Reply, REPLY_ID};
 use super::element::{TopElementCodec, ElementCodec};
 
@@ -43,7 +43,7 @@ impl Bundle {
     #[inline]
     fn new(packets: Vec<Box<Packet>>) -> Self {
         Bundle {
-            available_len: packets.last().map(|p| p.available_len()).unwrap_or(0),
+            available_len: packets.last().map(|p| p.content_available_len()).unwrap_or(0),
             packets,
             force_new_packet: true,
             last_request_header_offset: 0,
@@ -97,33 +97,43 @@ impl Bundle {
             self.force_new_packet = false;
         }
 
+        const REQUEST_HEADER_LEN: usize = 6;
+
         // Allocate element's header, +1 for element's ID, +6 reply_id and link offset.
-        let header_len = E::LEN.len() + 1 + if request.is_some() { 6 } else { 0 };
+        let header_len = 1 + E::LEN.len() + if request.is_some() { REQUEST_HEADER_LEN } else { 0 };
         let header_slice = self.reserve_exact(header_len);
         header_slice[0] = id;
-        // TODO: Rework offset here for the new Packet/RawPacket structure !!!!!!
+
         if let Some(request_id) = request {
             let mut request_header_cursor = Cursor::new(&mut header_slice[header_len - 6..]);
             request_header_cursor.write_u32::<LE>(request_id).unwrap();
             request_header_cursor.write_u16::<LE>(0).unwrap(); // Next request offset set to null.
         }
 
-        // Update the current packet's cursor and header length.
+        // Keep the packet index to rewrite the packet's length after writing it.
         let cur_packet_idx = self.packets.len() - 1;
-        let cur_packet = &mut self.packets[cur_packet_idx];
-        let cur_packet_end = cur_packet.len();
-        let cur_packet_elt_offset = cur_packet_end - header_len;
 
+        // IMPORTANT: All offsets are in the content, not the raw body or raw data.
+        let cur_packet = &mut self.packets[cur_packet_idx];
+        let cur_packet_len = cur_packet.content_len();
+        let cur_packet_elt_offset = cur_packet_len - header_len;
+
+        // NOTE: We add flags length to element offset because offset contains flags.
         if request.is_some() {
-            let cur_request_header_offset = cur_packet_end - 6;
-            if self.last_request_header_offset == 0 { 
-                cur_packet.set_first_request_offset(cur_packet_elt_offset);
+        
+            if self.last_request_header_offset == 0 {
+                // If there is no previous request, we set the first request offset.
+                cur_packet.set_first_request_offset(PACKET_FLAGS_LEN + cur_packet_elt_offset);
             } else {
-                let mut next_request_offset_cursor = Cursor::new(
-                    &mut cur_packet.data_mut()[self.last_request_header_offset + 4..]);
-                next_request_offset_cursor.write_u16::<LE>(cur_packet_elt_offset as u16).unwrap();
+                // Add 4 because first 4 bytes is the request id.
+                Cursor::new(&mut cur_packet.content_mut()[self.last_request_header_offset + 4..])
+                    .write_u16::<LE>((PACKET_FLAGS_LEN + cur_packet_elt_offset) as u16).unwrap();
             }
-            self.last_request_header_offset = cur_request_header_offset;
+
+            // We keep the offset of the request header, it will be used if a request
+            // element is added after this one so we can write the link to the next.
+            self.last_request_header_offset = cur_packet_len - REQUEST_HEADER_LEN;
+            
         }
 
         // Write the actual element's content.
@@ -135,36 +145,13 @@ impl Bundle {
 
         // Finally write length.
         let cur_packet = &mut self.packets[cur_packet_idx];
-        let cur_len_slice = &mut cur_packet.data_mut()[cur_packet_elt_offset + 1..];
+        let cur_len_slice = &mut cur_packet.content_mut()[cur_packet_elt_offset + 1..];
         // Unwrap because we now there is enough space at the given position.
         E::LEN.write(Cursor::new(cur_len_slice), length).unwrap();
 
     }
 
-    // /// Finalize the bundle by synchronizing all packets in it and setting
-    // /// their sequence id.
-    // /// 
-    // /// This can be called multiple times, the result is stable if same
-    // /// sequence id is given.
-    // pub fn finalize(&mut self, seq_id: &mut u32) {
-
-    //     // Sequence IDs
-    //     let multi_packet = self.packets.len() > 1;
-    //     let seq_first = *seq_id;
-    //     let seq_last = seq_first + self.packets.len() as u32 - 1;
-
-    //     for packet in &mut self.packets {
-    //         if multi_packet {
-    //             packet.set_seq(seq_first, seq_last, *seq_id);
-    //             *seq_id += 1;
-    //         } else {
-    //             packet.clear_seq();
-    //         }
-    //         packet.sync_data();
-    //     }
-
-    // }
-
+    /// Return the number of packets in this bundle.
     #[inline]
     pub fn len(&self) -> usize {
         self.packets.len()
@@ -194,16 +181,16 @@ impl Bundle {
     /// Internal method to add a new packet at the end of the chain.
     fn add_packet(&mut self) {
         let packet = Packet::new_boxed();
-        self.available_len = packet.available_len();
+        self.available_len = packet.content_available_len();
         self.packets.push(packet);
         self.last_request_header_offset = 0;
     }
 
     /// Reserve exactly the given length in the current packet or a new one if
-    /// this such space is not available in the current packet. **An exact
-    /// reservation must not exceed maximum packet size.**
+    /// such space is not available in the current packet. **Given length must 
+    /// not exceed maximum packet size.**
     fn reserve_exact(&mut self, len: usize) -> &mut [u8] {
-        // debug_assert!(len <= PACKET_MAX_BODY_LEN); TODO: Re-enable this check
+        debug_assert!(len <= PACKET_MAX_BODY_LEN);
         let new_packet = self.available_len < len;
         if new_packet {
             self.add_packet();
@@ -286,7 +273,7 @@ impl<'a> BundleReader<'a> {
         Self {
             packets,
             body: packets.get(0)
-                .map(|p| p.data())
+                .map(|p| p.content())
                 .unwrap_or(&[]),
             pos: 0,
         }
@@ -310,7 +297,7 @@ impl<'a> BundleReader<'a> {
                 self.packets = &self.packets[1..];
                 // And if there is one packet, set the body from this packet.
                 if let Some(p) = self.packets.get(0) {
-                    self.body = p.data();
+                    self.body = p.content();
                 }
             }
         }
@@ -651,9 +638,9 @@ impl<O: Hash + Eq + Copy> BundleAssembler<O> {
     /// Add the given packet to internal fragments and try to make a bundle if all fragments
     /// were received. *Special case for packet with no sequence number, in such case a bundle
     /// with this single packet is returned.*
-    pub fn try_assemble(&mut self, from: O, packet: Box<Packet>) -> Option<Bundle> {
-        if packet.has_seq() {
-            let (seq_first, seq_last, seq) = packet.seq();
+    pub fn try_assemble(&mut self, from: O, packet: Box<Packet>, packet_config: &PacketConfig) -> Option<Bundle> {
+        if let Some((seq_first, seq_last)) = packet_config.sequence_range() {
+            let seq = packet_config.sequence_num();
             match self.fragments.entry((from, seq_first)) {
                 Entry::Occupied(mut o) => {
                     if o.get().is_old() {
