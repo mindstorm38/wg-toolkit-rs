@@ -6,7 +6,7 @@ use glam::{Affine3A, Vec3A};
 use smallvec::SmallVec;
 use thiserror::Error;
 
-use crate::util::io::{WgReadExt, WgReadSeekExt};
+use crate::util::io::WgReadExt;
 
 use super::{MAGIC, Element, Value, DataType};
 
@@ -46,7 +46,7 @@ pub fn from_bytes<B: AsRef<[u8]>>(data: B) -> Result<Box<Element>, DeError> {
 fn read_dictionary<R: Read + Seek>(reader: &mut R) -> Result<Vec<String>, DeError> {
     let mut dict = Vec::new();
     loop {
-        let string = reader.read_cstring_fast()?;
+        let string = reader.read_cstring_variable()?;
         if string.is_empty() {
             return Ok(dict)
         }

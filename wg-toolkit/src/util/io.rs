@@ -1,23 +1,29 @@
 //! Read and write extensions specific to WG.
 
-use std::io::{self, Read, Write, Cursor, Seek, SeekFrom};
+use std::io::{self, Read, Write, Cursor};
+use std::net::{SocketAddrV4, Ipv4Addr};
 
-use byteorder::{ReadBytesExt, WriteBytesExt, LE};
+use byteorder::{ReadBytesExt, WriteBytesExt, LE, BE};
+use glam::Vec3A;
 
 
-/// An extension to the `Read` trait specifically used to decode WG formats.
+/// An extension to the [`Read`] trait specifically used to decode WG formats
+/// and used for network protocol.
 pub trait WgReadExt: Read {
 
+    /// Reads an unsigned 8 bit integer from the underlying reader.
     #[inline]
     fn read_u8(&mut self) -> io::Result<u8> {
         ReadBytesExt::read_u8(self)
     }
 
+    /// Reads a signed 8 bit integer from the underlying reader.
     #[inline]
     fn read_i8(&mut self) -> io::Result<i8> {
         ReadBytesExt::read_i8(self)
     }
 
+    /// Skip the given number of u8 integers.
     #[inline]
     fn skip<const N: usize>(&mut self) -> io::Result<()> {
         let mut buf = [0; N];
@@ -25,42 +31,71 @@ pub trait WgReadExt: Read {
         Ok(())
     }
 
+    /// Reads an unsigned 16 bit integer from the underlying reader.
     #[inline]
     fn read_u16(&mut self) -> io::Result<u16> {
         ReadBytesExt::read_u16::<LE>(self)
     }
 
+    /// Reads a signed 16 bit integer from the underlying reader.
     #[inline]
     fn read_i16(&mut self) -> io::Result<i16> {
         ReadBytesExt::read_i16::<LE>(self)
     }
 
+    /// Reads an unsigned 24 bit integer from the underlying reader.
+    #[inline]
+    fn read_u24(&mut self) -> io::Result<u32> {
+        ReadBytesExt::read_u24::<LE>(self)
+    }
+
+    /// Reads a signed 24 bit integer from the underlying reader.
+    #[inline]
+    fn read_i24(&mut self) -> io::Result<i32> {
+        ReadBytesExt::read_i24::<LE>(self)
+    }
+
+    /// Reads an unsigned 32 bit integer from the underlying reader.
     #[inline]
     fn read_u32(&mut self) -> io::Result<u32> {
         ReadBytesExt::read_u32::<LE>(self)
     }
 
+    /// Reads a signed 32 bit integer from the underlying reader.
     #[inline]
     fn read_i32(&mut self) -> io::Result<i32> {
         ReadBytesExt::read_i32::<LE>(self)
     }
 
+    /// Read a packed unsigned 32 bit integer from the underlying reader.
+    #[inline]
+    fn read_packed_u32(&mut self) -> io::Result<u32> {
+        match self.read_u8()? {
+            255 => self.read_u24(),
+            n => Ok(n as u32)
+        }
+    }
+
+    /// Reads an unsigned 64 bit integer from the underlying reader.
     #[inline]
     fn read_u64(&mut self) -> io::Result<u64> {
         ReadBytesExt::read_u64::<LE>(self)
     }
 
+    /// Reads a signed 64 bit integer from the underlying reader.
     #[inline]
     fn read_i64(&mut self) -> io::Result<i64> {
         ReadBytesExt::read_i64::<LE>(self)
     }
 
+    /// Reads a IEEE754 single-precision (4 bytes) floating point number 
+    /// from the underlying reader.
     #[inline]
     fn read_f32(&mut self) -> io::Result<f32> {
         ReadBytesExt::read_f32::<LE>(self)
     }
 
-    /// Check that the next `N` bytes are the exact same as the on given.
+    /// Check that the next `N` bytes are the exact same as the given array.
     #[inline]
     fn check_exact<const N: usize>(&mut self, bytes: &[u8; N]) -> io::Result<bool> {
         let mut buf = [0; N];
@@ -68,8 +103,7 @@ pub trait WgReadExt: Read {
         Ok(&buf == bytes)
     }
 
-    /// Directly read a raw buffer of the given length.
-    #[inline]
+    /// Read a blob of the given length.
     fn read_vec(&mut self, len: usize) -> io::Result<Vec<u8>> {
         // TODO: Maybe use a better uninit approach in the future.
         let mut buf = vec![0; len];
@@ -77,21 +111,72 @@ pub trait WgReadExt: Read {
         Ok(buf)
     }
 
-    #[inline]
+    /// Read a blob of a length that is specified with a packed u32 before the 
+    /// actual vector.
+    fn read_vec_variable(&mut self) -> io::Result<Vec<u8>> {
+        let len = self.read_packed_u32()? as usize;
+        let mut buf = vec![0; len];
+        self.read_exact(&mut buf[..])?;
+        Ok(buf)
+    }
+
+    /// Read an UTF-8 string of the given length.
     fn read_string(&mut self, len: usize) -> io::Result<String> {
         String::from_utf8(self.read_vec(len)?)
             .map_err(|_| io::ErrorKind::InvalidData.into())
     }
 
+    /// Read an UTF-8 string of a length that is specified with a packed u32
+    /// before the actual vector.
+    fn read_string_variable(&mut self) -> io::Result<String> {
+        let blob = self.read_vec_variable()?;
+        match String::from_utf8(blob) {
+            Ok(s) => Ok(s),
+            Err(_) => Err(io::Error::new(io::ErrorKind::InvalidData, "invalid utf8 string"))
+        }
+    }
+
     /// Read a null-terminated string of a fixed length, trailing zeros
     /// are ignored and if no zero is encountered, an invalid data error
     /// is returned.
-    fn read_cstring_fixed(&mut self, len: usize) -> io::Result<String> {
+    fn read_cstring(&mut self, len: usize) -> io::Result<String> {
         let mut buf = self.read_vec(len)?;
         let pos = buf.iter().position(|&o| o == 0)
             .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidData))?;
         buf.truncate(pos); // Truncate trailing zeros.
         String::from_utf8(buf).map_err(|_| io::ErrorKind::InvalidData.into())
+    }
+
+    /// Read a null-terminated string of unknown length.
+    fn read_cstring_variable(&mut self) -> io::Result<String> {
+        // The implementation is intentionally naive because it could be
+        // speed up if the underlying read is buffered.
+        let mut buf = Vec::new();
+        loop {
+            let b = self.read_u8()?;
+            if b == 0 {
+                break
+            }
+            buf.push(b);
+        }
+        String::from_utf8(buf).map_err(|_| io::ErrorKind::InvalidData.into())
+    }
+
+    fn read_sock_addr_v4(&mut self) -> io::Result<SocketAddrV4> {
+        let mut ip_raw = [0; 4];
+        self.read_exact(&mut ip_raw[..])?;
+        let port = ReadBytesExt::read_u16::<BE>(self)?;
+        let _salt = ReadBytesExt::read_u16::<LE>(self)?;
+        Ok(SocketAddrV4::new(Ipv4Addr::from(ip_raw), port))
+    }
+
+    #[inline]
+    fn read_vec3(&mut self) -> io::Result<Vec3A> {
+        Ok(Vec3A::new(
+            self.read_f32()?,
+            self.read_f32()?,
+            self.read_f32()?,
+        ))
     }
 
     /// Read the size header for a single structure. To read the header of
@@ -132,96 +217,113 @@ pub trait WgReadExt: Read {
 
 }
 
-pub trait WgReadSeekExt: Read + Seek {
 
-    /// Special null-terminated string reading function that 
-    /// uses seekability of the underlying stream.
-    fn read_cstring_fast(&mut self) -> io::Result<String> {
-
-        let mut cursor = self.stream_position()?;
-        let mut buf = [0; 32];
-        let mut string = Vec::new();
-
-        'e: loop {
-
-            let mut len = match self.read(&mut buf) {
-                Ok(len) => len,
-                Err(e) if e.kind() != io::ErrorKind::Interrupted => return Err(e.into()),
-                _ => continue
-            };
-
-            for &c in &buf[..len] {
-                cursor += 1;
-                len -= 1;
-                if c == 0 {
-                    if len != 0 { // Only seek if bytes remains.
-                        self.seek(SeekFrom::Start(cursor))?;
-                    }
-                    break 'e;
-                }
-                string.push(c);
-            }
-
-        }
-
-        String::from_utf8(string).map_err(|_| io::ErrorKind::InvalidData.into())
-
-    }
-
-}
-
+/// An extension to the [`Write`] trait specifically used to decode WG formats
+/// and used for network protocol.
 pub trait WgWriteExt: Write {
 
+    /// Writes an unsigned 8 bit integer to the underlying writer.
     #[inline]
     fn write_u8(&mut self, n: u8) -> io::Result<()> {
         WriteBytesExt::write_u8(self, n)
     }
 
+    /// Writes a signed 8 bit integer to the underlying writer.
     #[inline]
     fn write_i8(&mut self, n: i8) -> io::Result<()> {
         WriteBytesExt::write_i8(self, n)
     }
 
+    /// Writes an unsigned 16 bit integer to the underlying writer.
     #[inline]
     fn write_u16(&mut self, n: u16) -> io::Result<()> {
         WriteBytesExt::write_u16::<LE>(self, n)
     }
 
+    /// Writes a signed 16 bit integer to the underlying writer.
     #[inline]
     fn write_i16(&mut self, n: i16) -> io::Result<()> {
         WriteBytesExt::write_i16::<LE>(self, n)
     }
 
+    /// Writes an unsigned 24 bit integer to the underlying writer.
+    #[inline]
+    fn write_u24(&mut self, n: u32) -> io::Result<()> {
+        WriteBytesExt::write_u24::<LE>(self, n)
+    }
+
+    /// Writes a signed 24 bit integer to the underlying writer.
+    #[inline]
+    fn write_i24(&mut self, n: i32) -> io::Result<()> {
+        WriteBytesExt::write_i24::<LE>(self, n)
+    }
+
+    /// Writes an unsigned 32 bit integer to the underlying writer.
     #[inline]
     fn write_u32(&mut self, n: u32) -> io::Result<()> {
         WriteBytesExt::write_u32::<LE>(self, n)
     }
 
+    /// Writes a signed 32 bit integer to the underlying writer.
     #[inline]
     fn write_i32(&mut self, n: i32) -> io::Result<()> {
         WriteBytesExt::write_i32::<LE>(self, n)
     }
 
+    /// Writes a packed unsigned 32 bit integer to the underlying writer.
+    fn write_packed_u32(&mut self, n: u32) -> io::Result<()> {
+        if n >= 255 {
+            self.write_u8(255)?;
+            self.write_u24(n)
+        } else {
+            self.write_u8(n as u8)
+        }
+    }
+
+    /// Writes an unsigned 64 bit integer to the underlying writer.
     #[inline]
     fn write_u64(&mut self, n: u64) -> io::Result<()> {
         WriteBytesExt::write_u64::<LE>(self, n)
     }
 
+    /// Writes a signed 64 bit integer to the underlying writer.
     #[inline]
     fn write_i64(&mut self, n: i64) -> io::Result<()> {
         WriteBytesExt::write_i64::<LE>(self, n)
     }
 
+    /// Writes a IEEE754 single-precision (4 bytes) floating point number 
+    /// to the underlying writer.
     #[inline]
     fn write_f32(&mut self, n: f32) -> io::Result<()> {
         WriteBytesExt::write_f32::<LE>(self, n)
     }
 
     #[inline]
-    fn write_string<S: AsRef<str>>(&mut self, s: S) -> io::Result<()> {
-        self.write_all(s.as_ref().as_bytes())
+    fn write_vec(&mut self, data: &[u8]) -> io::Result<()> {
+        self.write_all(data)
     }
 
+    /// Write a blob with its packed length before the actual data.
+    fn write_vec_variable(&mut self, data: &[u8]) -> io::Result<()> {
+        self.write_packed_u32(data.len() as u32)?;
+        self.write_vec(data)
+    }
+
+    /// Writes a string to the underlying writer. Note that the length of
+    /// the string is not written.
+    #[inline]
+    fn write_string<S: AsRef<str>>(&mut self, s: S) -> io::Result<()> {
+        self.write_vec(s.as_ref().as_bytes())
+    }
+
+    /// Write a string with its packed length before.
+    #[inline]
+    fn write_string_variable(&mut self, s: &str) -> io::Result<()> {
+        self.write_vec_variable(s.as_bytes())
+    }
+
+    /// Writes a null-terminated string to the underlying writer.
     #[inline]
     fn write_cstring<S: AsRef<str>>(&mut self, s: S) -> io::Result<()> {
         self.write_string(s)?;
@@ -232,6 +334,20 @@ pub trait WgWriteExt: Write {
     /// a vector, see `write_vector_head`.
     fn write_single_head(&mut self, n: usize) -> io::Result<()> {
         self.write_u32(n as u32)
+    }
+
+    fn write_sock_addr_v4(&mut self, addr: SocketAddrV4) -> io::Result<()> {
+        self.write_all(&addr.ip().octets()[..])?;
+        WriteBytesExt::write_u16::<BE>(self, addr.port())?;
+        WriteBytesExt::write_u16::<LE>(self, 0)?; // Salt
+        Ok(())
+    }
+
+    fn write_vec3(&mut self, vec: Vec3A) -> io::Result<()> {
+        self.write_f32(vec.x)?;
+        self.write_f32(vec.y)?;
+        self.write_f32(vec.z)?;
+        Ok(())
     }
 
     /// Write header for vector of structure.
@@ -256,5 +372,4 @@ pub trait WgWriteExt: Write {
 }
 
 impl<R: Read> WgReadExt for R {}
-impl<R: Read + Seek> WgReadSeekExt for R {}
 impl<W: Write> WgWriteExt for W {}

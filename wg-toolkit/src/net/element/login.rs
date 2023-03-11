@@ -5,14 +5,14 @@ use std::net::SocketAddrV4;
 use std::sync::Arc;
 use std::time::Duration;
 
-use byteorder::{LE, ReadBytesExt, WriteBytesExt};
 use rsa::{RsaPrivateKey, RsaPublicKey};
 use blowfish::Blowfish;
 
 use crate::net::filter::{BlockReader, BlockWriter, rsa::{RsaReadFilter, RsaWriteFilter}};
 use crate::net::filter::blowfish::{BlowfishWriter, BlowfishReader};
+use crate::util::io::{WgReadExt, WgWriteExt};
 
-use super::{TopElementCodec, ElementCodec, ElementLength, ElementReadExt, ElementWriteExt};
+use super::{TopElementCodec, ElementCodec, ElementLength};
 
 
 /// A login request to be sent with [`LoginCodec`], send from client to 
@@ -131,7 +131,7 @@ impl ElementCodec for LoginRequestCodec {
     type Element = LoginRequest;
 
     fn encode<W: Write>(&self, mut write: W, input: Self::Element) -> io::Result<()> {
-        write.write_u32::<LE>(input.protocol)?;
+        write.write_u32(input.protocol)?;
         match self {
             LoginRequestCodec::Clear => {
                 write.write_u8(0)?;
@@ -146,7 +146,7 @@ impl ElementCodec for LoginRequestCodec {
     }
 
     fn decode<R: Read>(&self, mut read: R, _len: usize) -> io::Result<Self::Element> {
-        let protocol = read.read_u32::<LE>()?;
+        let protocol = read.read_u32()?;
         if read.read_u8()? != 0 {
             if let LoginRequestCodec::Server(key) = self {
                 decode_login_params(BlockReader::new(read, RsaReadFilter::new(&key)), protocol)
@@ -166,24 +166,24 @@ impl TopElementCodec for LoginRequestCodec {
 
 fn encode_login_params<W: Write>(mut write: W, input: LoginRequest) -> io::Result<()> {
     write.write_u8(if input.digest.is_some() { 0x01 } else { 0x00 })?;
-    write.write_rich_string(&input.username)?;
-    write.write_rich_string(&input.password)?;
-    write.write_rich_blob(&input.blowfish_key)?;
-    write.write_rich_string(&input.context)?;
+    write.write_string_variable(&input.username)?;
+    write.write_string_variable(&input.password)?;
+    write.write_vec_variable(&input.blowfish_key)?;
+    write.write_string_variable(&input.context)?;
     if let Some(digest) = input.digest {
         write.write_all(&digest)?;
     }
-    write.write_u32::<LE>(input.nonce)
+    write.write_u32(input.nonce)
 }
 
 fn decode_login_params<R: Read>(mut input: R, protocol: u32) -> io::Result<LoginRequest> {
     let flags = input.read_u8()?;
     Ok(LoginRequest {
         protocol,
-        username: input.read_rich_string()?,
-        password: input.read_rich_string()?,
-        blowfish_key: input.read_rich_blob()?,
-        context: input.read_rich_string()?,
+        username: input.read_string_variable()?,
+        password: input.read_string_variable()?,
+        blowfish_key: input.read_vec_variable()?,
+        context: input.read_string_variable()?,
         digest: if flags & 0x01 != 0 {
             let mut digest = [0; 16];
             input.read_exact(&mut digest)?;
@@ -191,7 +191,7 @@ fn decode_login_params<R: Read>(mut input: R, protocol: u32) -> io::Result<Login
         } else {
             Option::None
         },
-        nonce: input.read_u32::<LE>()?
+        nonce: input.read_u32()?
     })
 }
 
@@ -234,7 +234,7 @@ impl ElementCodec for LoginResponseCodec {
             }
             LoginResponse::Error(err, message) => {
                 write.write_u8(err as _)?;
-                write.write_rich_string(&message)?;
+                write.write_string_variable(&message)?;
             }
             LoginResponse::Challenge(challenge) => {
 
@@ -242,9 +242,9 @@ impl ElementCodec for LoginResponseCodec {
                 
                 match challenge {
                     LoginChallenge::CuckooCycle { prefix, max_nonce } => {
-                        write.write_rich_string(CHALLENGE_CUCKOO_CYCLE)?;
-                        write.write_rich_string(&prefix)?;
-                        write.write_u64::<LE>(max_nonce)?;
+                        write.write_string_variable(CHALLENGE_CUCKOO_CYCLE)?;
+                        write.write_string_variable(&prefix)?;
+                        write.write_u64(max_nonce)?;
                     }
                 }
                 
@@ -272,11 +272,11 @@ impl ElementCodec for LoginResponseCodec {
             }
             66 => {
                 
-                let challenge_name = read.read_rich_string()?;
+                let challenge_name = read.read_string_variable()?;
                 let challenge = match &challenge_name[..] {
                     CHALLENGE_CUCKOO_CYCLE => {
-                        let prefix = read.read_rich_string()?;
-                        let max_nonce = read.read_u64::<LE>()?;
+                        let prefix = read.read_string_variable()?;
+                        let max_nonce = read.read_u64()?;
                         LoginChallenge::CuckooCycle { prefix, max_nonce }
                     }
                     _ => return Err(io::Error::new(io::ErrorKind::InvalidData, "invalid challenge name"))
@@ -293,7 +293,7 @@ impl ElementCodec for LoginResponseCodec {
             code => return Ok(LoginResponse::Unknown(code))
         };
 
-        let message = match read.read_rich_string() {
+        let message = match read.read_string_variable() {
             Ok(msg) => msg,
             Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => String::new(),
             Err(e) => return Err(e),
@@ -309,9 +309,9 @@ impl ElementCodec for LoginResponseCodec {
 /// in order to be usable with optional encryption.
 fn encode_login_success<W: Write>(mut write: W, success: &LoginSuccess) -> io::Result<()> {
     write.write_sock_addr_v4(success.addr)?;
-    write.write_u32::<LE>(success.login_key)?;
+    write.write_u32(success.login_key)?;
     if !success.server_message.is_empty() {
-        write.write_rich_string(&success.server_message)?;
+        write.write_string_variable(&success.server_message)?;
     }
     Ok(())
 }
@@ -321,8 +321,8 @@ fn encode_login_success<W: Write>(mut write: W, success: &LoginSuccess) -> io::R
 fn decode_login_success<R: Read>(mut read: R) -> io::Result<LoginSuccess> {
     Ok(LoginSuccess { 
         addr: read.read_sock_addr_v4()?, 
-        login_key: read.read_u32::<LE>()?, 
-        server_message: match read.read_rich_string() {
+        login_key: read.read_u32()?, 
+        server_message: match read.read_string_variable() {
             Ok(msg) => msg,
             Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => String::new(),
             Err(e) => return Err(e),
@@ -356,14 +356,14 @@ impl<C: ElementCodec> ElementCodec for ChallengeResponseCodec<C> {
     type Element = ChallengeResponse<C::Element>;
 
     fn encode<W: Write>(&self, mut write: W, input: Self::Element) -> io::Result<()> {
-        write.write_f32::<LE>(input.duration.as_secs_f32())?;
+        write.write_f32(input.duration.as_secs_f32())?;
         self.codec.encode(write, input.data)?;
         Ok(())
     }
 
     fn decode<R: Read>(&self, mut read: R, len: usize) -> io::Result<Self::Element> {
         Ok(ChallengeResponse { 
-            duration: Duration::from_secs_f32(read.read_f32::<LE>()?), 
+            duration: Duration::from_secs_f32(read.read_f32()?), 
             data: self.codec.decode(read, len - 4)?
         })
     }
@@ -382,20 +382,20 @@ impl ElementCodec for CuckooCycleResponseCodec {
     type Element = CuckooCycleResponse;
 
     fn encode<W: Write>(&self, mut write: W, input: Self::Element) -> io::Result<()> {
-        write.write_rich_string(&input.key)?;
+        write.write_string_variable(&input.key)?;
         for &nonce in &input.solution {
-            write.write_u32::<LE>(nonce)?;
+            write.write_u32(nonce)?;
         }
         Ok(())
     }
 
     fn decode<R: Read>(&self, mut read: R, _len: usize) -> io::Result<Self::Element> {
 
-        let key = read.read_rich_string()?;
+        let key = read.read_string_variable()?;
         let mut solution = Vec::with_capacity(42);
 
         loop {
-            solution.push(match read.read_u32::<LE>() {
+            solution.push(match read.read_u32() {
                 Ok(n) => n,
                 Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => break,
                 Err(e) => return Err(e),

@@ -146,13 +146,13 @@ impl Section for Vertices {
         
         // Read the type of vertex. This type is a null-terminated string
         // of a fixed length of 64 octets.
-        let mut ty_name = reader.read_cstring_fixed(64)?;
+        let mut ty_name = reader.read_cstring(64)?;
         let mut count = reader.read_u32()?;
 
         // Modern types contains 'BPVT', in such cases the real vertex 
         // type is located after the first one.
         if ty_name.starts_with("BPVT") {
-            ty_name = reader.read_cstring_fixed(64)?;
+            ty_name = reader.read_cstring(64)?;
             count = reader.read_u32()?;
         }
 
@@ -332,7 +332,7 @@ impl Section for Indices {
     fn read<R: Read + Seek>(mut reader: R, _len: usize) -> Result<Self, DeError> {
         
         // Get the type name and the indices' width.
-        let ty_name = reader.read_cstring_fixed(64)?;
+        let ty_name = reader.read_cstring(64)?;
         let ty_long = match &ty_name[..] {
             "list" => false,
             "list32" => true,

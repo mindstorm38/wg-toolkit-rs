@@ -1,11 +1,8 @@
 //! Definitions for elements contained in bundles (and so in packets).
 
 use std::io::{self, Read, Write};
-use std::net::{SocketAddrV4, Ipv4Addr};
 
-use byteorder::{ReadBytesExt, WriteBytesExt, LE, BE};
-
-use glam::Vec3A;
+use crate::util::io::{WgReadExt, WgWriteExt};
 
 
 pub mod ping;
@@ -67,9 +64,9 @@ impl ElementLength {
         match self {
             Self::Fixed(len) => Ok(*len),
             Self::Variable8 => reader.read_u8().map(|n| n as u32),
-            Self::Variable16 => reader.read_u16::<LE>().map(|n| n as u32),
-            Self::Variable24 => reader.read_u24::<LE>(),
-            Self::Variable32 => reader.read_u32::<LE>(),
+            Self::Variable16 => reader.read_u16().map(|n| n as u32),
+            Self::Variable24 => reader.read_u24(),
+            Self::Variable32 => reader.read_u32(),
         }
     }
 
@@ -78,9 +75,9 @@ impl ElementLength {
         match self {
             Self::Fixed(fixed_len) => { assert_eq!(*fixed_len, len); Ok(()) },
             Self::Variable8 => writer.write_u8(len as u8),
-            Self::Variable16 => writer.write_u16::<LE>(len as u16),
-            Self::Variable24 => writer.write_u24::<LE>(len),
-            Self::Variable32 => writer.write_u32::<LE>(len),
+            Self::Variable16 => writer.write_u16(len as u16),
+            Self::Variable24 => writer.write_u24(len),
+            Self::Variable32 => writer.write_u32(len),
         }
     }
 
@@ -96,95 +93,6 @@ impl ElementLength {
     }
 
 }
-
-
-/// A extension trait for `Read` specific to element decoding.
-pub trait ElementReadExt: Read {
-
-    /// Read a packed 32-bits integer.
-    fn read_packed_u32(&mut self) -> io::Result<u32> {
-        match self.read_u8()? {
-            255 => self.read_u24::<LE>(),
-            n => Ok(n as u32)
-        }
-    }
-
-    fn read_rich_blob(&mut self) -> io::Result<Vec<u8>> {
-        let len = self.read_packed_u32()? as usize;
-        let mut buf = vec![0; len];
-        self.read_exact(&mut buf[..])?;
-        Ok(buf)
-    }
-
-    fn read_rich_string(&mut self) -> io::Result<String> {
-        let blob = self.read_rich_blob()?;
-        match String::from_utf8(blob) {
-            Ok(s) => Ok(s),
-            Err(_) => Err(io::Error::new(io::ErrorKind::InvalidData, "invalid utf8 string"))
-        }
-    }
-
-    fn read_sock_addr_v4(&mut self) -> io::Result<SocketAddrV4> {
-        let mut ip_raw = [0; 4];
-        self.read_exact(&mut ip_raw[..])?;
-        let port = self.read_u16::<BE>()?;
-        let _salt = self.read_u16::<LE>()?;
-        Ok(SocketAddrV4::new(Ipv4Addr::from(ip_raw), port))
-    }
-
-    fn read_vec3(&mut self) -> io::Result<Vec3A> {
-        Ok(Vec3A::new(
-            self.read_f32::<LE>()?,
-            self.read_f32::<LE>()?,
-            self.read_f32::<LE>()?,
-        ))
-    }
-
-}
-
-
-/// A extension trait for `Write` specific to element encoding.
-pub trait ElementWriteExt: Write {
-
-    /// Write a packed 32-bits integer.
-    fn write_packed_u32(&mut self, n: u32) -> io::Result<()> {
-        if n >= 255 {
-            self.write_u8(255)?;
-            self.write_u24::<LE>(n)
-        } else {
-            self.write_u8(n as u8)
-        }
-    }
-
-    /// Write a blob of data with its packed length before.
-    fn write_rich_blob(&mut self, data: &[u8]) -> io::Result<()> {
-        self.write_packed_u32(data.len() as u32)?;
-        self.write_all(data)
-    }
-
-    /// Write a string with its packed length before.
-    fn write_rich_string(&mut self, s: &str) -> io::Result<()> {
-        self.write_rich_blob(s.as_bytes())
-    }
-
-    fn write_sock_addr_v4(&mut self, addr: SocketAddrV4) -> io::Result<()> {
-        self.write_all(&addr.ip().octets()[..])?;
-        self.write_u16::<BE>(addr.port())?;
-        self.write_u16::<LE>(0)?; // Salt
-        Ok(())
-    }
-
-    fn write_vec3(&mut self, vec: Vec3A) -> io::Result<()> {
-        self.write_f32::<LE>(vec.x)?;
-        self.write_f32::<LE>(vec.y)?;
-        self.write_f32::<LE>(vec.z)?;
-        Ok(())
-    }
-
-}
-
-impl<R: Read> ElementReadExt for R {}
-impl<W: Write> ElementWriteExt for W {}
 
 
 // Raw elements to use for debugging purposes
