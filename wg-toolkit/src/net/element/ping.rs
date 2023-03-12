@@ -2,35 +2,36 @@
 
 use std::io::{self, Write, Read};
 
-use byteorder::{WriteBytesExt, ReadBytesExt};
+use crate::util::io::*;
 
-use super::{ElementCodec, ElementLength, TopElementCodec};
+use super::{SimpleElement, TopElement, ElementLength};
 
 
-/// Codec for ping echo-request exchange. 
-/// 
-/// This codec transfers a single byte, to validate a ping, this byte
-/// must be echoed back to the sender of the ping request.
-pub struct PingCodec;
+/// A ping sent from the client to the login app or replied from the
+/// login app to the client.
+#[derive(Debug)]
+pub struct Ping {
+    /// The number of the ping, the same number must be sent back to
+    /// the client when login app receives it.
+    pub num: u8,
+}
 
-impl PingCodec {
+impl Ping {
     pub const ID: u8 = 0x02;
 }
 
-impl ElementCodec for PingCodec {
-    
-    type Element = u8;
-    
-    fn encode<W: Write>(&self, mut write: W, input: Self::Element) -> io::Result<()> {
-        write.write_u8(input)
+impl SimpleElement for Ping {
+
+    fn encode<W: Write>(&self, mut write: W) -> io::Result<()> {
+        write.write_u8(self.num)
     }
-    
-    fn decode<R: Read>(&self, mut read: R, _len: usize) -> io::Result<Self::Element> {
-        read.read_u8()
+
+    fn decode<R: Read>(mut read: R, len: usize) -> io::Result<Self> {
+        Ok(Self { num: read.read_u8()? })
     }
 
 }
 
-impl TopElementCodec for PingCodec {
+impl TopElement for Ping {
     const LEN: ElementLength = ElementLength::Fixed(1);
 }

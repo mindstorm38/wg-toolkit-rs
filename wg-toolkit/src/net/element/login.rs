@@ -10,9 +10,9 @@ use blowfish::Blowfish;
 
 use crate::net::filter::{BlockReader, BlockWriter, rsa::{RsaReadFilter, RsaWriteFilter}};
 use crate::net::filter::blowfish::{BlowfishWriter, BlowfishReader};
-use crate::util::io::{WgReadExt, WgWriteExt};
+use crate::util::io::*;
 
-use super::{TopElementCodec, ElementCodec, ElementLength};
+use super::{Element, SimpleElement, TopElement, ElementLength};
 
 
 /// A login request to be sent with [`LoginCodec`], send from client to 
@@ -27,6 +27,11 @@ pub struct LoginRequest {
     pub digest: Option<[u8; 16]>,
     pub nonce: u32,
 }
+
+impl LoginRequest {
+    pub const ID: u8 = 0x00;
+}
+
 
 /// Describe all kinds of responses returned from server to client when
 /// the client attempt to login. This includes challenge or error codes.
@@ -94,6 +99,7 @@ pub enum LoginError {
     ChallengeError = 85,
 }
 
+
 /// Describe a generic challenge response of a given generic type.
 #[derive(Debug, Clone)]
 pub struct ChallengeResponse<T> {
@@ -101,6 +107,10 @@ pub struct ChallengeResponse<T> {
     pub duration: Duration,
     /// Inner data of the challenge response.
     pub data: T,
+}
+
+impl ChallengeResponse<()> {
+    pub const ID: u8 = 0x03;
 }
 
 /// Describe a challenge response for cuckoo cycle challenge type.
@@ -111,9 +121,11 @@ pub struct CuckooCycleResponse {
 }
 
 
-/// The codec for sending a login request to the server.
+/// Describe the type of encryption to use for encoding/decoding
+/// a login request. This must be provided as configuration when
+/// writing or reading the element.
 #[derive(Debug)]
-pub enum LoginRequestCodec {
+pub enum LoginRequestEncryption {
     /// Clear transmission between server and client.
     Clear,
     /// Encrypted encoding.
@@ -122,33 +134,29 @@ pub enum LoginRequestCodec {
     Server(Arc<RsaPrivateKey>),
 }
 
-impl LoginRequestCodec {
-    pub const ID: u8 = 0x00;
-}
+impl Element for LoginRequest {
 
-impl ElementCodec for LoginRequestCodec {
+    type Config = LoginRequestEncryption;
 
-    type Element = LoginRequest;
-
-    fn encode<W: Write>(&self, mut write: W, input: Self::Element) -> io::Result<()> {
-        write.write_u32(input.protocol)?;
-        match self {
-            LoginRequestCodec::Clear => {
+    fn encode<W: Write>(&self, mut write: W, config: &Self::Config) -> io::Result<()> {
+        write.write_u32(self.protocol)?;
+        match config {
+            LoginRequestEncryption::Clear => {
                 write.write_u8(0)?;
-                encode_login_params(write, input)
+                encode_login_params(write, self)
             }
-            LoginRequestCodec::Client(key) => {
+            LoginRequestEncryption::Client(key) => {
                 write.write_u8(1)?;
-                encode_login_params(BlockWriter::new(write, RsaWriteFilter::new(&key)), input)
+                encode_login_params(BlockWriter::new(write, RsaWriteFilter::new(&key)), self)
             }
-            LoginRequestCodec::Server(_) => panic!("cannot encode with server login codec"),
+            LoginRequestEncryption::Server(_) => panic!("cannot encode with server login codec"),
         }
     }
 
-    fn decode<R: Read>(&self, mut read: R, _len: usize) -> io::Result<Self::Element> {
+    fn decode<R: Read>(mut read: R, _len: usize, config: &Self::Config) -> io::Result<Self> {
         let protocol = read.read_u32()?;
         if read.read_u8()? != 0 {
-            if let LoginRequestCodec::Server(key) = self {
+            if let LoginRequestEncryption::Server(key) = config {
                 decode_login_params(BlockReader::new(read, RsaReadFilter::new(&key)), protocol)
             } else {
                 Err(io::Error::new(io::ErrorKind::InvalidData, "cannot decode without server login codec"))
@@ -160,11 +168,11 @@ impl ElementCodec for LoginRequestCodec {
 
 }
 
-impl TopElementCodec for LoginRequestCodec {
+impl TopElement for LoginRequest {
     const LEN: ElementLength = ElementLength::Variable16;
 }
 
-fn encode_login_params<W: Write>(mut write: W, input: LoginRequest) -> io::Result<()> {
+fn encode_login_params<W: Write>(mut write: W, input: &LoginRequest) -> io::Result<()> {
     write.write_u8(if input.digest.is_some() { 0x01 } else { 0x00 })?;
     write.write_string_variable(&input.username)?;
     write.write_string_variable(&input.password)?;
@@ -198,7 +206,7 @@ fn decode_login_params<R: Read>(mut input: R, protocol: u32) -> io::Result<Login
 
 /// Codec for [`LoginResponse`].
 #[derive(Debug)]
-pub enum LoginResponseCodec {
+pub enum LoginResponseEncryption {
     /// The login response is not encrypted. This should be selected if the
     /// login request contains an empty blowfish key.
     Clear,
@@ -214,29 +222,29 @@ pub enum LoginResponseCodec {
 /// Text identifier of the cuckoo cycle challenge type.
 const CHALLENGE_CUCKOO_CYCLE: &'static str = "cuckoo_cycle";
 
-impl ElementCodec for LoginResponseCodec {
+impl Element for LoginResponse {
 
-    type Element = LoginResponse;
+    type Config = LoginResponseEncryption;
 
-    fn encode<W: Write>(&self, mut write: W, input: Self::Element) -> io::Result<()> {
-
-        match input {
-            LoginResponse::Success(success) => {
+    fn encode<W: Write>(&self, mut write: W, config: &Self::Config) -> io::Result<()> {
+        
+        match self {
+            Self::Success(success) => {
                 
                 write.write_u8(1)?; // Logged-on
                 
-                if let Self::Encrypted(bf) = self {
+                if let Self::Encrypted(bf) = config {
                     encode_login_success(BlowfishWriter::new(write, &bf), &success)?;
                 } else {
                     encode_login_success(write, &success)?;
                 }
 
             }
-            LoginResponse::Error(err, message) => {
+            Self::Error(err, message) => {
                 write.write_u8(err as _)?;
                 write.write_string_variable(&message)?;
             }
-            LoginResponse::Challenge(challenge) => {
+            Self::Challenge(challenge) => {
 
                 write.write_u8(66)?;
                 
@@ -249,19 +257,19 @@ impl ElementCodec for LoginResponseCodec {
                 }
                 
             }
-            LoginResponse::Unknown(code) => write.write_u8(code)?
+            Self::Unknown(code) => write.write_u8(code)?
         }
 
         Ok(())
 
     }
 
-    fn decode<R: Read>(&self, mut read: R, _len: usize) -> io::Result<Self::Element> {
+    fn decode<R: Read>(read: R, len: usize, config: &Self::Config) -> io::Result<Self> {
         
         let error = match read.read_u8()? {
             1 => {
                 
-                let success = if let Self::Encrypted(bf) = self {
+                let success = if let Self::Encrypted(bf) = config {
                     decode_login_success(BlowfishReader::new(read, &bf))?
                 } else {
                     decode_login_success(read)?
@@ -331,65 +339,35 @@ fn decode_login_success<R: Read>(mut read: R) -> io::Result<LoginSuccess> {
 }
 
 
-/// Base codec for challenge responses. This codec is generic because decoding 
-/// vary depending on the type of challenge.
-#[derive(Debug, Clone, Copy)]
-pub struct ChallengeResponseCodec<C> {
-    codec: C,
-}
+impl<E: Element> Element for ChallengeResponse<E> {
 
-impl ChallengeResponseCodec<()> {
-    pub const ID: u8 = 0x03;
-}
+    type Config = E::Config;
 
-impl<C> ChallengeResponseCodec<C> {
-
-    #[inline]
-    pub fn new(codec: C) -> Self {
-        Self { codec }
+    fn encode<W: Write>(&self, mut write: W, config: &Self::Config) -> io::Result<()> {
+        write.write_f32(self.duration.as_secs_f32())?;
+        self.data.encode(write, config)
     }
 
-}
-
-impl<C: ElementCodec> ElementCodec for ChallengeResponseCodec<C> {
-
-    type Element = ChallengeResponse<C::Element>;
-
-    fn encode<W: Write>(&self, mut write: W, input: Self::Element) -> io::Result<()> {
-        write.write_f32(input.duration.as_secs_f32())?;
-        self.codec.encode(write, input.data)?;
-        Ok(())
-    }
-
-    fn decode<R: Read>(&self, mut read: R, len: usize) -> io::Result<Self::Element> {
+    fn decode<R: Read>(mut read: R, len: usize, config: &Self::Config) -> io::Result<Self> {
         Ok(ChallengeResponse { 
             duration: Duration::from_secs_f32(read.read_f32()?), 
-            data: self.codec.decode(read, len - 4)?
+            data: E::decode(read, len - 4, config)?
         })
     }
-    
+
 }
 
-impl<C: ElementCodec> TopElementCodec for ChallengeResponseCodec<C> {
-    const LEN: ElementLength = ElementLength::Variable16;
-}
+impl SimpleElement for CuckooCycleResponse {
 
-
-pub struct CuckooCycleResponseCodec;
-
-impl ElementCodec for CuckooCycleResponseCodec {
-
-    type Element = CuckooCycleResponse;
-
-    fn encode<W: Write>(&self, mut write: W, input: Self::Element) -> io::Result<()> {
-        write.write_string_variable(&input.key)?;
-        for &nonce in &input.solution {
+    fn encode<W: Write>(&self, mut write: W) -> io::Result<()> {
+        write.write_string_variable(&self.key)?;
+        for &nonce in &self.solution {
             write.write_u32(nonce)?;
         }
         Ok(())
     }
 
-    fn decode<R: Read>(&self, mut read: R, _len: usize) -> io::Result<Self::Element> {
+    fn decode<R: Read>(mut read: R, _len: usize) -> io::Result<Self> {
 
         let key = read.read_string_variable()?;
         let mut solution = Vec::with_capacity(42);

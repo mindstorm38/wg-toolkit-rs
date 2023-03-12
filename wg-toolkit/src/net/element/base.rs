@@ -13,7 +13,8 @@ use super::{ElementCodec, TopElementCodec, ElementLength};
 /// the server then compares with its internal session keys from past successful
 /// logins.
 /// 
-/// This element is usually a reply, in such case a [`v`] must be sent as a reply.
+/// This element is usually a request, in such case a [`ServerSessionKey`] must be 
+/// sent as a reply.
 #[derive(Debug)]
 pub struct ClientAuth {
     /// The login key that was sent by the login application, part of the  element

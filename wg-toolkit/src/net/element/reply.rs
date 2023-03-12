@@ -3,91 +3,75 @@
 
 use std::io::{self, Read, Write};
 
-use byteorder::{ReadBytesExt, WriteBytesExt, LE};
+use crate::util::io::*;
 
-use super::{ElementCodec, TopElementCodec, ElementLength};
+use super::{Element, SimpleElement, TopElement, ElementLength};
 
 
 /// The element id for reply.
 pub const REPLY_ID: u8 = 0xFF;
 
 
-/// A codec just to read the request ID of a reply element. This is used internally
-/// by bundle readers.
-pub struct ReplyHeaderCodec;
-
-impl ElementCodec for ReplyHeaderCodec {
-
-    type Element = u32;
-
-    fn encode<W: Write>(&self, mut write: W, input: Self::Element) -> io::Result<()> {
-        write.write_u32::<LE>(input)
-    }
-
-    fn decode<R: Read>(&self, mut read: R, len: usize) -> io::Result<Self::Element> {
-        debug_assert!(len >= 4);
-        read.read_u32::<LE>()
-    }
-
-}
-
-impl TopElementCodec for ReplyHeaderCodec {
-    const LEN: ElementLength = ElementLength::Variable32;
-}
-
-
-/// A generic element codec for reply messages.
+/// The element only decodes the request ID. This is used internally by bundle readers.
 #[derive(Debug)]
-pub struct ReplyCodec<'a, C: ElementCodec> {
-    codec: &'a C
+pub struct ReplyHeader {
+    /// The request ID this reply is for.
+    pub request_id: u32,
 }
 
-impl<'a, C: ElementCodec> ReplyCodec<'a, C> {
+impl SimpleElement for ReplyHeader {
 
-    #[inline]
-    pub fn new(codec: &'a C) -> Self {
-        Self { codec }
-    }
-    
-}
-
-impl<C: ElementCodec> ElementCodec for ReplyCodec<'_, C> {
-
-    type Element = Reply<C::Element>;
-
-    fn encode<W: Write>(&self, mut write: W, input: Self::Element) -> io::Result<()> {
-        write.write_u32::<LE>(input.request_id)?;
-        self.codec.encode(write, input.element)
+    fn encode<W: Write>(&self, mut write: W) -> io::Result<()> {
+        write.write_u32(self.request_id)
     }
 
-    fn decode<R: Read>(&self, mut read: R, len: usize) -> io::Result<Self::Element> {
-        Ok(Reply {
-            request_id: read.read_u32::<LE>()?,
-            element: self.codec.decode(read, len - 4)?,
-        })
+    fn decode<R: Read>(mut read: R, len: usize) -> io::Result<Self> {
+        Ok(ReplyHeader { request_id: read.read_u32()? })
     }
 
 }
 
-impl<C: ElementCodec> TopElementCodec for ReplyCodec<'_, C> {
+impl TopElement for ReplyHeader {
     const LEN: ElementLength = ElementLength::Variable32;
 }
 
 
 /// A wrapper for a reply element, with the request ID and the underlying element.
 #[derive(Debug)]
-pub struct Reply<E> {
+pub struct Reply<E: Element> {
     /// The request ID this reply is for.
     pub request_id: u32,
     /// The inner reply element.
     pub element: E
 }
 
-impl<E> Reply<E> {
+impl<E: Element> Reply<E> {
 
     #[inline]
     pub fn new(request_id: u32, element: E) -> Self {
         Self { request_id, element }
     }
     
+}
+
+impl<E: Element> Element for Reply<E> {
+
+    type Config = E::Config;
+
+    fn encode<W: Write>(&self, mut write: W, config: &Self::Config) -> io::Result<()> {
+        write.write_u32(self.request_id)?;
+        self.element.encode(write, config)
+    }
+
+    fn decode<R: Read>(read: R, len: usize, config: &Self::Config) -> io::Result<Self> {
+        Ok(Reply {
+            request_id: read.read_u32()?,
+            element: E::decode(read, len - 4, config)?,
+        })
+    }
+
+}
+
+impl<E: Element> TopElement for Reply<E> {
+    const LEN: ElementLength = ElementLength::Variable32;
 }
