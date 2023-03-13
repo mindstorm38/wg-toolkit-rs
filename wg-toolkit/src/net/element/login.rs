@@ -176,7 +176,7 @@ fn encode_login_params<W: Write>(mut write: W, input: &LoginRequest) -> io::Resu
     write.write_u8(if input.digest.is_some() { 0x01 } else { 0x00 })?;
     write.write_string_variable(&input.username)?;
     write.write_string_variable(&input.password)?;
-    write.write_vec_variable(&input.blowfish_key)?;
+    write.write_blob_variable(&input.blowfish_key)?;
     write.write_string_variable(&input.context)?;
     if let Some(digest) = input.digest {
         write.write_all(&digest)?;
@@ -190,7 +190,7 @@ fn decode_login_params<R: Read>(mut input: R, protocol: u32) -> io::Result<Login
         protocol,
         username: input.read_string_variable()?,
         password: input.read_string_variable()?,
-        blowfish_key: input.read_vec_variable()?,
+        blowfish_key: input.read_blob_variable()?,
         context: input.read_string_variable()?,
         digest: if flags & 0x01 != 0 {
             let mut digest = [0; 16];
@@ -233,15 +233,15 @@ impl Element for LoginResponse {
                 
                 write.write_u8(1)?; // Logged-on
                 
-                if let Self::Encrypted(bf) = config {
-                    encode_login_success(BlowfishWriter::new(write, &bf), &success)?;
+                if let LoginResponseEncryption::Encrypted(bf) = config {
+                    encode_login_success(BlowfishWriter::new(write, &bf), success)?;
                 } else {
-                    encode_login_success(write, &success)?;
+                    encode_login_success(write, success)?;
                 }
 
             }
             Self::Error(err, message) => {
-                write.write_u8(err as _)?;
+                write.write_u8(*err as _)?;
                 write.write_string_variable(&message)?;
             }
             Self::Challenge(challenge) => {
@@ -252,24 +252,25 @@ impl Element for LoginResponse {
                     LoginChallenge::CuckooCycle { prefix, max_nonce } => {
                         write.write_string_variable(CHALLENGE_CUCKOO_CYCLE)?;
                         write.write_string_variable(&prefix)?;
-                        write.write_u64(max_nonce)?;
+                        write.write_u64(*max_nonce)?;
                     }
                 }
                 
             }
-            Self::Unknown(code) => write.write_u8(code)?
+            Self::Unknown(code) => write.write_u8(*code)?
         }
 
         Ok(())
 
     }
 
-    fn decode<R: Read>(read: R, len: usize, config: &Self::Config) -> io::Result<Self> {
+    fn decode<R: Read>(mut read: R, _len: usize, config: &Self::Config) -> io::Result<Self> {
         
         let error = match read.read_u8()? {
             1 => {
                 
-                let success = if let Self::Encrypted(bf) = config {
+                let success = 
+                if let LoginResponseEncryption::Encrypted(bf) = config {
                     decode_login_success(BlowfishReader::new(read, &bf))?
                 } else {
                     decode_login_success(read)?
@@ -355,6 +356,10 @@ impl<E: Element> Element for ChallengeResponse<E> {
         })
     }
 
+}
+
+impl<E: Element> TopElement for ChallengeResponse<E> {
+    const LEN: ElementLength = ElementLength::Variable16;
 }
 
 impl SimpleElement for CuckooCycleResponse {

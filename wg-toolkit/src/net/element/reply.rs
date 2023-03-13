@@ -25,8 +25,8 @@ impl SimpleElement for ReplyHeader {
         write.write_u32(self.request_id)
     }
 
-    fn decode<R: Read>(mut read: R, len: usize) -> io::Result<Self> {
-        Ok(ReplyHeader { request_id: read.read_u32()? })
+    fn decode<R: Read>(mut read: R, _len: usize) -> io::Result<Self> {
+        Ok(Self { request_id: read.read_u32()? })
     }
 
 }
@@ -63,8 +63,8 @@ impl<E: Element> Element for Reply<E> {
         self.element.encode(write, config)
     }
 
-    fn decode<R: Read>(read: R, len: usize, config: &Self::Config) -> io::Result<Self> {
-        Ok(Reply {
+    fn decode<R: Read>(mut read: R, len: usize, config: &Self::Config) -> io::Result<Self> {
+        Ok(Self {
             request_id: read.read_u32()?,
             element: E::decode(read, len - 4, config)?,
         })

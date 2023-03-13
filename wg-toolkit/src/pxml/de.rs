@@ -142,7 +142,7 @@ fn read_string<R: Read>(reader: &mut R, len: usize) -> Result<String, DeError> {
 
 /// Internal function that reads a compressed string.
 fn read_compressed_string<R: Read>(reader: &mut R, len: usize) -> Result<String, DeError> {
-    let data = reader.read_vec(len)?;
+    let data = reader.read_blob(len)?;
     Ok(base64::encode(&data[..]))
 }
 

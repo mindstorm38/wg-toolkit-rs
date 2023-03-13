@@ -104,7 +104,7 @@ pub trait WgReadExt: Read {
     }
 
     /// Read a blob of the given length.
-    fn read_vec(&mut self, len: usize) -> io::Result<Vec<u8>> {
+    fn read_blob(&mut self, len: usize) -> io::Result<Vec<u8>> {
         // TODO: Maybe use a better uninit approach in the future.
         let mut buf = vec![0; len];
         self.read_exact(&mut buf[..])?;
@@ -113,7 +113,7 @@ pub trait WgReadExt: Read {
 
     /// Read a blob of a length that is specified with a packed u32 before the 
     /// actual vector.
-    fn read_vec_variable(&mut self) -> io::Result<Vec<u8>> {
+    fn read_blob_variable(&mut self) -> io::Result<Vec<u8>> {
         let len = self.read_packed_u32()? as usize;
         let mut buf = vec![0; len];
         self.read_exact(&mut buf[..])?;
@@ -122,14 +122,14 @@ pub trait WgReadExt: Read {
 
     /// Read an UTF-8 string of the given length.
     fn read_string(&mut self, len: usize) -> io::Result<String> {
-        String::from_utf8(self.read_vec(len)?)
+        String::from_utf8(self.read_blob(len)?)
             .map_err(|_| io::ErrorKind::InvalidData.into())
     }
 
     /// Read an UTF-8 string of a length that is specified with a packed u32
     /// before the actual vector.
     fn read_string_variable(&mut self) -> io::Result<String> {
-        let blob = self.read_vec_variable()?;
+        let blob = self.read_blob_variable()?;
         match String::from_utf8(blob) {
             Ok(s) => Ok(s),
             Err(_) => Err(io::Error::new(io::ErrorKind::InvalidData, "invalid utf8 string"))
@@ -140,7 +140,7 @@ pub trait WgReadExt: Read {
     /// are ignored and if no zero is encountered, an invalid data error
     /// is returned.
     fn read_cstring(&mut self, len: usize) -> io::Result<String> {
-        let mut buf = self.read_vec(len)?;
+        let mut buf = self.read_blob(len)?;
         let pos = buf.iter().position(|&o| o == 0)
             .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidData))?;
         buf.truncate(pos); // Truncate trailing zeros.
@@ -300,27 +300,27 @@ pub trait WgWriteExt: Write {
     }
 
     #[inline]
-    fn write_vec(&mut self, data: &[u8]) -> io::Result<()> {
+    fn write_blob(&mut self, data: &[u8]) -> io::Result<()> {
         self.write_all(data)
     }
 
     /// Write a blob with its packed length before the actual data.
-    fn write_vec_variable(&mut self, data: &[u8]) -> io::Result<()> {
+    fn write_blob_variable(&mut self, data: &[u8]) -> io::Result<()> {
         self.write_packed_u32(data.len() as u32)?;
-        self.write_vec(data)
+        self.write_blob(data)
     }
 
     /// Writes a string to the underlying writer. Note that the length of
     /// the string is not written.
     #[inline]
     fn write_string<S: AsRef<str>>(&mut self, s: S) -> io::Result<()> {
-        self.write_vec(s.as_ref().as_bytes())
+        self.write_blob(s.as_ref().as_bytes())
     }
 
     /// Write a string with its packed length before.
     #[inline]
     fn write_string_variable(&mut self, s: &str) -> io::Result<()> {
-        self.write_vec_variable(s.as_bytes())
+        self.write_blob_variable(s.as_bytes())
     }
 
     /// Writes a null-terminated string to the underlying writer.

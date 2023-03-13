@@ -79,36 +79,27 @@ impl<E: SimpleElement> Element for E {
 }
 
 
-// /// A trait to be implemented on structures that acts as codec 
-// /// for a given element type.
-// #[deprecated]
-// pub trait ElementCodec {
+/// An alternative trait to both [`Element`] and [`TopElement`] that 
+/// automatically implements nothing for encode and provides the default 
+/// value on decoding without actually reading. The trait [`TopElement`]
+/// is also implemented to specify a fixed length of 0.
+pub trait EmptyElement: Default {}
 
-//     /// Type of the element that is being encoded and decoded.
-//     type Element;
+impl<E: EmptyElement> SimpleElement for E {
 
-//     /// Encode an element.
-//     fn encode<W: Write>(&self, write: W, input: Self::Element) -> io::Result<()>;
+    fn encode<W: Write>(&self, _write: W) -> io::Result<()> {
+        Ok(())
+    }
 
-//     /// Decode an element, its length is given separately.
-//     fn decode<R: Read>(&self, read: R, len: usize) -> io::Result<Self::Element>;
+    fn decode<R: Read>(_read: R, _len: usize) -> io::Result<Self> {
+        Ok(Self::default())
+    }
+    
+}
 
-// }
-
-// /// An extension trait for implementor of [`ElementCodec`] that
-// /// can be decoded as top elements. 
-// /// 
-// /// For example, you don't need such top element for decoding 
-// /// or encoding a reply, because a reply is always of varying
-// /// 32 bit length.
-// #[deprecated]
-// pub trait TopElementCodec: ElementCodec {
-
-//     /// If this element is being decoded as top element, this
-//     /// length describe how to decode it.
-//     const LEN: ElementLength;
-
-// }
+impl<E: EmptyElement> TopElement for E {
+    const LEN: ElementLength = ElementLength::Fixed(0);
+}
 
 
 /// Type of length used by a specific message codec.
@@ -163,122 +154,3 @@ impl ElementLength {
     }
 
 }
-
-
-// // Raw elements to use for debugging purposes
-
-// pub struct RawElementCodec<I: RawElementCodecLen>(I);
-
-// impl<I: RawElementCodecLen> ElementCodec for RawElementCodec<I> {
-
-//     type Element = Vec<u8>;
-
-//     fn encode<W: Write>(&self, mut write: W, input: Self::Element) -> io::Result<()> {
-//         write.write_all(&input[..])
-//     }
-
-//     fn decode<R: Read>(&self, mut read: R, len: usize) -> io::Result<Self::Element> {
-//         let mut buf = Vec::with_capacity(len);
-//         read.read_to_end(&mut buf)?;
-//         Ok(buf)
-//     }
-
-// }
-
-// impl<I: RawElementCodecLen> TopElementCodec for RawElementCodec<I> {
-//     const LEN: ElementLength = I::LEN;
-// }
-
-// impl<I: RawElementCodecLen + Default> RawElementCodec<I> {
-//     pub fn new() -> Self {
-//         Self(I::default())
-//     }
-// }
-
-// pub trait RawElementCodecLen {
-//     const LEN: ElementLength;
-// }
-
-// #[derive(Default)] pub struct RawElementCodecLenVar8;
-// #[derive(Default)] pub struct RawElementCodecLenVar16;
-// #[derive(Default)] pub struct RawElementCodecLenVar24;
-// #[derive(Default)] pub struct RawElementCodecLenVar32;
-// pub struct RawElementCodecLenFixed<const LEN: usize>([(); LEN]);
-
-// impl RawElementCodecLen for RawElementCodecLenVar8 {
-//     const LEN: ElementLength = ElementLength::Variable8;
-// }
-// impl RawElementCodecLen for RawElementCodecLenVar16 {
-//     const LEN: ElementLength = ElementLength::Variable16;
-// }
-// impl RawElementCodecLen for RawElementCodecLenVar24 {
-//     const LEN: ElementLength = ElementLength::Variable24;
-// }
-// impl RawElementCodecLen for RawElementCodecLenVar32 {
-//     const LEN: ElementLength = ElementLength::Variable32;
-// }
-// impl<const LEN: usize> RawElementCodecLen for RawElementCodecLenFixed<LEN> {
-//     const LEN: ElementLength = ElementLength::Fixed(LEN as u32);
-// }
-// impl<const LEN: usize> Default for RawElementCodecLenFixed<LEN> {
-//     fn default() -> Self {
-//         Self([(); LEN])
-//     }
-// }
-
-// pub type Var8ElementCodec = RawElementCodec<RawElementCodecLenVar8>;
-// pub type Var16ElementCodec = RawElementCodec<RawElementCodecLenVar16>;
-// pub type Var24ElementCodec = RawElementCodec<RawElementCodecLenVar24>;
-// pub type Var32ElementCodec = RawElementCodec<RawElementCodecLenVar32>;
-// pub type FixedElementCodec<const LEN: usize> = RawElementCodec<RawElementCodecLenFixed<LEN>>;
-
-
-// /// Use this macro to easily define symmetric element codecs.
-// macro_rules! symmetric_codec {
-//     (
-//         $codec_ident:ident -> $element_ident:ident {
-//             $( $field_ident:ident: $field_ty:ident ),*
-//             $(,)?
-//         }
-//         $($more:tt)*
-//     ) => {
-        
-//         pub struct $codec_ident;
-
-//         impl $crate::net::element::ElementCodec for $codec_ident {
-
-//             type Element = $element_ident;
-        
-//             fn encode<W: std::io::Write>(&self, mut write: W, input: Self::Element) -> std::io::Result<()> {
-//                 use crate::util::io::WgWriteExt;
-//                 $( $crate::net::element::symmetric_codec_write_field!(write, input.$field_ident, $field_ty)?; )*
-//                 Ok(())
-//             }
-        
-//             fn decode<R: std::io::Read>(&self, mut read: R, _len: usize) -> std::io::Result<Self::Element> {
-//                 use crate::util::io::WgReadExt;
-//                 Ok($element_ident {
-//                     $( $field_ident: $crate::net::element::symmetric_codec_read_field!(read, $field_ty)? ),*
-//                 })
-//             }
-        
-//         }
-
-//     };
-// }
-
-// macro_rules! symmetric_codec_write_field {
-//     ($writer:ident, $val:expr, u8) => { $writer.write_u8($val) };
-//     ($writer:ident, $val:expr, i8) => { $writer.write_i8($val) };
-//     ($writer:ident, $val:expr, u32) => { $writer.write_u32($val) };
-//     ($writer:ident, $val:expr, i32) => { $writer.write_i32($val) };
-// }
-
-// macro_rules! symmetric_codec_read_field {
-//     ($reader:ident, u8) => { $reader.read_u8() };
-//     ($reader:ident, i8) => { $reader.read_i8() };
-//     ($reader:ident, u32) => { $reader.read_u32() };
-//     ($reader:ident, i32) => { $reader.read_i32() };
-// }
-
-// pub(crate) use {symmetric_codec, symmetric_codec_write_field, symmetric_codec_read_field};

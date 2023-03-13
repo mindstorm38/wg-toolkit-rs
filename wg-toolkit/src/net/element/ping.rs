@@ -26,7 +26,7 @@ impl SimpleElement for Ping {
         write.write_u8(self.num)
     }
 
-    fn decode<R: Read>(mut read: R, len: usize) -> io::Result<Self> {
+    fn decode<R: Read>(mut read: R, _len: usize) -> io::Result<Self> {
         Ok(Self { num: read.read_u8()? })
     }
 
