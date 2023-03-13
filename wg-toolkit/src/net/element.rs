@@ -5,7 +5,6 @@ use std::io::{self, Read, Write};
 use crate::util::io::{WgReadExt, WgWriteExt};
 
 
-pub mod ping;
 pub mod login;
 pub mod reply;
 pub mod base;

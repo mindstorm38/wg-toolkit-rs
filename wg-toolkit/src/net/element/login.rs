@@ -1,4 +1,12 @@
-//! Definition of element related to login application.
+//! Definition of elements related to login application.
+//! 
+//! When a client send a login request to the login app, it might be
+//! encrypted with RSA, the server then decide which response to return
+//! depending on the input, it might send a challenge that is required.
+//! When the login succeed, the server sends a login key that is used
+//! by the client when first connecting to the base app.
+//! 
+//! This app also provides a way to ping test the server.
 
 use std::io::{self, Read, Write};
 use std::net::SocketAddrV4;
@@ -13,6 +21,36 @@ use crate::net::filter::blowfish::{BlowfishWriter, BlowfishReader};
 use crate::util::io::*;
 
 use super::{Element, SimpleElement, TopElement, ElementLength};
+
+
+/// A ping sent from the client to the login app or replied from the
+/// login app to the client.
+#[derive(Debug, Clone, Copy)]
+pub struct Ping {
+    /// The number of the ping, the same number must be sent back to
+    /// the client when login app receives it.
+    pub num: u8,
+}
+
+impl Ping {
+    pub const ID: u8 = 0x02;
+}
+
+impl SimpleElement for Ping {
+
+    fn encode<W: Write>(&self, mut write: W) -> io::Result<()> {
+        write.write_u8(self.num)
+    }
+
+    fn decode<R: Read>(mut read: R, _len: usize) -> io::Result<Self> {
+        Ok(Self { num: read.read_u8()? })
+    }
+
+}
+
+impl TopElement for Ping {
+    const LEN: ElementLength = ElementLength::Fixed(1);
+}
 
 
 /// A login request to be sent with [`LoginCodec`], send from client to 
@@ -204,7 +242,8 @@ fn decode_login_params<R: Read>(mut input: R, protocol: u32) -> io::Result<Login
 }
 
 
-/// Codec for [`LoginResponse`].
+/// Describe if the login response has to be encrypted or not. This must be 
+/// provided as configuration when writing or reading the element.
 #[derive(Debug)]
 pub enum LoginResponseEncryption {
     /// The login response is not encrypted. This should be selected if the

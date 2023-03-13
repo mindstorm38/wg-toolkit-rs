@@ -1,51 +1,54 @@
+use std::net::{SocketAddr, SocketAddrV4, Ipv4Addr};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-use std::net::SocketAddr;
 use std::time::Duration;
 use std::sync::Arc;
 use std::env;
 use std::fs;
 
-use rand::rngs::OsRng;
-use rand::RngCore;
-
 use rsa::{RsaPrivateKey, pkcs8::DecodePrivateKey};
-
 use crypto_common::KeyInit;
 use blowfish::Blowfish;
 
+use rand::rngs::OsRng;
+use rand::RngCore;
+
 use wgtk::net::bundle::{BundleElement, Bundle};
 use wgtk::net::app::{App, EventKind, Event};
-
-use wgtk::net::element::ping::PingCodec;
-use wgtk::net::element::login::{
-    LoginRequestCodec, 
-    LoginResponseCodec, LoginResponse, LoginChallenge, 
-    ChallengeResponseCodec, CuckooCycleResponseCodec, LoginSuccess
-};
-use wgtk::net::element::base::{
-    ClientAuthCodec, 
-    ServerSessionKeyCodec, ServerSessionKey,
-    ClientSessionKeyCodec,
-};
-
 use wgtk::util::TruncateFmt;
+
+use wgtk::net::element::login::{
+    Ping,
+    LoginRequest, LoginRequestEncryption,
+    LoginResponse, LoginResponseEncryption,
+    LoginChallenge, LoginSuccess,
+    ChallengeResponse, CuckooCycleResponse,
+};
+
+use wgtk::net::element::base::{ClientAuth, ServerSessionKey, ClientSessionKey};
 
 
 fn main() {
 
-    let priv_key_path = env::var("WGT_PRIVKEY_PATH").unwrap();
+    let priv_key_path = env::var("WGTK_PRIVKEY_PATH")
+        .expect("Missing 'WGTK_PRIVKEY_PATH' with path to the RSA private key.");
+
+    let bind_ip_raw = env::var("WGTK_BIND_IP")
+        .expect("Missing 'WGTK_BIND_IP' with the IP to bind UDP servers.");
+
     let priv_key_content = fs::read_to_string(priv_key_path).unwrap();
     let priv_key = RsaPrivateKey::from_pkcs8_pem(priv_key_content.as_str()).unwrap();
 
+    let bind_ip: Ipv4Addr = bind_ip_raw.parse().unwrap();
+
     let mut login_app = LoginApp {
-        app: App::new("192.168.1.100:20016".parse().unwrap()).unwrap(),
+        app: App::new(SocketAddrV4::new(bind_ip, 20016)).unwrap(),
         priv_key: Arc::new(priv_key),
         clients: HashMap::new(),
     };
 
     let mut base_app = BaseApp {
-        app: App::new("192.168.1.100:20017".parse().unwrap()).unwrap(),
+        app: App::new(SocketAddrV4::new(bind_ip, 20017)).unwrap(),
         pending_clients: HashMap::new(),
         logged_clients: HashMap::new(),
         logged_counter: 0,
@@ -110,29 +113,30 @@ impl LoginApp {
         let prefix = format!("[LOGIN/{}]", client.addr);
 
         match element {
-            BundleElement::Simple(PingCodec::ID, reader) => {
+            BundleElement::Simple(Ping::ID, reader) => {
     
-                let elt = reader.read(&PingCodec).unwrap();
-                println!("{prefix} --> Ping #{}", elt.element);
-                println!("{prefix} <-- Pong #{}", elt.element);
+                let elt = reader.read_simple::<Ping>().unwrap();
+                println!("{prefix} --> Ping #{}", elt.element.num);
+                println!("{prefix} <-- Pong #{}", elt.element.num);
     
                 let mut bundle = Bundle::new_empty();
-                bundle.add_reply(&PingCodec, elt.element, elt.request_id.unwrap());
+                bundle.add_simple_reply(elt.element, elt.request_id.unwrap());
                 self.app.send(&mut bundle, client.addr).unwrap();
                 
                 true
     
             }
-            BundleElement::Simple(LoginRequestCodec::ID, reader) => {
+            BundleElement::Simple(LoginRequest::ID, reader) => {
     
-                let codec = LoginRequestCodec::Server(self.priv_key.clone());
-                let elt = reader.read(&codec).unwrap();
+                let encryption = LoginRequestEncryption::Server(self.priv_key.clone());
+                let elt = reader.read::<LoginRequest>(&encryption).unwrap();
 
                 println!("{prefix} --> Login {} / {}", TruncateFmt(&elt.element.username, 54), elt.element.password);
     
                 // Ensure that blowfish key is set.
                 let bf = client.blowfish.insert(Arc::new(Blowfish::new_from_slice(&elt.element.blowfish_key).unwrap()));
-                
+                let encryption = LoginResponseEncryption::Encrypted(bf.clone());
+
                 let mut bundle = Bundle::new_empty();
                 
                 if !client.challenge_complete {
@@ -149,11 +153,11 @@ impl LoginApp {
                     println!("{prefix} <-- Cuckoo cycle challenge");
 
                     bundle.add_reply(
-                        &LoginResponseCodec::Encrypted(bf.clone()), 
                         LoginResponse::Challenge(challenge), 
+                        &encryption, 
                         elt.request_id.unwrap()
                     );
-    
+
                 } else {
     
                     // NOTE: We are currently not checking anything prior to connection.
@@ -168,8 +172,8 @@ impl LoginApp {
                     println!("{prefix} <-- Success, addr: {}, login key: {}", success.addr, success.login_key);
 
                     bundle.add_reply(
-                        &LoginResponseCodec::Encrypted(bf.clone()), 
                         LoginResponse::Success(success), 
+                        &encryption, 
                         elt.request_id.unwrap()
                     );
                     
@@ -180,9 +184,8 @@ impl LoginApp {
                 true
     
             }
-            BundleElement::Simple(ChallengeResponseCodec::ID, reader) => {
-                let codec = ChallengeResponseCodec::new(CuckooCycleResponseCodec);
-                let _ = reader.read(&codec).unwrap();
+            BundleElement::Simple(ChallengeResponse::ID, reader) => {
+                let _ = reader.read_simple::<ChallengeResponse<CuckooCycleResponse>>().unwrap();
                 println!("{prefix} --> Challenge response");
                 client.challenge_complete = true;
                 true
@@ -239,9 +242,9 @@ impl BaseApp {
         let prefix = format!("[BASE/{addr}]");
 
         match element {
-            BundleElement::Simple(ClientAuthCodec::ID, reader) => {
+            BundleElement::Simple(ClientAuth::ID, reader) => {
 
-                let client_auth = reader.read(&ClientAuthCodec).unwrap();
+                let client_auth = reader.read_simple::<ClientAuth>().unwrap();
 
                 println!("{prefix} --> Auth, login key: {}, attempt: {}, unk: {}", 
                     client_auth.element.login_key, 
@@ -263,7 +266,7 @@ impl BaseApp {
                         // Create a bundle with a single reply.
                         let mut bundle = Bundle::new_empty();
 
-                        bundle.add_reply(&ServerSessionKeyCodec, ServerSessionKey {
+                        bundle.add_simple_reply(ServerSessionKey {
                             session_key: logged_key,
                         }, client_auth.request_id.unwrap());
 
@@ -280,9 +283,9 @@ impl BaseApp {
                 true
 
             }
-            BundleElement::Simple(ClientSessionKeyCodec::ID, reader) => {
+            BundleElement::Simple(ClientSessionKey::ID, reader) => {
                 
-                let client_session_auth = reader.read(&ClientSessionKeyCodec).unwrap();
+                let client_session_auth = reader.read_simple::<ClientSessionKey>().unwrap();
                 let session_key = client_session_auth.element.session_key;
 
                 println!("{prefix} --> Session key: {session_key}");

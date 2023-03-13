@@ -11,7 +11,7 @@ use super::{SimpleElement, TopElement, ElementLength};
 
 
 /// Sent by the client to the server without encryption in order to authenticate,
-/// the server then compares with its internal session keys from past successful
+/// the server then compares with its internal login keys from past successful
 /// logins on the login app.
 /// 
 /// This element is usually a request, in such case a [`ServerSessionKey`] must be 
