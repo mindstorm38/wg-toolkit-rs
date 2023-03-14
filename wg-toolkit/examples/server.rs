@@ -1,7 +1,7 @@
 use std::net::{SocketAddr, SocketAddrV4, Ipv4Addr};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::sync::Arc;
 use std::env;
 use std::fs;
@@ -26,6 +26,12 @@ use wgtk::net::element::login::{
 };
 
 use wgtk::net::element::base::{ClientAuth, ServerSessionKey, ClientSessionKey};
+
+use wgtk::net::element::client::{
+    UpdateFrequencyNotification,
+    CreateBasePlayer,
+    TickSync,
+};
 
 
 fn main() {
@@ -52,6 +58,7 @@ fn main() {
         pending_clients: HashMap::new(),
         logged_clients: HashMap::new(),
         logged_counter: 0,
+        start_time: Instant::now(),
     };
 
     let mut events = Vec::new();
@@ -211,13 +218,18 @@ pub struct BaseApp {
     app: App,
     /// List of clients pending for switching from login app to base app.
     pending_clients: HashMap<u32, PendingBaseClient>,
-    /// List of clients logged in the base app mapped to their unique key.
-    logged_clients: HashMap<u32, BaseClient>,
+    /// List of clients logged in the base app mapped to their socket address.
+    logged_clients: HashMap<SocketAddr, BaseClient>,
     /// A counter for allocating the unique key for logged Client.
     logged_counter: u32,
+    /// Start time of the base app, used to know the game time.
+    start_time: Instant,
 }
 
 impl BaseApp {
+
+    /// Default update frequency to 10 Hz.
+    const UPDATE_FREQ: u8 = 10;
 
     pub fn handle(&mut self, event: &Event) {
 
@@ -239,7 +251,12 @@ impl BaseApp {
 
     fn handle_element(&mut self, addr: SocketAddr, element: BundleElement) -> bool {
 
-        let prefix = format!("[BASE/{addr}]");
+        let mut prefix = format!("[BASE/{addr}]");
+
+        let mut logged_client = self.logged_clients.get_mut(&addr);
+        if let Some(_) = logged_client.as_deref_mut() {
+            prefix.push_str(" (client)");
+        }
 
         match element {
             BundleElement::Simple(ClientAuth::ID, reader) => {
@@ -261,11 +278,10 @@ impl BaseApp {
                         self.logged_counter = self.logged_counter.checked_add(1).expect("too much logged clients");
                         let logged_key = self.logged_counter;
 
-                        self.logged_clients.insert(logged_key, BaseClient::new(addr));
+                        self.logged_clients.insert(addr, BaseClient::new(logged_key));
 
                         // Create a bundle with a single reply.
                         let mut bundle = Bundle::new_empty();
-
                         bundle.add_simple_reply(ServerSessionKey {
                             session_key: logged_key,
                         }, client_auth.request_id.unwrap());
@@ -289,6 +305,38 @@ impl BaseApp {
                 let session_key = client_session_auth.element.session_key;
 
                 println!("{prefix} --> Session key: {session_key}");
+
+                if let Some(client) = logged_client.as_deref_mut() {
+                    if session_key == client.session_key {
+                        if !client.sent_freq {
+
+                            let mut bundle = Bundle::new_empty();
+                            bundle.add_simple_element(UpdateFrequencyNotification::ID, UpdateFrequencyNotification {
+                                frequency: Self::UPDATE_FREQ,
+                                game_time: self.current_time(),
+                            });
+                            println!("{prefix} <-- Update frequency: {}", Self::UPDATE_FREQ);
+                            self.timestamp_bundle(&mut bundle);
+                            self.app.send(&mut bundle, addr).unwrap();
+                            bundle.clear();
+                            
+                            self.timestamp_bundle(&mut bundle);
+                            bundle.add_simple_element(CreateBasePlayer::ID, CreateBasePlayer {
+                                entity_id: 37289213,
+                                entity_type: 11,
+                                entity_data: b"\x00\x09518858105\x00"[..].into(),
+                            });
+                            println!("{prefix} <-- Create base player");
+                            self.app.send(&mut bundle, addr).unwrap();
+                            bundle.clear();
+
+                        }
+                    } else {
+                        println!("{prefix}     Warning, expected: {}", client.session_key);
+                    }
+                } else {
+                    println!("{prefix}     Warning, no client");
+                }
 
                 true
 
@@ -317,6 +365,23 @@ impl BaseApp {
                 _ => continue
             }
         }
+    }
+
+    /// Get the current run time of the server in seconds.
+    fn current_time(&self) -> u32 {
+        self.start_time.elapsed().as_secs() as _
+    }
+
+    /// Just wrap around the current time for tick.
+    fn current_time_tick(&self) -> u8 {
+        self.current_time() as u8
+    }
+
+    /// Append a tick sync message to this bundle according to the current time.
+    fn timestamp_bundle(&self, bundle: &mut Bundle) {
+        bundle.add_simple_element(TickSync::ID, TickSync { 
+            tick: self.current_time_tick() 
+        });
     }
 
 }
@@ -363,15 +428,18 @@ impl PendingBaseClient {
 /// Internal structure used to track a client logged in the base app.
 #[derive(Debug)]
 pub struct BaseClient {
-    #[allow(unused)]
-    addr: SocketAddr,
+    session_key: u32,
+    sent_freq: bool,
 }
 
 impl BaseClient {
 
     #[inline]
-    pub fn new(addr: SocketAddr) -> Self {
-        Self { addr, }
+    pub fn new(session_key: u32) -> Self {
+        Self { 
+            session_key, 
+            sent_freq: false,
+        }
     }
 
 }

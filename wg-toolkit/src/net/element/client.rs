@@ -11,11 +11,15 @@ use crate::util::io::*;
 use super::{SimpleElement, TopElement, EmptyElement, ElementLength};
 
 
-/// The server informs us how frequently it is going to send to us.
+/// The server informs us how frequently it is going to send update
+/// the the client, and also give the server game time (exactly the
+/// same as [`SetGameTime`] element, but inlined here).
 #[derive(Debug)]
 pub struct UpdateFrequencyNotification {
     /// The frequency in hertz.
     pub frequency: u8,
+    /// The server game time.
+    pub game_time: u32,
 }
 
 impl UpdateFrequencyNotification {
@@ -25,11 +29,17 @@ impl UpdateFrequencyNotification {
 impl SimpleElement for UpdateFrequencyNotification {
 
     fn encode<W: Write>(&self, mut write: W) -> io::Result<()> {
-        write.write_u8(self.frequency)
+        write.write_u8(self.frequency)?;
+        write.write_u16(1)?;
+        write.write_u32(self.game_time)
     }
 
     fn decode<R: Read>(mut read: R, _len: usize) -> io::Result<Self> {
-        Ok(Self { frequency: read.read_u8()? })
+        Ok(Self { 
+            frequency: read.read_u8()?,
+            // Skip 2 bytes that we don't use.
+            game_time: { read.skip::<2>()?; read.read_u32()? },
+        })
     }
 }
 

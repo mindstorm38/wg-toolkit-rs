@@ -179,6 +179,14 @@ impl Bundle {
         self.packets.is_empty()
     }
 
+    /// Clear the bundle by removing all packets.
+    pub fn clear(&mut self) {
+        self.packets.clear();
+        self.force_new_packet = true;
+        self.available_len = 0;
+        self.last_request_header_offset = 0;
+    }
+
     /// Get a slice of all packets of this bundle.
     #[inline]
     pub fn packets(&self) -> &[Box<Packet>] {

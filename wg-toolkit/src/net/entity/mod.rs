@@ -1,1 +1,1 @@
-//! Base module for entities definition.
+//! Base module for entity descriptions.

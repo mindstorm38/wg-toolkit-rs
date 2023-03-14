@@ -113,7 +113,13 @@ impl App {
 
             // If cumulative ack is found for the channel, send +1, if there
             // is not ack yet, send 0.
-            packet_config.set_cumulative_ack(channel.get_cumulative_ack().map(|n| n + 1).unwrap_or(0));
+            packet_config.set_cumulative_ack(channel.get_cumulative_ack_exclusive().unwrap_or(0));
+            
+            // If we send a cumulative ack, just take auto ack to avoid resending 
+            // it automatically.
+            if packet_config.cumulative_ack().is_some() {
+                channel.take_auto_ack();
+            }
 
         }
 
@@ -145,7 +151,7 @@ impl App {
                 raw_packet = packet.raw()
             }
             
-            println!("Sending {:X}", BytesFmt(raw_packet.body()));
+            println!("Sending {:X}", BytesFmt(raw_packet.data()));
 
             size += self.socket.send_to(raw_packet.data(), to)?;
             sequence_num += 1;
@@ -194,7 +200,7 @@ impl App {
                         }
                     }
 
-                    println!("Received {:X}", BytesFmt(packet.raw().body()));
+                    println!("Received {:X}", BytesFmt(packet.raw().data()));
 
                     // Get length again because it might be modified by decrypt.
                     let len = packet.raw().data_len();
@@ -210,6 +216,7 @@ impl App {
                         // If packet is reliable, take its ack number and store it for future acknowledging.
                         if packet_config.reliable() {
                             channel.add_received_ack(packet_config.sequence_num());
+                            channel.set_auto_ack();
                         }
 
                         if let Some(ack) = packet_config.cumulative_ack() {
@@ -231,11 +238,27 @@ impl App {
             .into_iter()
             .map(|(addr, p)| Event::new(addr, EventKind::PacketError(p, PacketError::BundleTimeout))));
 
-        // for (addr, channel) in &mut self.channels {
-        //     if channel.take_auto_ack() {
+        // Send auto acks.
+        for (addr, channel) in &mut self.channels {
+            if channel.take_auto_ack() {
                 
-        //     }
-        // }
+                let mut packet_config = PacketConfig::new();
+                let ack = channel.get_cumulative_ack_exclusive().expect("incoherent");
+                packet_config.set_sequence_num(ack);
+                packet_config.set_cumulative_ack(ack);
+                packet_config.set_on_channel(true);
+                packet_config.set_unk_1000(0);
+
+                let mut packet = Packet::new_boxed();
+                packet.sync_data(&mut packet_config);
+
+                encrypt_packet(packet.raw(), &channel.blowfish, &mut self.encryption_packet);
+
+                println!("Sending auto ack {:X}", BytesFmt(self.encryption_packet.data()));
+                self.socket.send_to(self.encryption_packet.data(), *addr).unwrap();
+
+            }
+        }
 
         Ok(())
 
@@ -351,7 +374,7 @@ pub struct Channel {
     /// The list of received acks, it's used for sending. 
     received_acks: Vec<u32>,
     // /// Set to true when an ack should be sent even if not bundle is set.
-    // auto_ack: bool,
+    auto_ack: bool,
 }
 
 impl Channel {
@@ -361,7 +384,7 @@ impl Channel {
             blowfish,
             sent_acks: Vec::new(),
             received_acks: Vec::new(),
-            // auto_ack: false,
+            auto_ack: false,
         }
     }
 
@@ -404,16 +427,16 @@ impl Channel {
 
     }
 
-    // #[inline]
-    // fn set_auto_ack(&mut self) {
-    //     self.auto_ack = true;
-    // }
+    #[inline]
+    fn set_auto_ack(&mut self) {
+        self.auto_ack = true;
+    }
 
-    // /// Take the auto ack and disable it anyway.
-    // #[inline]
-    // fn take_auto_ack(&mut self) -> bool {
-    //     std::mem::replace(&mut self.auto_ack, false)
-    // }
+    /// Take the auto ack and disable it anyway.
+    #[inline]
+    fn take_auto_ack(&mut self) -> bool {
+        std::mem::replace(&mut self.auto_ack, false)
+    }
 
     /// Return the last ack that is part of an chain.
     fn get_cumulative_ack(&mut self) -> Option<u32> {
@@ -436,6 +459,11 @@ impl Channel {
 
         Some(cumulative_ack)
 
+    }
+
+    #[inline]
+    fn get_cumulative_ack_exclusive(&mut self) -> Option<u32> {
+        self.get_cumulative_ack().map(|n| n + 1)
     }
 
 }
