@@ -2,7 +2,7 @@
 
 use std::io::{self, Read, Write};
 
-use crate::util::io::{WgReadExt, WgWriteExt};
+use crate::util::io::*;
 
 
 pub mod login;
@@ -114,19 +114,25 @@ pub enum ElementLength {
     /// The size of the element is variable, and is encoded on 24 bits.
     Variable24,
     /// The size of the element is variable, and is encoded on 32 bits.
-    Variable32
+    Variable32,
+    /// The size of the element is unknown at runtime and will be determined by
+    /// the decoder or the encoder by how much the reader or write is consumed.
+    /// 
+    /// *This is the way to go for lengths of type Callback in BigWorld engine.*
+    Unknown,
 }
 
 impl ElementLength {
 
     /// Read the length from a given reader.
-    pub fn read<R: Read>(&self, mut reader: R) -> std::io::Result<u32> {
+    pub fn read<R: Read>(&self, mut reader: R) -> std::io::Result<Option<u32>> {
         match self {
-            Self::Fixed(len) => Ok(*len),
-            Self::Variable8 => reader.read_u8().map(|n| n as u32),
-            Self::Variable16 => reader.read_u16().map(|n| n as u32),
-            Self::Variable24 => reader.read_u24(),
-            Self::Variable32 => reader.read_u32(),
+            Self::Fixed(len) => Ok(Some(*len)),
+            Self::Variable8 => reader.read_u8().map(|n| Some(n as u32)),
+            Self::Variable16 => reader.read_u16().map(|n| Some(n as u32)),
+            Self::Variable24 => reader.read_u24().map(|n| Some(n)),
+            Self::Variable32 => reader.read_u32().map(|n| Some(n)),
+            Self::Unknown => Ok(None),
         }
     }
 
@@ -138,6 +144,7 @@ impl ElementLength {
             Self::Variable16 => writer.write_u16(len as u16),
             Self::Variable24 => writer.write_u24(len),
             Self::Variable32 => writer.write_u32(len),
+            Self::Unknown => Ok(()),
         }
     }
 
@@ -149,7 +156,29 @@ impl ElementLength {
             Self::Variable16 => 2,
             Self::Variable24 => 3,
             Self::Variable32 => 4,
+            Self::Unknown => 0,
         }
     }
 
+}
+
+
+#[derive(Debug)]
+pub struct UnknownElement(pub Vec<u8>);
+
+impl SimpleElement for UnknownElement {
+
+    fn encode<W: Write>(&self, mut write: W) -> io::Result<()> {
+        write.write_blob(&self.0)
+    }
+
+    fn decode<R: Read>(mut read: R, _len: usize) -> io::Result<Self> {
+        let mut buf = Vec::new();
+        read.read_to_end(&mut buf)?;
+        Ok(UnknownElement(buf))
+    }
+}
+
+impl TopElement for UnknownElement {
+    const LEN: ElementLength = ElementLength::Unknown;
 }

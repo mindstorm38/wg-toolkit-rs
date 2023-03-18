@@ -11,7 +11,8 @@ use crate::util::BytesFmt;
 
 /// According to disassembly of WoT, outside of a channel, the max size if always
 /// `1500 - 28 = 1472`, this includes the 4-bytes prefix.
-pub const PACKET_MAX_LEN: usize = 1472;
+pub const PACKET_MAX_LEN: usize = 1300;
+// pub const PACKET_MAX_LEN: usize = 1472;
 /// The length of the unknown 4-byte prefix.
 pub const PACKET_PREFIX_LEN: usize = 4;
 /// Flags are u16.

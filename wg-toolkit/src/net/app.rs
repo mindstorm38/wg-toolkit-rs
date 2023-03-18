@@ -14,7 +14,7 @@ use super::packet::{Packet, RawPacket, PacketConfig, PacketSyncError};
 use super::bundle::{BundleAssembler, Bundle};
 use super::filter::blowfish::{BlowfishReader, BlowfishWriter, BLOCK_SIZE};
 
-use crate::util::BytesFmt;
+// use crate::util::BytesFmt;
 
 
 const COMMON_EVENT: Token = Token(0);
@@ -106,14 +106,14 @@ impl App {
         let mut packet_config = PacketConfig::new();
 
         // When on channel, we set appropriate flags and values.
-        if let Some(channel) = channel.as_mut() {
+        if let Some(channel) = channel.as_deref_mut() {
 
             packet_config.set_on_channel(true);
             packet_config.set_reliable(true);
 
-            // If cumulative ack is found for the channel, send +1, if there
-            // is not ack yet, send 0.
-            packet_config.set_cumulative_ack(channel.get_cumulative_ack_exclusive().unwrap_or(0));
+            // // If cumulative ack is found for the channel, send +1, if there
+            // // is not ack yet, send 0.
+            // packet_config.set_cumulative_ack(channel.get_cumulative_ack_exclusive().unwrap_or(0));
             
             // If we send a cumulative ack, just take auto ack to avoid resending 
             // it automatically.
@@ -133,6 +133,13 @@ impl App {
 
         for packet in bundle.packets_mut() {
 
+            // Only the last packet has a cumulative ack.
+            if sequence_num == sequence_last_num {
+                if let Some(channel) = channel.as_mut() {
+                    packet_config.set_cumulative_ack(channel.get_cumulative_ack_exclusive().unwrap_or(0));
+                }
+            }
+
             // Set sequence number and sync data.
             packet_config.set_sequence_num(sequence_num);
             packet.sync_data(&mut packet_config);
@@ -140,7 +147,7 @@ impl App {
             // Reference to the actual raw packet to send.
             let raw_packet;
 
-            if let Some(channel) = channel.as_mut() {
+            if let Some(channel) = channel.as_deref_mut() {
 
                 channel.add_sent_ack(sequence_num);
 
@@ -151,7 +158,7 @@ impl App {
                 raw_packet = packet.raw()
             }
             
-            println!("Sending {:X}", BytesFmt(raw_packet.data()));
+            // println!("Sending {:X}", BytesFmt(raw_packet.data()));
 
             size += self.socket.send_to(raw_packet.data(), to)?;
             sequence_num += 1;
@@ -190,7 +197,7 @@ impl App {
                     // be overwritten by 'sync_state'.
                     packet.raw_mut().set_data_len(len);
 
-                    if let Some(channel) = channel.as_mut() {
+                    if let Some(channel) = channel.as_deref_mut() {
                         match decrypt_packet(&packet, &channel.blowfish) {
                             Ok(clear_packet) => packet = clear_packet,
                             Err(()) => {
@@ -200,7 +207,7 @@ impl App {
                         }
                     }
 
-                    println!("Received {:X}", BytesFmt(packet.raw().data()));
+                    // println!("Received {:X}", BytesFmt(packet.raw().data()));
 
                     // Get length again because it might be modified by decrypt.
                     let len = packet.raw().data_len();
@@ -211,7 +218,7 @@ impl App {
                         continue
                     }
 
-                    if let Some(channel) = channel.as_mut() {
+                    if let Some(channel) = channel.as_deref_mut() {
 
                         // If packet is reliable, take its ack number and store it for future acknowledging.
                         if packet_config.reliable() {
@@ -225,8 +232,13 @@ impl App {
 
                     }
 
-                    if let Some(bundle) = self.bundle_assembler.try_assemble(addr, packet, &packet_config) {
-                        events.push(Event::new(addr, EventKind::Bundle(bundle)));
+                    // We can observe that packets with the flag 0x1000 are only used
+                    // for auto acking with sometimes duplicated data that is sent
+                    // just after. If it become a problem this check can be removed. 
+                    if packet_config.unk_1000().is_none() {
+                        if let Some(bundle) = self.bundle_assembler.try_assemble(addr, packet, &packet_config) {
+                            events.push(Event::new(addr, EventKind::Bundle(bundle)));
+                        }
                     }
 
                 }
@@ -254,7 +266,7 @@ impl App {
 
                 encrypt_packet(packet.raw(), &channel.blowfish, &mut self.encryption_packet);
 
-                println!("Sending auto ack {:X}", BytesFmt(self.encryption_packet.data()));
+                // println!("Sending auto ack {:X}", BytesFmt(self.encryption_packet.data()));
                 self.socket.send_to(self.encryption_packet.data(), *addr).unwrap();
 
             }
@@ -335,7 +347,7 @@ fn encrypt_packet(src_packet: &RawPacket, bf: &Blowfish, dst_packet: &mut RawPac
     let mut len = src_packet.body_len() + ENCRYPTION_FOOTER_LEN;
 
     // The wastage amount is basically the padding + 1 for the wastage itself.
-    let padding = BLOCK_SIZE - (len % BLOCK_SIZE);
+    let padding = (BLOCK_SIZE - (len % BLOCK_SIZE)) % BLOCK_SIZE;
     len += padding;
 
     // Clone the packet data into a new vec and append the padding and the footer.

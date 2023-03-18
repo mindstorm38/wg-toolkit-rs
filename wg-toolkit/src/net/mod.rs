@@ -19,4 +19,6 @@ pub mod bundle;
 pub mod filter;
 pub mod cuckoo;
 
+pub mod entity;
+
 pub mod app;

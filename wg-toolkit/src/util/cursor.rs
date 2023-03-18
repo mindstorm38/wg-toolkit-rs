@@ -146,7 +146,11 @@ impl<T: Seek> Seek for SubCursor<T> {
 /// systems to avoid overflowing casts.
 #[inline]
 fn sat_u64_to_usize(n: u64) -> usize {
-    n.min(usize::MAX as u64) as usize
+    if u64::BITS == usize::BITS {
+        n as _
+    } else {
+        n.min(usize::MAX as u64) as usize
+    }
 }
 
 

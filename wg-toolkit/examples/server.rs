@@ -17,6 +17,8 @@ use wgtk::net::bundle::{BundleElement, Bundle};
 use wgtk::net::app::{App, EventKind, Event};
 use wgtk::util::TruncateFmt;
 
+use wgtk::net::element::UnknownElement;
+
 use wgtk::net::element::login::{
     Ping,
     LoginRequest, LoginRequestEncryption,
@@ -30,6 +32,9 @@ use wgtk::net::element::base::{ClientAuth, ServerSessionKey, ClientSessionKey};
 use wgtk::net::element::client::{
     UpdateFrequencyNotification,
     CreateBasePlayer,
+    SelectPlayerEntity,
+    EntityMethod,
+    ResetEntities,
     TickSync,
 };
 
@@ -120,7 +125,7 @@ impl LoginApp {
         let prefix = format!("[LOGIN/{}]", client.addr);
 
         match element {
-            BundleElement::Simple(Ping::ID, reader) => {
+            BundleElement::Top(Ping::ID, reader) => {
     
                 let elt = reader.read_simple::<Ping>().unwrap();
                 println!("{prefix} --> Ping #{}", elt.element.num);
@@ -133,7 +138,7 @@ impl LoginApp {
                 true
     
             }
-            BundleElement::Simple(LoginRequest::ID, reader) => {
+            BundleElement::Top(LoginRequest::ID, reader) => {
     
                 let encryption = LoginRequestEncryption::Server(self.priv_key.clone());
                 let elt = reader.read::<LoginRequest>(&encryption).unwrap();
@@ -191,13 +196,13 @@ impl LoginApp {
                 true
     
             }
-            BundleElement::Simple(ChallengeResponse::ID, reader) => {
+            BundleElement::Top(ChallengeResponse::ID, reader) => {
                 let _ = reader.read_simple::<ChallengeResponse<CuckooCycleResponse>>().unwrap();
                 println!("{prefix} --> Challenge response");
                 client.challenge_complete = true;
                 true
             }
-            BundleElement::Simple(id, _) => {
+            BundleElement::Top(id, _) => {
                 println!("{prefix} --> Unknown #{id}");
                 false
             }
@@ -259,7 +264,7 @@ impl BaseApp {
         }
 
         match element {
-            BundleElement::Simple(ClientAuth::ID, reader) => {
+            BundleElement::Top(ClientAuth::ID, reader) => {
 
                 let client_auth = reader.read_simple::<ClientAuth>().unwrap();
 
@@ -299,7 +304,7 @@ impl BaseApp {
                 true
 
             }
-            BundleElement::Simple(ClientSessionKey::ID, reader) => {
+            BundleElement::Top(ClientSessionKey::ID, reader) => {
                 
                 let client_session_auth = reader.read_simple::<ClientSessionKey>().unwrap();
                 let session_key = client_session_auth.element.session_key;
@@ -308,9 +313,14 @@ impl BaseApp {
 
                 if let Some(client) = logged_client.as_deref_mut() {
                     if session_key == client.session_key {
-                        if !client.sent_freq {
 
-                            let mut bundle = Bundle::new_empty();
+                        let mut bundle = Bundle::new_empty();
+
+                        if !client.login_sent {
+
+                            client.login_sent = true;
+                            client.account_to_send = true;
+
                             bundle.add_simple_element(UpdateFrequencyNotification::ID, UpdateFrequencyNotification {
                                 frequency: Self::UPDATE_FREQ,
                                 game_time: self.current_time(),
@@ -326,11 +336,54 @@ impl BaseApp {
                                 entity_type: 11,
                                 entity_data: b"\x00\x09518858105\x00"[..].into(),
                             });
-                            println!("{prefix} <-- Create base player");
+                            println!("{prefix} <-- Create base player: Login");
+                            self.app.send(&mut bundle, addr).unwrap();
+                            bundle.clear();
+
+                            self.timestamp_bundle(&mut bundle);
+                            bundle.add_simple_element(SelectPlayerEntity::ID, SelectPlayerEntity);
+                            bundle.add_simple_element(EntityMethod::index_to_id(2), UnknownElement(vec![
+                                21, 7, 100, 101, 102, 97, 117, 108, 116, 12, 128, 2, 93, 113, 1, 40, 75, 201, 75, 202, 101, 46
+                            ]));
+                            println!("{prefix} <-- Select player entity");
+                            println!("{prefix} <-- Login.setPeripheryRoutingGroup");
+                            self.app.send(&mut bundle, addr).unwrap();
+                            bundle.clear();
+
+                            self.timestamp_bundle(&mut bundle);
+                            bundle.add_simple_element(ResetEntities::ID, ResetEntities { 
+                                keep_player_on_base: false
+                            });
+                            println!("{prefix} <-- Reset entities (false)");
+                            self.app.send(&mut bundle, addr).unwrap();
+                            bundle.clear();
+
+                        } else if client.account_to_send {
+
+                            client.account_to_send = false;
+
+                            self.timestamp_bundle(&mut bundle);
+                            bundle.add_simple_element(CreateBasePlayer::ID, CreateBasePlayer {
+                                entity_id: 37289214,
+                                entity_type: 1,
+                                entity_data: include_bytes!(r"D:\THEO\Projects\wot-reverse-c\test.txt")[..].into(),
+                            });
+                            println!("{prefix} <-- Create base player: Account");
+                            self.app.send(&mut bundle, addr).unwrap();
+                            bundle.clear();
+
+                            self.timestamp_bundle(&mut bundle);
+                            bundle.add_simple_element(SelectPlayerEntity::ID, SelectPlayerEntity);
+                            bundle.add_simple_element(EntityMethod::index_to_id(43), UnknownElement(vec![
+                                32, 1, 255, 28, 1, 0, 128, 2, 125, 113, 1, 40, 85, 9, 115, 101, 114, 118, 101, 114, 85, 84, 67, 113, 2, 71, 65, 216, 255, 76, 97, 86, 57, 210, 85, 15, 99, 117, 114, 114, 101, 110, 116, 86, 101, 104, 73, 110, 118, 73, 68, 113, 3, 75, 0, 85, 10, 100, 97, 116, 97, 98, 97, 115, 101, 73, 68, 113, 4, 74, 121, 37, 237, 30, 85, 14, 97, 111, 103, 97, 115, 83, 116, 97, 114, 116, 101, 100, 65, 116, 113, 5, 71, 65, 216, 255, 76, 97, 85, 226, 109, 85, 16, 115, 101, 115, 115, 105, 111, 110, 83, 116, 97, 114, 116, 101, 100, 65, 116, 113, 6, 74, 133, 49, 253, 99, 85, 22, 98, 111, 111, 116, 99, 97, 109, 112, 67, 111, 109, 112, 108, 101, 116, 101, 100, 67, 111, 117, 110, 116, 113, 7, 75, 1, 85, 14, 105, 115, 65, 111, 103, 97, 115, 69, 110, 97, 98, 108, 101, 100, 113, 8, 136, 85, 16, 98, 111, 111, 116, 99, 97, 109, 112, 82, 117, 110, 67, 111, 117, 110, 116, 113, 9, 75, 0, 85, 14, 99, 111, 108, 108, 101, 99, 116, 85, 105, 83, 116, 97, 116, 115, 113, 10, 136, 85, 28, 105, 115, 76, 111, 110, 103, 68, 105, 115, 99, 111, 110, 110, 101, 99, 116, 101, 100, 70, 114, 111, 109, 67, 101, 110, 116, 101, 114, 113, 11, 137, 85, 11, 108, 111, 103, 85, 88, 69, 118, 101, 110, 116, 115, 113, 12, 137, 85, 20, 98, 111, 111, 116, 99, 97, 109, 112, 78, 101, 101, 100, 65, 119, 97, 114, 100, 105, 110, 103, 113, 13, 137, 117, 46
+                            ]));
+                            println!("{prefix} <-- Select player entity");
+                            println!("{prefix} <-- Account.??????");
                             self.app.send(&mut bundle, addr).unwrap();
                             bundle.clear();
 
                         }
+
                     } else {
                         println!("{prefix}     Warning, expected: {}", client.session_key);
                     }
@@ -341,7 +394,7 @@ impl BaseApp {
                 true
 
             }
-            BundleElement::Simple(id, _) => {
+            BundleElement::Top(id, _) => {
                 println!("{prefix} --> Unknown #{id}");
                 false
             }
@@ -428,8 +481,12 @@ impl PendingBaseClient {
 /// Internal structure used to track a client logged in the base app.
 #[derive(Debug)]
 pub struct BaseClient {
+    /// The session key of the client.
     session_key: u32,
-    sent_freq: bool,
+    /// True when the login procedure has been sent.
+    login_sent: bool,
+    /// Set to true when the account entity must be sent.
+    account_to_send: bool,
 }
 
 impl BaseClient {
@@ -438,7 +495,8 @@ impl BaseClient {
     pub fn new(session_key: u32) -> Self {
         Self { 
             session_key, 
-            sent_freq: false,
+            login_sent: false,
+            account_to_send: false,
         }
     }
 

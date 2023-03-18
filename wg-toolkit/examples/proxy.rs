@@ -85,7 +85,7 @@ impl ProxyListener for LoginAppClientListener<'_, '_, '_> {
 
                 while let Some(elt) = reader.next_element() {
                     match elt {
-                        BundleElement::Simple(LoginRequestCodec::ID, reader) => {
+                        BundleElement::Top(LoginRequestCodec::ID, reader) => {
                             let login = reader.read(&self.login_codec).unwrap();
                             println!("[CLIENT -> SERVER] Received login: {:?}", login.element);
                             let request_id = login.request_id.unwrap();
@@ -96,17 +96,17 @@ impl ProxyListener for LoginAppClientListener<'_, '_, '_> {
                             new_bundle.finalize(&mut 0);
                             out.send_finalized_bundle(&new_bundle).unwrap();
                         }
-                        BundleElement::Simple(PingCodec::ID, reader) => {
+                        BundleElement::Top(PingCodec::ID, reader) => {
                             let ping = reader.read(&PingCodec).unwrap();
                             println!("[CLIENT -> SERVER] Received ping try: {}", ping.element);
                             self.reply_tracker.borrow_mut().push_request(RequestSide::Client, ping.request_id.unwrap(), PingCodec::ID);
                             out.send_finalized_bundle(&bundle).unwrap();
                         }
-                        BundleElement::Simple(ChallengeResponseCodec::ID, reader) => {
+                        BundleElement::Top(ChallengeResponseCodec::ID, reader) => {
                             let data = reader.read(&Var16ElementCodec::new()).unwrap();
                             println!("[CLIENT -> SERVER] Received challenge response: {}", wgtk::util::str_from_escaped(&data.element[..]));
                         }
-                        BundleElement::Simple(id, _) => {
+                        BundleElement::Top(id, _) => {
                             panic!("[CLIENT -> SERVER] Received unknown element: {}", id);
                         }
                         _ => {}

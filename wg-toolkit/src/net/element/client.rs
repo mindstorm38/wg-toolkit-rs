@@ -237,8 +237,18 @@ pub struct EntityMethod {
 }
 
 impl EntityMethod {
+    
     pub const FIRST_ID: u8 = 0x4E;
     pub const LAST_ID: u8 = 0xA6;
+
+    pub const fn index_to_id(index: u8) -> u8 {
+        Self::FIRST_ID + index
+    }
+
+    pub const fn id_to_index(id: u8) -> u8 {
+        id - Self::FIRST_ID
+    }
+
 }
 
 
@@ -251,24 +261,4 @@ pub struct EntityProperty {
 impl EntityProperty {
     pub const FIRST_ID: u8 = 0xA7;
     pub const LAST_ID: u8 = 0xFE;
-}
-
-
-/// An avatar update.
-#[derive(Debug)]
-pub struct AvatarUpdate {
-    pub id: AvatarUpdateId,
-    /// Position X, Y, Z.
-    pub pos: Vec3A,
-    /// Direction Yaw, Pitch, Roll.
-    pub dir: Vec3A,
-}
-
-/// The entity ID for an avatar update.
-#[derive(Debug)]
-pub enum AvatarUpdateId {
-    /// The entity ID is given directly without aliasing.
-    NoAlias(u32),
-    /// An alias for the entity ID, referring to an internal table of alias.
-    Alias(u8),
 }

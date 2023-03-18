@@ -13,7 +13,6 @@ use super::packet::{Packet, PacketConfig, PACKET_FLAGS_LEN, PACKET_MAX_BODY_LEN}
 use super::element::reply::{Reply, ReplyHeader, REPLY_ID};
 use super::element::{Element, TopElement};
 
-use crate::util::cursor::SubCursor;
 use crate::util::BytesFmt;
 
 
@@ -422,7 +421,7 @@ impl<'a> BundleElementReader<'a> {
                 }
             }
             Some(id) => {
-                Some(BundleElement::Simple(id, SimpleElementReader(self)))
+                Some(BundleElement::Top(id, TopElementReader(self)))
             }
             None => None
         }
@@ -430,7 +429,7 @@ impl<'a> BundleElementReader<'a> {
 
     /// Try to decode the current element using a given codec. You can choose to go
     /// to the next element using the `next` argument.
-    pub fn read_element<E>(&mut self, config: &E::Config, next: bool) -> Result<ElementTODO<E>, ReadElementError>
+    pub fn read_element<E>(&mut self, config: &E::Config, next: bool) -> Result<ReadElement<E>, ReadElementError>
     where
         E: TopElement
     {
@@ -463,15 +462,15 @@ impl<'a> BundleElementReader<'a> {
 
     /// Internal only. Used by `next` to wrap all IO errors and reset seek if an error happens.
     #[inline(always)]
-    fn read_element_internal<E>(&mut self, config: &E::Config, next: bool, request: bool) -> io::Result<ElementTODO<E>>
+    fn read_element_internal<E>(&mut self, config: &E::Config, next: bool, request: bool) -> io::Result<ReadElement<E>>
     where
         E: TopElement
     {
 
         let start_packet = self.bundle_reader.packet().unwrap();
 
-        let _elt_id = self.bundle_reader.read_u8()?;
-        let elt_len = E::LEN.read(&mut self.bundle_reader)? as usize;
+        let elt_id = self.bundle_reader.read_u8()?;
+        let elt_len = E::LEN.read(&mut self.bundle_reader)?;
 
         let reply_id = if request {
             let reply_id = self.bundle_reader.read_u32::<LE>()?;
@@ -482,23 +481,23 @@ impl<'a> BundleElementReader<'a> {
         };
 
         let elt_data_begin = self.bundle_reader.pos;
-        let elt_data_end = elt_data_begin + elt_len;
 
-        // We can use unchecked because we know that the given 'inner' reader
-        // is placed at the same position as given 'begin'.
-        let elt_data_reader = SubCursor::new_unchecked(
-            &mut self.bundle_reader,
-            elt_data_begin as _,
-            elt_data_end as _,
-        );
-
-        let element = E::decode(elt_data_reader, elt_len, config)?;
+        let element = 
+            if let Some(len) = elt_len {
+                E::decode((&mut self.bundle_reader).take(len as u64), len as usize, config)
+            } else {
+                E::decode(&mut self.bundle_reader, 0, config)
+            }?;
 
         // We seek to the end only if we want to go next.
         if next {
 
-            // If decoding is successful, go to the next packet.
-            self.bundle_reader.goto(elt_data_end);
+            // If decoding is successful (and element has determined length), 
+            // jump to the next packet, this happen if not all the element
+            // has been read.
+            if let Some(len) = elt_len {
+                self.bundle_reader.goto(elt_data_begin + len as usize);
+            }
 
             // Here we check if we have changed packets during decoding of the element.
             // If changed, we change the next request offset.
@@ -514,7 +513,8 @@ impl<'a> BundleElementReader<'a> {
 
         }
 
-        Ok(ElementTODO {
+        Ok(ReadElement {
+            id: elt_id,
             element,
             request_id: reply_id
         })
@@ -537,7 +537,9 @@ impl fmt::Debug for BundleElementReader<'_> {
 
 /// An element read from `BundleElementReader` and `BundleElement` variants,
 /// also containing the element's ID and an optional request ID.
-pub struct ElementTODO<E: Element> {
+pub struct ReadElement<E: Element> {
+    /// Numeric identifier of the element.
+    pub id: u8,
     /// The actual element.
     pub element: E,
     /// The request ID if the element is a request. Not to be confused with
@@ -545,9 +547,10 @@ pub struct ElementTODO<E: Element> {
     pub request_id: Option<u32>
 }
 
-impl<E: Element> Into<ElementTODO<E>> for ElementTODO<Reply<E>> {
-    fn into(self) -> ElementTODO<E> {
-        ElementTODO {
+impl<E: Element> Into<ReadElement<E>> for ReadElement<Reply<E>> {
+    fn into(self) -> ReadElement<E> {
+        ReadElement {
+            id: REPLY_ID,
             element: self.element.element,
             request_id: self.request_id
         }
@@ -570,8 +573,8 @@ pub enum ReadElementError {
 /// This enum provides a better way to read replies using sub codecs.
 #[derive(Debug)]
 pub enum BundleElement<'reader, 'bundle> {
-    /// A simple element with an ID and a reader.
-    Simple(u8, SimpleElementReader<'reader, 'bundle>),
+    /// A top element with a proper ID and a reader.
+    Top(u8, TopElementReader<'reader, 'bundle>),
     /// A reply element with request ID and a reader.
     Reply(u32, ReplyElementReader<'reader, 'bundle>)
 }
@@ -580,7 +583,7 @@ impl BundleElement<'_, '_> {
 
     /// Return `true` if this element is a simple one.
     pub fn is_simple(&self) -> bool {
-        matches!(self, BundleElement::Simple(_, _))
+        matches!(self, BundleElement::Top(_, _))
     }
 
     /// Return `true` if this element is a reply.
@@ -592,30 +595,30 @@ impl BundleElement<'_, '_> {
 
 /// The simple variant of element, provides direct decoding using a codec.
 #[derive(Debug)]
-pub struct SimpleElementReader<'reader, 'bundle>(&'reader mut BundleElementReader<'bundle>);
+pub struct TopElementReader<'reader, 'bundle>(&'reader mut BundleElementReader<'bundle>);
 
-impl SimpleElementReader<'_, '_> {
+impl TopElementReader<'_, '_> {
 
     /// Same as `read` but never go to the next element *(this is why this method doesn't take
     /// self by value)*.
-    pub fn read_stable<E: TopElement>(&mut self, config: &E::Config) -> Result<ElementTODO<E>, ReadElementError> {
+    pub fn read_stable<E: TopElement>(&mut self, config: &E::Config) -> Result<ReadElement<E>, ReadElementError> {
         self.0.read_element(config, false)
     }
 
     #[inline]
-    pub fn read_simple_stable<E: TopElement<Config = ()>>(&mut self) -> Result<ElementTODO<E>, ReadElementError> {
+    pub fn read_simple_stable<E: TopElement<Config = ()>>(&mut self) -> Result<ReadElement<E>, ReadElementError> {
         self.read_stable::<E>(&())
     }
 
     /// Read the element using the given codec. This method take self by value and automatically
     /// go the next element if read is successful, if not successful you will need to call
     /// `Bundle::next_element` again.
-    pub fn read<E: TopElement>(self, config: &E::Config) -> Result<ElementTODO<E>, ReadElementError> {
+    pub fn read<E: TopElement>(self, config: &E::Config) -> Result<ReadElement<E>, ReadElementError> {
         self.0.read_element(config, true)
     }
 
     #[inline]
-    pub fn read_simple<E: TopElement<Config = ()>>(self) -> Result<ElementTODO<E>, ReadElementError> {
+    pub fn read_simple<E: TopElement<Config = ()>>(self) -> Result<ReadElement<E>, ReadElementError> {
         self.read::<E>(&())
     }
 
@@ -632,12 +635,12 @@ impl<'reader, 'bundle> ReplyElementReader<'reader, 'bundle> {
     /// self by value)*.
     ///
     /// This method doesn't returns the reply element but the final element.
-    pub fn read_stable<E: Element>(&mut self, config: &E::Config) -> Result<ElementTODO<E>, ReadElementError> {
+    pub fn read_stable<E: Element>(&mut self, config: &E::Config) -> Result<ReadElement<E>, ReadElementError> {
         self.0.read_element::<Reply<E>>(config, false).map(Into::into)
     }
 
     #[inline]
-    pub fn read_simple_stable<E: Element<Config = ()>>(&mut self) -> Result<ElementTODO<E>, ReadElementError> {
+    pub fn read_simple_stable<E: Element<Config = ()>>(&mut self) -> Result<ReadElement<E>, ReadElementError> {
         self.read_stable::<E>(&())
     }
 
@@ -646,12 +649,12 @@ impl<'reader, 'bundle> ReplyElementReader<'reader, 'bundle> {
     /// will need to call `Bundle::next_element` again.
     ///
     /// This method doesn't returns the reply element but the final element.
-    pub fn read<E: Element>(self, config: &E::Config) -> Result<ElementTODO<E>, ReadElementError> {
+    pub fn read<E: Element>(self, config: &E::Config) -> Result<ReadElement<E>, ReadElementError> {
         self.0.read_element::<Reply<E>>(config, true).map(Into::into)
     }
 
     #[inline]
-    pub fn read_simple<E: Element<Config = ()>>(self) -> Result<ElementTODO<E>, ReadElementError> {
+    pub fn read_simple<E: Element<Config = ()>>(self) -> Result<ReadElement<E>, ReadElementError> {
         self.read::<E>(&())
     }
 
