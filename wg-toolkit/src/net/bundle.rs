@@ -537,6 +537,7 @@ impl fmt::Debug for BundleElementReader<'_> {
 
 /// An element read from `BundleElementReader` and `BundleElement` variants,
 /// also containing the element's ID and an optional request ID.
+#[derive(Debug)]
 pub struct ReadElement<E: Element> {
     /// Numeric identifier of the element.
     pub id: u8,

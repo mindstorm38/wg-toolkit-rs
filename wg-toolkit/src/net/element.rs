@@ -182,3 +182,13 @@ impl SimpleElement for UnknownElement {
 impl TopElement for UnknownElement {
     const LEN: ElementLength = ElementLength::Unknown;
 }
+
+
+// TODO: Maybe do this later...
+// struct ElementSerializer<W: Write> {
+//     inner: W,
+// }
+
+// impl<W: Write> serde::Serializer for ElementSerializer<W> {
+    
+// }

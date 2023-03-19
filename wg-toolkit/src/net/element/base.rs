@@ -103,3 +103,93 @@ impl SimpleElement for ClientSessionKey {
 impl TopElement for ClientSessionKey {
     const LEN: ElementLength = ElementLength::Fixed(4);
 }
+
+
+/// Sent by the client to the base app to call a cell method for the given
+/// entity ID.
+#[derive(Debug)]
+pub struct CellEntityMethod {
+    /// The entity ID on which we'll call the method, must be set to 0 if
+    /// the current player is targeted.
+    pub entity_id: u32,
+    /// The raw data of the method call.
+    pub data: Vec<u8>
+}
+
+impl CellEntityMethod {
+
+    pub const FIRST_ID: u8 = 0x0F;
+    pub const LAST_ID: u8 = 0x87;
+
+    /// Convert a method index to a message id.
+    pub const fn index_to_id(index: u8) -> u8 {
+        Self::FIRST_ID + index
+    }
+
+    /// Convert a message id to method index.
+    pub const fn id_to_index(id: u8) -> u8 {
+        id - Self::FIRST_ID
+    }
+
+}
+
+impl SimpleElement for CellEntityMethod {
+
+    fn encode<W: Write>(&self, mut write: W) -> io::Result<()> {
+        write.write_u32(self.entity_id)?;
+        write.write_blob(&self.data)
+    }
+
+    fn decode<R: Read>(mut read: R, len: usize) -> io::Result<Self> {
+        Ok(Self {
+            entity_id: read.read_u32()?,
+            data: read.read_blob(len - 4)?,
+        })
+    }
+
+}
+
+impl TopElement for CellEntityMethod {
+    const LEN: ElementLength = ElementLength::Variable16;
+}
+
+
+/// Sent by the client to the base app to call a base method for the 
+/// currently connected entity.
+#[derive(Debug)]
+pub struct BaseEntityMethod {
+    pub data: Vec<u8>,
+}
+
+impl BaseEntityMethod {
+
+    pub const FIRST_ID: u8 = 0x88;
+    pub const LAST_ID: u8 = 0xFE;
+
+    /// Convert a method index to a message id.
+    pub const fn index_to_id(index: u8) -> u8 {
+        Self::FIRST_ID + index
+    }
+
+    /// Convert a message id to method index.
+    pub const fn id_to_index(id: u8) -> u8 {
+        id - Self::FIRST_ID
+    }
+
+}
+
+impl SimpleElement for BaseEntityMethod {
+
+    fn encode<W: Write>(&self, mut write: W) -> io::Result<()> {
+        write.write_blob(&self.data)
+    }
+
+    fn decode<R: Read>(mut read: R, len: usize) -> io::Result<Self> {
+        Ok(Self { data: read.read_blob(len)? })
+    }
+
+}
+
+impl TopElement for BaseEntityMethod {
+    const LEN: ElementLength = ElementLength::Variable16;
+}

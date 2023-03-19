@@ -27,7 +27,11 @@ use wgtk::net::element::login::{
     ChallengeResponse, CuckooCycleResponse,
 };
 
-use wgtk::net::element::base::{ClientAuth, ServerSessionKey, ClientSessionKey};
+use wgtk::net::element::base::{
+    ClientAuth, ServerSessionKey, ClientSessionKey,
+    CellEntityMethod,
+    BaseEntityMethod,
+};
 
 use wgtk::net::element::client::{
     UpdateFrequencyNotification,
@@ -366,7 +370,7 @@ impl BaseApp {
                             bundle.add_simple_element(CreateBasePlayer::ID, CreateBasePlayer {
                                 entity_id: 37289214,
                                 entity_type: 1,
-                                entity_data: include_bytes!(r"D:\THEO\Projects\wot-reverse-c\test.txt")[..].into(),
+                                entity_data: include_bytes!(r"../../test.txt")[..].into(),
                             });
                             println!("{prefix} <-- Create base player: Account");
                             self.app.send(&mut bundle, addr).unwrap();
@@ -390,6 +394,26 @@ impl BaseApp {
                 } else {
                     println!("{prefix}     Warning, no client");
                 }
+
+                true
+
+            }
+            BundleElement::Top(id @ CellEntityMethod::FIRST_ID..=CellEntityMethod::LAST_ID, reader) => {
+
+                let method = reader.read_simple::<CellEntityMethod>().unwrap();
+                let method_idx = CellEntityMethod::id_to_index(id);
+
+                println!("{prefix} --> Cell entity method #{method_idx}: {method:?}");
+
+                true
+
+            }
+            BundleElement::Top(id @ BaseEntityMethod::FIRST_ID..=BaseEntityMethod::LAST_ID, reader) => {
+
+                let method = reader.read_simple::<BaseEntityMethod>().unwrap();
+                let method_idx = BaseEntityMethod::id_to_index(id);
+
+                println!("{prefix} --> Base entity method #{method_idx}: {method:?}");
 
                 true
 

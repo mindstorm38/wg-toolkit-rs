@@ -241,10 +241,12 @@ impl EntityMethod {
     pub const FIRST_ID: u8 = 0x4E;
     pub const LAST_ID: u8 = 0xA6;
 
+    /// Convert a method index to a message id.
     pub const fn index_to_id(index: u8) -> u8 {
         Self::FIRST_ID + index
     }
 
+    /// Convert a message id to method index.
     pub const fn id_to_index(id: u8) -> u8 {
         id - Self::FIRST_ID
     }
@@ -259,6 +261,18 @@ pub struct EntityProperty {
 }
 
 impl EntityProperty {
+
     pub const FIRST_ID: u8 = 0xA7;
     pub const LAST_ID: u8 = 0xFE;
+
+    /// Convert a property index to a message id.
+    pub const fn index_to_id(index: u8) -> u8 {
+        Self::FIRST_ID + index
+    }
+
+    /// Convert a message id to property index.
+    pub const fn id_to_index(id: u8) -> u8 {
+        id - Self::FIRST_ID
+    }
+
 }
