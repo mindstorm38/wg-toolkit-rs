@@ -110,10 +110,6 @@ impl App {
 
             packet_config.set_on_channel(true);
             packet_config.set_reliable(true);
-
-            // // If cumulative ack is found for the channel, send +1, if there
-            // // is not ack yet, send 0.
-            // packet_config.set_cumulative_ack(channel.get_cumulative_ack_exclusive().unwrap_or(0));
             
             // If we send a cumulative ack, just take auto ack to avoid resending 
             // it automatically.

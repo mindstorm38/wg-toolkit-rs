@@ -135,9 +135,8 @@ impl LoginApp {
                 println!("{prefix} --> Ping #{}", elt.element.num);
                 println!("{prefix} <-- Pong #{}", elt.element.num);
     
-                let mut bundle = Bundle::new_empty();
-                bundle.add_simple_reply(elt.element, elt.request_id.unwrap());
-                self.app.send(&mut bundle, client.addr).unwrap();
+                self.app.send(Bundle::new()
+                    .add_simple_reply(elt.element, elt.request_id.unwrap()), client.addr).unwrap();
                 
                 true
     
@@ -153,7 +152,7 @@ impl LoginApp {
                 let bf = client.blowfish.insert(Arc::new(Blowfish::new_from_slice(&elt.element.blowfish_key).unwrap()));
                 let encryption = LoginResponseEncryption::Encrypted(bf.clone());
 
-                let mut bundle = Bundle::new_empty();
+                let mut bundle = Bundle::new();
                 
                 if !client.challenge_complete {
                     
@@ -289,14 +288,10 @@ impl BaseApp {
 
                         self.logged_clients.insert(addr, BaseClient::new(logged_key));
 
-                        // Create a bundle with a single reply.
-                        let mut bundle = Bundle::new_empty();
-                        bundle.add_simple_reply(ServerSessionKey {
-                            session_key: logged_key,
-                        }, client_auth.request_id.unwrap());
-
                         println!("{prefix} <-- Session key: {logged_key}");
-                        self.app.send(&mut bundle, addr).unwrap();
+                        self.app.send(Bundle::new().add_simple_reply(ServerSessionKey {
+                            session_key: logged_key,
+                        }, client_auth.request_id.unwrap()), addr).unwrap();
 
                     } else {
                         println!("{prefix}     Incoherent address, expected {}", pending_login.addr);
@@ -318,7 +313,7 @@ impl BaseApp {
                 if let Some(client) = logged_client.as_deref_mut() {
                     if session_key == client.session_key {
 
-                        let mut bundle = Bundle::new_empty();
+                        let mut bundle = Bundle::new();
 
                         if !client.login_sent {
 
@@ -382,7 +377,7 @@ impl BaseApp {
                                 32, 1, 255, 28, 1, 0, 128, 2, 125, 113, 1, 40, 85, 9, 115, 101, 114, 118, 101, 114, 85, 84, 67, 113, 2, 71, 65, 216, 255, 76, 97, 86, 57, 210, 85, 15, 99, 117, 114, 114, 101, 110, 116, 86, 101, 104, 73, 110, 118, 73, 68, 113, 3, 75, 0, 85, 10, 100, 97, 116, 97, 98, 97, 115, 101, 73, 68, 113, 4, 74, 121, 37, 237, 30, 85, 14, 97, 111, 103, 97, 115, 83, 116, 97, 114, 116, 101, 100, 65, 116, 113, 5, 71, 65, 216, 255, 76, 97, 85, 226, 109, 85, 16, 115, 101, 115, 115, 105, 111, 110, 83, 116, 97, 114, 116, 101, 100, 65, 116, 113, 6, 74, 133, 49, 253, 99, 85, 22, 98, 111, 111, 116, 99, 97, 109, 112, 67, 111, 109, 112, 108, 101, 116, 101, 100, 67, 111, 117, 110, 116, 113, 7, 75, 1, 85, 14, 105, 115, 65, 111, 103, 97, 115, 69, 110, 97, 98, 108, 101, 100, 113, 8, 136, 85, 16, 98, 111, 111, 116, 99, 97, 109, 112, 82, 117, 110, 67, 111, 117, 110, 116, 113, 9, 75, 0, 85, 14, 99, 111, 108, 108, 101, 99, 116, 85, 105, 83, 116, 97, 116, 115, 113, 10, 136, 85, 28, 105, 115, 76, 111, 110, 103, 68, 105, 115, 99, 111, 110, 110, 101, 99, 116, 101, 100, 70, 114, 111, 109, 67, 101, 110, 116, 101, 114, 113, 11, 137, 85, 11, 108, 111, 103, 85, 88, 69, 118, 101, 110, 116, 115, 113, 12, 137, 85, 20, 98, 111, 111, 116, 99, 97, 109, 112, 78, 101, 101, 100, 65, 119, 97, 114, 100, 105, 110, 103, 113, 13, 137, 117, 46
                             ]));
                             println!("{prefix} <-- Select player entity");
-                            println!("{prefix} <-- Account.??????");
+                            println!("{prefix} <-- Account.showGUI");
                             self.app.send(&mut bundle, addr).unwrap();
                             bundle.clear();
 

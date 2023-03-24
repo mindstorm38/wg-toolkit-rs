@@ -89,7 +89,7 @@ impl ProxyListener for LoginAppClientListener<'_, '_, '_> {
                             let login = reader.read(&self.login_codec).unwrap();
                             println!("[CLIENT -> SERVER] Received login: {:?}", login.element);
                             let request_id = login.request_id.unwrap();
-                            let mut new_bundle = Bundle::new_empty();
+                            let mut new_bundle = Bundle::new();
                             new_bundle.add_request(LoginRequestCodec::ID, &self.login_codec, login.element, request_id);
                             new_bundle.packets_mut()[0].set_prefix(Some(prefix));
                             self.reply_tracker.borrow_mut().push_request(RequestSide::Client, request_id, LoginRequestCodec::ID);
