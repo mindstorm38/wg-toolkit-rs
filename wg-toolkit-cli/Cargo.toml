@@ -11,7 +11,7 @@ repository = "https://github.com/mindstorm38/wg-toolkit-rs"
 readme = "../README.md"
 
 [dependencies]
-wg-toolkit = { path = "../wg-toolkit", version = "0.3.0" }
+wg-toolkit = { path = "../wg-toolkit", version = "0.3.0", features = ["res"] }
 clap = { version = "4.0", features = ["derive", "cargo"] }
 
 [[bin]]

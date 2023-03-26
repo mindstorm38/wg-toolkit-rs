@@ -1,4 +1,5 @@
-//! Read and write extensions specific to WG.
+//! This module provides extension traits for [`Read`] and [`Write`] for
+//! supporting common formats used within the BigWorld engine.
 
 use std::io::{self, Read, Write, Cursor};
 use std::net::{SocketAddrV4, Ipv4Addr};

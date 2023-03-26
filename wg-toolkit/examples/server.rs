@@ -42,6 +42,8 @@ use wgtk::net::element::client::{
     TickSync,
 };
 
+use wgtk::net::element::entity;
+
 
 fn main() {
 
@@ -50,6 +52,10 @@ fn main() {
 
     let bind_ip_raw = env::var("WGTK_BIND_IP")
         .expect("Missing 'WGTK_BIND_IP' with the IP to bind UDP servers.");
+
+    let server_settings_bytes = &include_bytes!(r"../../test.txt")[..41363];
+    let mut server_settings_de = serde_pickle::Deserializer::new(std::io::Cursor::new(server_settings_bytes), serde_pickle::DeOptions::new().decode_strings());
+    let server_settings: Box<entity::server_settings::Settings> = serde_path_to_error::deserialize(&mut server_settings_de).unwrap();
 
     let priv_key_content = fs::read_to_string(priv_key_path).unwrap();
     let priv_key = RsaPrivateKey::from_pkcs8_pem(priv_key_content.as_str()).unwrap();
@@ -68,6 +74,7 @@ fn main() {
         logged_clients: HashMap::new(),
         logged_counter: 0,
         start_time: Instant::now(),
+        server_settings: Arc::new(*server_settings),
     };
 
     let mut events = Vec::new();
@@ -232,6 +239,8 @@ pub struct BaseApp {
     logged_counter: u32,
     /// Start time of the base app, used to know the game time.
     start_time: Instant,
+
+    server_settings: Arc<entity::server_settings::Settings>,
 }
 
 impl BaseApp {
@@ -333,7 +342,9 @@ impl BaseApp {
                             bundle.add_simple_element(CreateBasePlayer::ID, CreateBasePlayer {
                                 entity_id: 37289213,
                                 entity_type: 11,
-                                entity_data: b"\x00\x09518858105\x00"[..].into(),
+                                entity_data: entity::Login { 
+                                    account_db_id: "09518858105".into() 
+                                }
                             });
                             println!("{prefix} <-- Create base player: Login");
                             self.app.send(&mut bundle, addr).unwrap();
@@ -365,7 +376,11 @@ impl BaseApp {
                             bundle.add_simple_element(CreateBasePlayer::ID, CreateBasePlayer {
                                 entity_id: 37289214,
                                 entity_type: 1,
-                                entity_data: include_bytes!(r"../../test.txt")[..].into(),
+                                entity_data: entity::Account {
+                                    required_version: "eu_1.19.1_4".into(),
+                                    name: "Mindstorm38_".into(),
+                                    initial_server_settings: self.server_settings.clone(),
+                                }
                             });
                             println!("{prefix} <-- Create base player: Account");
                             self.app.send(&mut bundle, addr).unwrap();

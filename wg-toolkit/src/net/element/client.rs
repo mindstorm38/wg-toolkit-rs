@@ -8,7 +8,7 @@ use glam::Vec3A;
 
 use crate::util::io::*;
 
-use super::{SimpleElement, TopElement, EmptyElement, ElementLength};
+use super::{Element, SimpleElement, TopElement, EmptyElement, ElementLength};
 
 
 /// The server informs us how frequently it is going to send update
@@ -110,34 +110,38 @@ impl TopElement for ResetEntities {
 /// entity type, it's used for initializing its properties (TODO).
 /// For example the `Login` entity receive the account UID.
 #[derive(Debug)]
-pub struct CreateBasePlayer {
+pub struct CreateBasePlayer<E> {
     pub entity_id: u32,
     pub entity_type: u16,
-    pub entity_data: Vec<u8>,
+    pub entity_data: E,
 }
 
-impl CreateBasePlayer {
+impl CreateBasePlayer<()> {
     pub const ID: u8 = 0x05;
 }
 
-impl SimpleElement for CreateBasePlayer {
+impl<E: Element<Config = ()>> SimpleElement for CreateBasePlayer<E> {
 
     fn encode<W: Write>(&self, mut write: W) -> io::Result<()> {
         write.write_u32(self.entity_id)?;
         write.write_u16(self.entity_type)?;
-        write.write_blob(&self.entity_data)
+        write.write_u8(0)?; // An (apparently) useless byte here.
+        self.entity_data.encode(write, &())
     }
 
     fn decode<R: Read>(mut read: R, len: usize) -> io::Result<Self> {
         Ok(Self {
             entity_id: read.read_u32()?,
             entity_type: read.read_u16()?,
-            entity_data: read.read_blob(len - 6)?,
+            entity_data: {
+                let _ = read.read_u8()?;
+                E::decode(read, len - 7, &())?
+            }
         })
     }
 }
 
-impl TopElement for CreateBasePlayer {
+impl<E: Element<Config = ()>> TopElement for CreateBasePlayer<E> {
     const LEN: ElementLength = ElementLength::Variable16;
 }
 

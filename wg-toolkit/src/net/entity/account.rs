@@ -17,28 +17,3 @@ pub struct Account {
     
     pub initial_server_settings: Vec<u8>,
 }
-
-#[derive(Debug)]
-pub enum Client {
-    ClientCommandsPort(client_commands_port::Client),
-}
-
-#[derive(Debug)]
-pub enum Server {
-    ClientCommandsPort(client_commands_port::Server),
-}
-
-impl Entity for Account {
-
-    type Client = Client;
-    type Server = Server;
-
-    fn decode_client<R: std::io::Read>(idx: u16, read: R) -> std::io::Result<Self::Client> {
-        todo!()
-    }
-
-    fn decode_server<R: std::io::Read>(idx: u16, read: R) -> std::io::Result<Self::Server> {
-        todo!()
-    }
-
-}

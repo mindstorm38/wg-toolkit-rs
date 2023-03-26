@@ -11,31 +11,40 @@ repository = "https://github.com/mindstorm38/wg-toolkit-rs"
 readme = "../README.md"
 
 [dependencies]
-byteorder = "1.4"
-glam = "0.21"
-smallvec = "1.10"
-base64 = "0.13"
-thiserror = "1.0"
-zip = "0.6"
-serde = "1.0"
+thiserror = "1.0"       # User for defining custom error types.
+byteorder = "1.4"       # Used for codecs read/writing.
+smallvec = "1.10"       # Used by pxml codec.
+base64 = "0.13"         # Used by pxml codec.
+glam = "0.21"           # Used for math vec types.
+
+serde = { version = "1.0", features = ["derive"] }
+serde_path_to_error = "0.1"
+
+# The following dependencies are used for res sub module.
+zip = { version = "0.6", optional = true }
+
+# The following dependencies are used for network sub module.
+mio = { version = "0.8", features = ["net", "os-poll"], optional = true }
 sha2 = { version = "0.10", optional = true }
 sha1 = { version = "0.10", optional = true }
-rsa = { version = "0.8", optional = true }
 rand = { version = "0.8", optional = true }
-mio = { version = "0.8", features = ["net", "os-poll"], optional = true }
+rsa = { version = "0.8", optional = true }
 blowfish = { version = "0.9", optional = true }
 crypto-common = { version = "0.1", optional = true }
+serde-pickle = { version = "1.0", optional = true }
 
 [features]
 default = []
-network = [
+res = ["dep:zip"]
+net = [
     "dep:mio", 
     "dep:sha1", 
     "dep:sha2", 
     "dep:rand", 
     "dep:rsa", 
     "dep:blowfish", 
-    "dep:crypto-common"
+    "dep:crypto-common",
+    "dep:serde-pickle",
 ]
 
 [lib]
@@ -43,4 +52,4 @@ name = "wgtk"
 
 [[example]]
 name = "server"
-required-features = ["network"]
+required-features = ["net"]

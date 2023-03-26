@@ -16,8 +16,7 @@ use std::time::Duration;
 use rsa::{RsaPrivateKey, RsaPublicKey};
 use blowfish::Blowfish;
 
-use crate::net::filter::{BlockReader, BlockWriter, rsa::{RsaReadFilter, RsaWriteFilter}};
-use crate::net::filter::blowfish::{BlowfishWriter, BlowfishReader};
+use crate::net::filter::{RsaWriter, RsaReader, BlowfishWriter, BlowfishReader};
 use crate::util::io::*;
 
 use super::{Element, SimpleElement, TopElement, ElementLength};
@@ -185,7 +184,7 @@ impl Element for LoginRequest {
             }
             LoginRequestEncryption::Client(key) => {
                 write.write_u8(1)?;
-                encode_login_params(BlockWriter::new(write, RsaWriteFilter::new(&key)), self)
+                encode_login_params(RsaWriter::new(write, &key), self)
             }
             LoginRequestEncryption::Server(_) => panic!("cannot encode with server login codec"),
         }
@@ -195,7 +194,7 @@ impl Element for LoginRequest {
         let protocol = read.read_u32()?;
         if read.read_u8()? != 0 {
             if let LoginRequestEncryption::Server(key) = config {
-                decode_login_params(BlockReader::new(read, RsaReadFilter::new(&key)), protocol)
+                decode_login_params(RsaReader::new(read, &key), protocol)
             } else {
                 Err(io::Error::new(io::ErrorKind::InvalidData, "cannot decode without server login codec"))
             }

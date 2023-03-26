@@ -12,7 +12,7 @@ use mio::net::UdpSocket;
 
 use super::packet::{Packet, RawPacket, PacketConfig, PacketSyncError};
 use super::bundle::{BundleAssembler, Bundle};
-use super::filter::blowfish::{BlowfishReader, BlowfishWriter, BLOCK_SIZE};
+use super::filter::{BlowfishReader, BlowfishWriter, blowfish::BLOCK_SIZE};
 
 // use crate::util::BytesFmt;
 

@@ -9,10 +9,11 @@
 pub mod util;
 pub mod pxml;
 
-pub mod res;
-
 pub mod space;
 pub mod model;
 
-#[cfg(feature = "network")]
+#[cfg(feature = "res")]
+pub mod res;
+
+#[cfg(feature = "net")]
 pub mod net;
