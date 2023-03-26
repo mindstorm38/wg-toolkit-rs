@@ -1,0 +1,28 @@
+[package]
+name = "wot-cli"
+version = "0.1.0"
+authors = ["Théo Rozier <contact@theorozier.fr>"]
+edition = "2021"
+license = "MIT"
+description = "Command line utility made for serving a World of Tanks server or client"
+categories = ["games", "command-line-utilities"]
+homepage = "https://github.com/mindstorm38/wg-toolkit-rs"
+repository = "https://github.com/mindstorm38/wg-toolkit-rs"
+readme = "../README.md"
+
+[dependencies]
+wg-toolkit = { path = "../wg-toolkit", version = "0.3.0", features = ["net"] }
+clap = { version = "4.0", features = ["derive", "cargo"] }
+serde = { version = "1.0", features = ["derive"] }
+serde-pickle = "1.0"
+blowfish = "0.9"
+rand = "0.8"
+rsa = "0.8"
+
+[[bin]]
+name = "wotc"
+path = "src/client.rs"
+
+[[bin]]
+name = "wots"
+path = "src/server.rs"

@@ -10,8 +10,6 @@ pub mod reply;
 pub mod base;
 pub mod client;
 
-pub mod entity;
-
 
 /// A trait to be implemented on an element structure. Elements are slices 
 /// of data in a bundle of packets. If a bundle contains multiple elements

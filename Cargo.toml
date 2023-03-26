@@ -1,2 +1,6 @@
 [workspace]
-members = ["wg-toolkit", "wg-toolkit-cli"]
+members = [
+    "wg-toolkit",
+    "wg-toolkit-cli",
+    "wot-cli",
+]
