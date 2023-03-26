@@ -7,7 +7,7 @@ use serde::{Serialize, Deserialize};
 
 /// Server settings as used by the client's python code.
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
-pub struct Settings {
+pub struct ServerSettings {
     pub shop: Shop,
     #[serde(rename = "sessionStats")]
     pub session_stats: SessionStats,

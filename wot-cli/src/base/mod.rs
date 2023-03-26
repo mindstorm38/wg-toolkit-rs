@@ -29,7 +29,7 @@ use wgtk::net::element::client::{
     TickSync,
 };
 
-use crate::common::server_settings::Settings;
+use crate::common::server_settings::ServerSettings;
 use crate::common::entity;
 
 
@@ -46,7 +46,8 @@ pub struct BaseApp {
     /// Start time of the base app, used to know the game time.
     start_time: Instant,
     /// The server settings, sent to new clients.
-    server_settings: Box<Settings>,
+    server_settings: Box<ServerSettings>,
+    server_settings_data: Box<[u8]>,
 }
 
 impl BaseApp {
@@ -54,14 +55,15 @@ impl BaseApp {
     /// Default update frequency to 10 Hz.
     const UPDATE_FREQ: u8 = 10;
 
-    pub fn new(addr: SocketAddrV4) -> io::Result<Self> {
+    pub fn new(addr: SocketAddrV4, server_settings: Box<ServerSettings>, server_settings_data: Box<[u8]>) -> io::Result<Self> {
         Ok(Self {
             app: App::new(addr)?,
             pending_clients: HashMap::new(),
             logged_clients: HashMap::new(),
             logged_counter: 0,
             start_time: Instant::now(),
-            server_settings: Box::new(Settings::default()),
+            server_settings,
+            server_settings_data,
         })
     }
 
@@ -196,7 +198,8 @@ impl BaseApp {
                                 entity_data: entity::Account {
                                     required_version: "eu_1.19.1_4".into(),
                                     name: "Mindstorm38_".into(),
-                                    initial_server_settings: Cow::Borrowed(&self.server_settings),
+                                    // initial_server_settings: Cow::Borrowed(&self.server_settings),
+                                    initial_server_settings_data: Cow::Borrowed(&self.server_settings_data),
                                 }
                             });
                             println!("{prefix} <-- Create base player: Account");
