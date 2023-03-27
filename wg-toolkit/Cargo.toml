@@ -17,6 +17,10 @@ smallvec = "1.10"       # Used by pxml codec.
 base64 = "0.13"         # Used by pxml codec.
 glam = "0.21"           # Used for math vec types.
 
+# Used for codecs read/writing.
+serde = "1.0"
+serde-pickle = "1.0"
+
 # The following dependencies are used for res sub module.
 zip = { version = "0.6", optional = true }
 

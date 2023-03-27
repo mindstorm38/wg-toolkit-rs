@@ -180,6 +180,14 @@ pub trait WgReadExt: Read {
         ))
     }
 
+    /// Read a Python Pickle of the given `serde::Deserialize` type, this also
+    /// reads the length of the pickle's data in the packed header.
+    fn read_pickle<'de, T: serde::Deserialize<'de>>(&mut self) -> io::Result<T> {
+        use serde_pickle::DeOptions;
+        let length = self.read_packed_u32()?;
+        Ok(serde_pickle::from_reader(self.take(length as _), DeOptions::new().decode_strings()).unwrap())
+    }
+
     /// Read the size header for a single structure. To read the header of
     /// a vector, see `read_vector_head`.
     fn read_single_head(&mut self) -> io::Result<usize> {
@@ -349,6 +357,14 @@ pub trait WgWriteExt: Write {
         self.write_f32(vec.y)?;
         self.write_f32(vec.z)?;
         Ok(())
+    }
+
+    /// Write a Python Pickle from the given `serde::Serialize` value, the pickle's
+    /// data is prefixed with the variable length of the data (like a variable blob
+    /// or string).
+    fn write_pickle<T: serde::Serialize>(&mut self, value: &T) -> io::Result<()> {
+        use serde_pickle::SerOptions;
+        self.write_blob_variable(&serde_pickle::to_vec(value, SerOptions::new().proto_v2()).unwrap())
     }
 
     /// Write header for vector of structure.

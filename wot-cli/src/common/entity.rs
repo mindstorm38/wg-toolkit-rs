@@ -50,32 +50,22 @@ pub struct Account<'a> {
     /// The name of the account.
     pub name: String,
     /// A shared pointer to server settings.
-    // pub initial_server_settings: Cow<'a, Box<ServerSettings>>,
-    pub initial_server_settings_data: Cow<'a, [u8]>
+    pub initial_server_settings: Cow<'a, Box<ServerSettings>>,
 }
 
 impl SimpleElement for Account<'_> {
     
     fn encode<W: Write>(&self, mut write: W) -> io::Result<()> {
-        // use serde_pickle::SerOptions;
         write.write_string_variable(&self.required_version)?;
         write.write_string_variable(&self.name)?;
-        write.write_blob_variable(&self.initial_server_settings_data)
-        // let pickle_data = serde_pickle::to_vec(&**self.initial_server_settings, SerOptions::new().proto_v2()).unwrap();
-        // write.write_blob_variable(&pickle_data)
+        write.write_pickle(&**self.initial_server_settings)
     }
 
     fn decode<R: Read>(mut read: R, _len: usize) -> io::Result<Self> {
-        // use serde_pickle::DeOptions;
         Ok(Self {
             required_version: read.read_string_variable()?,
             name: read.read_string_variable()?,
-            initial_server_settings_data: Cow::Owned(read.read_blob_variable()?),
-            // initial_server_settings: {
-            //     let pickle_data = read.read_blob_variable()?;
-            //     Cow::Owned(Box::new(serde_pickle::from_slice(&pickle_data, DeOptions::new().decode_strings()).unwrap()))
-            // },
-            
+            initial_server_settings: Cow::Owned(Box::new(read.read_pickle()?)),
         })
     }
 

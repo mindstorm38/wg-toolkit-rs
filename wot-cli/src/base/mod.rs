@@ -47,7 +47,6 @@ pub struct BaseApp {
     start_time: Instant,
     /// The server settings, sent to new clients.
     server_settings: Box<ServerSettings>,
-    server_settings_data: Box<[u8]>,
 }
 
 impl BaseApp {
@@ -55,7 +54,7 @@ impl BaseApp {
     /// Default update frequency to 10 Hz.
     const UPDATE_FREQ: u8 = 10;
 
-    pub fn new(addr: SocketAddrV4, server_settings: Box<ServerSettings>, server_settings_data: Box<[u8]>) -> io::Result<Self> {
+    pub fn new(addr: SocketAddrV4, server_settings: Box<ServerSettings>) -> io::Result<Self> {
         Ok(Self {
             app: App::new(addr)?,
             pending_clients: HashMap::new(),
@@ -63,7 +62,6 @@ impl BaseApp {
             logged_counter: 0,
             start_time: Instant::now(),
             server_settings,
-            server_settings_data,
         })
     }
 
@@ -161,9 +159,11 @@ impl BaseApp {
                             bundle.add_simple_element(CreateBasePlayer::ID, CreateBasePlayer {
                                 entity_id: 37289213,
                                 entity_type: 11,
+                                unk: String::new(),
                                 entity_data: entity::Login { 
-                                    account_db_id: "09518858105".into() 
-                                }
+                                    account_db_id: "09518858105".into(),
+                                },
+                                entity_components_count: 0,
                             });
                             println!("{prefix} <-- Create base player: Login");
                             self.app.send(&mut bundle, addr).unwrap();
@@ -195,12 +195,13 @@ impl BaseApp {
                             bundle.add_simple_element(CreateBasePlayer::ID, CreateBasePlayer {
                                 entity_id: 37289214,
                                 entity_type: 1,
+                                unk: String::new(),
                                 entity_data: entity::Account {
                                     required_version: "eu_1.19.1_4".into(),
                                     name: "Mindstorm38_".into(),
-                                    // initial_server_settings: Cow::Borrowed(&self.server_settings),
-                                    initial_server_settings_data: Cow::Borrowed(&self.server_settings_data),
-                                }
+                                    initial_server_settings: Cow::Borrowed(&self.server_settings),
+                                },
+                                entity_components_count: 6,
                             });
                             println!("{prefix} <-- Create base player: Account");
                             self.app.send(&mut bundle, addr).unwrap();

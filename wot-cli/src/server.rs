@@ -81,13 +81,14 @@ fn cmd_simple(matches: &ArgMatches) -> CmdResult<()> {
         _ => None,
     };
 
-    let server_settings_bytes = &include_bytes!("../../test.txt")[..41363];
-    let server_settings: Box<ServerSettings> = serde_pickle::from_slice(server_settings_bytes, serde_pickle::DeOptions::new().decode_strings()).unwrap();
+    // let server_settings_bytes = &include_bytes!("../../test.txt")[..41363];
+    // let server_settings: Box<ServerSettings> = serde_pickle::from_slice(server_settings_bytes, serde_pickle::DeOptions::new().decode_strings()).unwrap();
+    let server_settings = Box::new(ServerSettings::default());
 
     let mut login_app = LoginApp::new(login_app_bind, priv_key)
         .map_err(|e| format!("Failed to bind the loginapp: {e}"))?;
 
-    let mut base_app = BaseApp::new(base_app_bind, server_settings, server_settings_bytes.into())
+    let mut base_app = BaseApp::new(base_app_bind, server_settings)
         .map_err(|e| format!("Failed to bind the baseapp: {e}"))?;
 
     println!("[LOGIN] Running on {:?}", login_app.app.addr());

@@ -111,9 +111,22 @@ impl TopElement for ResetEntities {
 /// For example the `Login` entity receive the account UID.
 #[derive(Debug)]
 pub struct CreateBasePlayer<E> {
+    /// The unique identifier of the entity being created.
     pub entity_id: u32,
+    /// The entity type identifier being created.
     pub entity_type: u16,
+    /// This string's usage is currently unknown.
+    pub unk: String,
+    /// The actual data to be sent for creating the player's entity.
     pub entity_data: E,
+    /// This integer describe the number of entity components composing
+    /// the entity, this value must be strictly equal to the same value
+    /// as the client.
+    /// 
+    /// TODO: This number is used to know how much entity components
+    /// must be parsed after this number. Components can be seen as
+    /// regular components. **It's not currently implemented.**
+    pub entity_components_count: u8,
 }
 
 impl CreateBasePlayer<()> {
@@ -125,18 +138,18 @@ impl<E: Element<Config = ()>> SimpleElement for CreateBasePlayer<E> {
     fn encode<W: Write>(&self, mut write: W) -> io::Result<()> {
         write.write_u32(self.entity_id)?;
         write.write_u16(self.entity_type)?;
-        write.write_u8(0)?; // An (apparently) useless byte here.
-        self.entity_data.encode(write, &())
+        write.write_string_variable(&self.unk)?;
+        self.entity_data.encode(&mut write, &())?;
+        write.write_u8(self.entity_components_count)
     }
 
     fn decode<R: Read>(mut read: R, len: usize) -> io::Result<Self> {
         Ok(Self {
             entity_id: read.read_u32()?,
             entity_type: read.read_u16()?,
-            entity_data: {
-                let _ = read.read_u8()?;
-                E::decode(read, len - 7, &())?
-            }
+            unk: read.read_string_variable()?,
+            entity_data: E::decode(&mut read, len - 7, &())?,
+            entity_components_count: read.read_u8()?,
         })
     }
 }
