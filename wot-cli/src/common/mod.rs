@@ -2,3 +2,6 @@
 
 pub mod server_settings;
 pub mod entity;
+
+
+pub use server_settings::ServerSettings;

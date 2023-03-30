@@ -28,19 +28,21 @@ impl UpdateFrequencyNotification {
 
 impl SimpleElement for UpdateFrequencyNotification {
 
-    fn encode<W: Write>(&self, mut write: W) -> io::Result<()> {
+    fn encode(&self, write: &mut impl Write) -> io::Result<u8> {
         write.write_u8(self.frequency)?;
         write.write_u16(1)?;
-        write.write_u32(self.game_time)
+        write.write_u32(self.game_time)?;
+        Ok(Self::ID)
     }
 
-    fn decode<R: Read>(mut read: R, _len: usize) -> io::Result<Self> {
+    fn decode(read: &mut impl Read, _len: usize, _id: u8) -> io::Result<Self> {
         Ok(Self { 
             frequency: read.read_u8()?,
             // Skip 2 bytes that we don't use.
-            game_time: { read.skip::<2>()?; read.read_u32()? },
+            game_time: { read.read_u16()?; read.read_u32()? },
         })
     }
+
 }
 
 impl TopElement for UpdateFrequencyNotification {
@@ -61,11 +63,12 @@ impl SetGameTime {
 
 impl SimpleElement for SetGameTime {
 
-    fn encode<W: Write>(&self, mut write: W) -> io::Result<()> {
-        write.write_u32(self.game_time)
+    fn encode(&self, write: &mut impl Write) -> io::Result<u8> {
+        write.write_u32(self.game_time)?;
+        Ok(Self::ID)
     }
 
-    fn decode<R: Read>(mut read: R, _len: usize) -> io::Result<Self> {
+    fn decode(read: &mut impl Read, _len: usize, _id: u8) -> io::Result<Self> {
         Ok(Self { game_time: read.read_u32()? })
     }
 
@@ -88,12 +91,13 @@ impl ResetEntities {
 
 impl SimpleElement for ResetEntities {
 
-    fn encode<W: Write>(&self, mut write: W) -> io::Result<()> {
-        write.write_u8(self.keep_player_on_base as _)
+    fn encode(&self, write: &mut impl Write) -> io::Result<u8> {
+        write.write_bool(self.keep_player_on_base)?;
+        Ok(Self::ID)
     }
 
-    fn decode<R: Read>(mut read: R, _len: usize) -> io::Result<Self> {
-        Ok(Self { keep_player_on_base: read.read_u8()? != 0 })
+    fn decode(read: &mut impl Read, _len: usize, _id: u8) -> io::Result<Self> {
+        Ok(Self { keep_player_on_base: read.read_bool()? })
     }
 
 }
@@ -135,20 +139,21 @@ impl CreateBasePlayer<()> {
 
 impl<E: Element<Config = ()>> SimpleElement for CreateBasePlayer<E> {
 
-    fn encode<W: Write>(&self, mut write: W) -> io::Result<()> {
+    fn encode(&self, write: &mut impl Write) -> io::Result<u8> {
         write.write_u32(self.entity_id)?;
         write.write_u16(self.entity_type)?;
         write.write_string_variable(&self.unk)?;
-        self.entity_data.encode(&mut write, &())?;
-        write.write_u8(self.entity_components_count)
+        self.entity_data.encode(&mut *write, &())?;
+        write.write_u8(self.entity_components_count)?;
+        Ok(0x05)
     }
 
-    fn decode<R: Read>(mut read: R, len: usize) -> io::Result<Self> {
+    fn decode(read: &mut impl Read, len: usize, _id: u8) -> io::Result<Self> {
         Ok(Self {
             entity_id: read.read_u32()?,
             entity_type: read.read_u16()?,
             unk: read.read_string_variable()?,
-            entity_data: E::decode(&mut read, len - 7, &())?,
+            entity_data: E::decode(&mut *read, len - 7, 0, &())?,
             entity_components_count: read.read_u8()?,
         })
     }
@@ -180,11 +185,12 @@ impl TickSync {
 
 impl SimpleElement for TickSync {
 
-    fn encode<W: Write>(&self, mut write: W) -> io::Result<()> {
-        write.write_u8(self.tick)
+    fn encode(&self, write: &mut impl Write) -> io::Result<u8> {
+        write.write_u8(self.tick)?;
+        Ok(Self::ID)
     }
 
-    fn decode<R: Read>(mut read: R, _len: usize) -> io::Result<Self> {
+    fn decode(read: &mut impl Read, _len: usize, _id: u8) -> io::Result<Self> {
         Ok(Self { tick: read.read_u8()? })
     }
 
@@ -204,7 +210,9 @@ impl SelectPlayerEntity {
     pub const ID: u8 = 0x1A;
 }
 
-impl EmptyElement for SelectPlayerEntity {}
+impl EmptyElement for SelectPlayerEntity {
+    const ID: u8 = Self::ID;
+}
 
 
 /// This is when an update is being forced back for an (ordinarily)
@@ -226,15 +234,16 @@ impl ForcedPosition {
 
 impl SimpleElement for ForcedPosition {
 
-    fn encode<W: Write>(&self, mut write: W) -> io::Result<()> {
+    fn encode(&self, write: &mut impl Write) -> io::Result<u8> {
         write.write_u32(self.entity_id)?;
         write.write_u32(self.space_id)?;
         write.write_u32(self.vehicle_entity_id)?;
         write.write_vec3(self.position)?;
-        write.write_vec3(self.direction)
+        write.write_vec3(self.direction)?;
+        Ok(Self::ID)
     }
 
-    fn decode<R: Read>(mut read: R, _len: usize) -> io::Result<Self> {
+    fn decode(read: &mut impl Read, _len: usize, _id: u8) -> io::Result<Self> {
         Ok(Self {
             entity_id: read.read_u32()?,
             space_id: read.read_u32()?,

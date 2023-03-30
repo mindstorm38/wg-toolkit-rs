@@ -10,54 +10,65 @@ pub mod reply;
 pub mod base;
 pub mod client;
 
+pub mod entity;
 
-/// A trait to be implemented on an element structure. Elements are slices 
-/// of data in a bundle of packets. If a bundle contains multiple elements
-/// they are contiguously written.
+
+/// A trait to be implemented on a structure that can be interpreted as
+/// bundle's elements. Elements are slices of data in a bundle of packets. 
+/// If a bundle contains multiple elements they are written contiguously.
 /// 
 /// Note that elements doesn't need to specify their length because they
 /// could be used for replies to requests, if you want to use the element
 /// as a top element (which mean that it provides a way to know its length
-/// in the bundle), implement the [`TopElement`] trait and specify of the 
-/// length of the element must be decoded.
+/// in the bundle), implement the [`TopElement`] trait and specify its type
+/// of length.
 /// 
 /// You must provide a configuration type that will be given to encode
 /// and decode functions.
 pub trait Element: Sized {
 
-    /// Type of the element that is being encoded and decoded.
+    /// Type of the element's config that is being encoded and decoded.
     type Config;
 
     /// Encode the element with the given writer and the given configuration.
-    fn encode<W: Write>(&self, write: W, config: &Self::Config) -> io::Result<()>;
+    /// 
+    /// The numeric identifier of the element must be returned, zero can be
+    /// returned if the element is not intended to be a top element.
+    fn encode(&self, write: &mut impl Write, config: &Self::Config) -> io::Result<u8>;
 
     /// Decode the element from the given reader and the given configuration.
-    /// The total length that is available in the reader is given.
-    fn decode<R: Read>(read: R, len: usize, config: &Self::Config) -> io::Result<Self>;
+    /// 
+    /// The total length that is available in the reader is also given with
+    /// the numeric identifier of the element.
+    fn decode(read: &mut impl Read, len: usize, id: u8, config: &Self::Config) -> io::Result<Self>;
 
 }
 
-/// An extension trait to implement for [`Element`] or [`SimpleElement`]
-/// that can be used as top elements in a bundle by providing a way to
-/// decode their length.
+/// A "top element" extends the behavior of a regular [`Element`] by providing
+/// a length that describes how to encode and decode the length of this element.
 pub trait TopElement: Element {
-    
+
     /// The type of length that prefixes the element's content and describe
     /// how much space is taken by the element.
     const LEN: ElementLength;
 
 }
 
-/// An alternative trait to [`Element`] (and incompatible) but without
-/// provided configuration. Read the documentation of [`Element`] for
-/// more information.
+/// This trait provides an easier implementation of [`Element`], therefore
+/// both traits cannot be implemented at the same time.
 pub trait SimpleElement: Sized {
 
-    /// Encode an element.
-    fn encode<W: Write>(&self, write: W) -> io::Result<()>;
+    /// Encode the element with the given writer.
+    /// 
+    /// The numeric identifier of the element must be returned, zero can be
+    /// returned if the element is not intended to be a top element.
+    fn encode(&self, write: &mut impl Write) -> io::Result<u8>;
 
-    /// Decode the element from the given stream
-    fn decode<R: Read>(read: R, len: usize) -> io::Result<Self>;
+    /// Decode the element from the given reader.
+    /// 
+    /// The total length that is available in the reader is also given with
+    /// the numeric identifier of the element.
+    fn decode(read: &mut impl Read, len: usize, id: u8) -> io::Result<Self>;
 
 }
 
@@ -66,13 +77,13 @@ impl<E: SimpleElement> Element for E {
     type Config = ();
 
     #[inline]
-    fn encode<W: Write>(&self, write: W, _config: &Self::Config) -> io::Result<()> {
+    fn encode(&self, write: &mut impl Write, _config: &Self::Config) -> io::Result<u8> {
         SimpleElement::encode(self, write)
     }
 
     #[inline]
-    fn decode<R: Read>(read: R, len: usize, _config: &Self::Config) -> io::Result<Self> {
-        SimpleElement::decode(read, len)
+    fn decode(read: &mut impl Read, len: usize, id: u8, _config: &Self::Config) -> io::Result<Self> {
+        SimpleElement::decode(read, len, id)
     }
 
 }
@@ -82,15 +93,17 @@ impl<E: SimpleElement> Element for E {
 /// automatically implements nothing for encode and provides the default 
 /// value on decoding without actually reading. The trait [`TopElement`]
 /// is also implemented to specify a fixed length of 0.
-pub trait EmptyElement: Default {}
+pub trait EmptyElement: Default {
+    const ID: u8;
+}
 
 impl<E: EmptyElement> SimpleElement for E {
 
-    fn encode<W: Write>(&self, _write: W) -> io::Result<()> {
-        Ok(())
+    fn encode(&self, _write: &mut impl Write) -> io::Result<u8> {
+        Ok(Self::ID)
     }
 
-    fn decode<R: Read>(_read: R, _len: usize) -> io::Result<Self> {
+    fn decode(_read: &mut impl Read, _len: usize, _id: u8) -> io::Result<Self> {
         Ok(Self::default())
     }
     
@@ -164,24 +177,30 @@ impl ElementLength {
 
 
 #[derive(Debug)]
-pub struct UnknownElement(pub Vec<u8>);
+pub struct UnknownElement<const ID: u8>(pub Vec<u8>);
 
-impl SimpleElement for UnknownElement {
+impl<const ID: u8> SimpleElement for UnknownElement<ID> {
 
-    fn encode<W: Write>(&self, mut write: W) -> io::Result<()> {
-        write.write_blob(&self.0)
+    fn encode(&self, write: &mut impl Write) -> io::Result<u8> {
+        write.write_blob(&self.0)?;
+        Ok(ID)
     }
 
-    fn decode<R: Read>(mut read: R, _len: usize) -> io::Result<Self> {
+    fn decode(read: &mut impl Read, _len: usize, _id: u8) -> io::Result<Self> {
         let mut buf = Vec::new();
         read.read_to_end(&mut buf)?;
         Ok(UnknownElement(buf))
     }
+
 }
 
-impl TopElement for UnknownElement {
+impl<const ID: u8> TopElement for UnknownElement<ID> {
     const LEN: ElementLength = ElementLength::Unknown;
 }
+
+// impl TopElement for UnknownElement {
+//     const LEN: ElementLength = ElementLength::Unknown;
+// }
 
 
 // TODO: Maybe do this later...

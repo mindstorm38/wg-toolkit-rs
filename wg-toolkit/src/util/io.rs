@@ -96,6 +96,12 @@ pub trait WgReadExt: Read {
         ReadBytesExt::read_f32::<LE>(self)
     }
 
+    /// Read a single boolean from the underlying reader.
+    #[inline]
+    fn read_bool(&mut self) -> io::Result<bool> {
+        Ok(self.read_u8()? != 0)
+    }
+
     /// Check that the next `N` bytes are the exact same as the given array.
     #[inline]
     fn check_exact<const N: usize>(&mut self, bytes: &[u8; N]) -> io::Result<bool> {
@@ -306,6 +312,12 @@ pub trait WgWriteExt: Write {
     #[inline]
     fn write_f32(&mut self, n: f32) -> io::Result<()> {
         WriteBytesExt::write_f32::<LE>(self, n)
+    }
+
+    /// Write a single boolean to the underlying writer.
+    #[inline]
+    fn write_bool(&mut self, b: bool) -> io::Result<()> {
+        self.write_u8(b as _)
     }
 
     #[inline]

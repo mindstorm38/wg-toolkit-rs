@@ -7,12 +7,11 @@ use std::collections::HashMap;
 use std::hash::Hash;
 use std::fmt;
 
-use byteorder::{ReadBytesExt, WriteBytesExt, LE};
-
 use super::packet::{Packet, PacketConfig, PACKET_FLAGS_LEN, PACKET_MAX_BODY_LEN};
 use super::element::reply::{Reply, ReplyHeader, REPLY_ID};
 use super::element::{Element, TopElement};
 
+use crate::util::io::*;
 use crate::util::BytesFmt;
 
 
@@ -67,27 +66,27 @@ impl Bundle {
 
     /// Add an element to this bundle.
     #[inline]
-    pub fn add_element<E: TopElement>(&mut self, id: u8, elt: E, config: &E::Config) -> &mut Self {
-        self.add_element_raw(id, elt, config, None)
+    pub fn add_element<E: TopElement>(&mut self, elt: E, config: &E::Config) -> &mut Self {
+        self.add_element_raw(elt, config, None)
     }
 
     /// Add a simple element to this bundle. Such elements have no config.
     #[inline]
-    pub fn add_simple_element<E: TopElement<Config = ()>>(&mut self, id: u8, elt: E) -> &mut Self {
-        self.add_element(id, elt, &())
+    pub fn add_simple_element<E: TopElement<Config = ()>>(&mut self, elt: E) -> &mut Self {
+        self.add_element(elt, &())
     }
 
     /// Add a request element to this bundle, with a given request ID.
     #[inline]
-    pub fn add_request<E: TopElement>(&mut self, id: u8, elt: E, config: &E::Config, request_id: u32) -> &mut Self {
-        self.add_element_raw(id, elt, config, Some(request_id))
+    pub fn add_request<E: TopElement>(&mut self, elt: E, config: &E::Config, request_id: u32) -> &mut Self {
+        self.add_element_raw(elt, config, Some(request_id))
     }
 
     /// Add a request element to this bundle, with a given request ID. 
     /// Such elements have no config.
     #[inline]
-    pub fn add_simple_request<E: TopElement<Config = ()>>(&mut self, id: u8, elt: E, request_id: u32) -> &mut Self {
-        self.add_request(id, elt, &(), request_id)
+    pub fn add_simple_request<E: TopElement<Config = ()>>(&mut self, elt: E, request_id: u32) -> &mut Self {
+        self.add_request(elt, &(), request_id)
     }
 
     /// Add a reply element to this bundle, for a given request ID.
@@ -96,7 +95,7 @@ impl Bundle {
     /// a 32-bit variable length and prefixed with the request ID.
     #[inline]
     pub fn add_reply<E: Element>(&mut self, elt: E, config: &E::Config, request_id: u32) -> &mut Self {
-        self.add_element(REPLY_ID, Reply::new(request_id, elt), config)
+        self.add_element(Reply::new(request_id, elt), config)
     }
 
     /// Add a reply element to this bundle, for a given request ID.
@@ -108,7 +107,7 @@ impl Bundle {
 
     /// Raw method to add an element to this bundle, given an ID, the element and its 
     /// config. With an optional request ID.
-    pub fn add_element_raw<E: TopElement>(&mut self, id: u8, elt: E, config: &E::Config, request: Option<u32>) -> &mut Self {
+    pub fn add_element_raw<E: TopElement>(&mut self, elt: E, config: &E::Config, request: Option<u32>) -> &mut Self {
 
         if self.force_new_packet {
             self.add_packet();
@@ -120,12 +119,11 @@ impl Bundle {
         // Allocate element's header, +1 for element's ID, +6 reply_id and link offset.
         let header_len = 1 + E::LEN.len() + if request.is_some() { REQUEST_HEADER_LEN } else { 0 };
         let header_slice = self.reserve_exact(header_len);
-        header_slice[0] = id;
 
         if let Some(request_id) = request {
             let mut request_header_cursor = Cursor::new(&mut header_slice[header_len - 6..]);
-            request_header_cursor.write_u32::<LE>(request_id).unwrap();
-            request_header_cursor.write_u16::<LE>(0).unwrap(); // Next request offset set to null.
+            request_header_cursor.write_u32(request_id).unwrap();
+            request_header_cursor.write_u16(0).unwrap(); // Next request offset set to null.
         }
 
         // Keep the packet index to rewrite the packet's length after writing it.
@@ -145,7 +143,7 @@ impl Bundle {
             } else {
                 // Add 4 because first 4 bytes is the request id.
                 Cursor::new(&mut cur_packet.content_mut()[self.last_request_header_offset + 4..])
-                    .write_u16::<LE>((PACKET_FLAGS_LEN + cur_packet_elt_offset) as u16).unwrap();
+                    .write_u16((PACKET_FLAGS_LEN + cur_packet_elt_offset) as u16).unwrap();
             }
 
             // We keep the offset of the request header, it will be used if a request
@@ -157,15 +155,13 @@ impl Bundle {
         // Write the actual element's content.
         let mut writer = BundleWriter::new(self);
         // For now we just unwrap the encode result, because no IO error should be produced by a BundleWriter.
-        elt.encode(&mut writer, config).unwrap();
-        // encoder.encode(&mut writer).unwrap();
+        let elt_id = elt.encode(&mut writer, config).unwrap();
         let length = writer.len as u32;
 
-        // Finally write length.
-        let cur_packet = &mut self.packets[cur_packet_idx];
-        let cur_len_slice = &mut cur_packet.content_mut()[cur_packet_elt_offset + 1..];
-        // Unwrap because we now there is enough space at the given position.
-        E::LEN.write(Cursor::new(cur_len_slice), length).unwrap();
+        // Finally write id and length, we can unwrap because we know that enough length is available.
+        let cur_head_slice = &mut self.packets[cur_packet_idx].content_mut()[cur_packet_elt_offset..];
+        cur_head_slice[0] = elt_id;
+        E::LEN.write(Cursor::new(&mut cur_head_slice[1..]), length).unwrap();
 
         self
 
@@ -217,6 +213,8 @@ impl Bundle {
     /// Reserve exactly the given length in the current packet or a new one if
     /// such space is not available in the current packet. **Given length must 
     /// not exceed maximum packet size.**
+    /// 
+    /// This function is currently only used for writing the element's header.
     fn reserve_exact(&mut self, len: usize) -> &mut [u8] {
         debug_assert!(len <= PACKET_MAX_BODY_LEN);
         let new_packet = self.available_len < len;
@@ -477,8 +475,8 @@ impl<'a> BundleElementReader<'a> {
         let elt_len = E::LEN.read(&mut self.bundle_reader)?;
 
         let reply_id = if request {
-            let reply_id = self.bundle_reader.read_u32::<LE>()?;
-            self.next_request_offset = self.bundle_reader.read_u16::<LE>()? as usize;
+            let reply_id = self.bundle_reader.read_u32()?;
+            self.next_request_offset = self.bundle_reader.read_u16()? as usize;
             Some(reply_id)
         } else {
             None
@@ -488,9 +486,10 @@ impl<'a> BundleElementReader<'a> {
 
         let element = 
             if let Some(len) = elt_len {
-                E::decode((&mut self.bundle_reader).take(len as u64), len as usize, config)
+                let mut limited = Read::take(&mut self.bundle_reader, len as u64);
+                E::decode(&mut limited, len as usize, elt_id, config)
             } else {
-                E::decode(&mut self.bundle_reader, 0, config)
+                E::decode(&mut self.bundle_reader, 0, elt_id, config)
             }?;
 
         // We seek to the end only if we want to go next.
@@ -664,6 +663,7 @@ impl<'reader, 'bundle> ReplyElementReader<'reader, 'bundle> {
     }
 
 }
+
 
 
 /// A structure that reassemble received bundles' fragments. You can provide an

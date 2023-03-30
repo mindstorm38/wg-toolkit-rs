@@ -21,11 +21,12 @@ pub struct ReplyHeader {
 
 impl SimpleElement for ReplyHeader {
 
-    fn encode<W: Write>(&self, mut write: W) -> io::Result<()> {
-        write.write_u32(self.request_id)
+    fn encode(&self, write: &mut impl Write) -> io::Result<u8> {
+        write.write_u32(self.request_id)?;
+        Ok(REPLY_ID)
     }
 
-    fn decode<R: Read>(mut read: R, _len: usize) -> io::Result<Self> {
+    fn decode(read: &mut impl Read, _len: usize, _id: u8) -> io::Result<Self> {
         Ok(Self { request_id: read.read_u32()? })
     }
 
@@ -58,15 +59,16 @@ impl<E: Element> Element for Reply<E> {
 
     type Config = E::Config;
 
-    fn encode<W: Write>(&self, mut write: W, config: &Self::Config) -> io::Result<()> {
+    fn encode(&self, write: &mut impl Write, config: &Self::Config) -> io::Result<u8> {
         write.write_u32(self.request_id)?;
-        self.element.encode(write, config)
+        self.element.encode(write, config)?;
+        Ok(REPLY_ID)
     }
 
-    fn decode<R: Read>(mut read: R, len: usize, config: &Self::Config) -> io::Result<Self> {
+    fn decode(read: &mut impl Read, len: usize, _id: u8, config: &Self::Config) -> io::Result<Self> {
         Ok(Self {
             request_id: read.read_u32()?,
-            element: E::decode(read, len - 4, config)?,
+            element: E::decode(read, len - 4, 0, config)?,
         })
     }
 

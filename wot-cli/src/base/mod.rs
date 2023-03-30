@@ -229,10 +229,10 @@ impl BaseApp {
                 true
 
             }
-            BundleElement::Top(id @ CellEntityMethod::FIRST_ID..=CellEntityMethod::LAST_ID, reader) => {
+            BundleElement::Top(CellEntityMethod::FIRST_ID..=CellEntityMethod::LAST_ID, reader) => {
 
                 let method = reader.read_simple::<CellEntityMethod>().unwrap();
-                let method_idx = CellEntityMethod::id_to_index(id);
+                let method_idx = CellEntityMethod::id_to_index(method.id);
 
                 println!("{prefix} --> Cell entity method #{method_idx}: {method:?}");
 

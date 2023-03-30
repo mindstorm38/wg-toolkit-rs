@@ -78,7 +78,7 @@ impl LoginApp {
                 let elt = reader.read_simple::<Ping>().unwrap();
                 println!("{prefix} --> Ping #{}", elt.element.num);
                 println!("{prefix} <-- Pong #{}", elt.element.num);
-    
+                
                 self.app.send(Bundle::new()
                     .add_simple_reply(elt.element, elt.request_id.unwrap()), client.addr).unwrap();
                 

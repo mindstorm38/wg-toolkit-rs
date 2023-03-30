@@ -10,6 +10,34 @@ use crate::util::io::*;
 use super::{SimpleElement, TopElement, ElementLength};
 
 
+// /// This enumeration describes all possible elements that can be received by the
+// /// base application.
+// pub enum BaseElement {
+//     ClientAuth(ClientAuth),
+//     ClientSessionKey(ClientSessionKey),
+// }
+
+// // Proof of concept.
+// impl BaseElement {
+
+//     pub fn encode(&self, ) -> io::Result<u8> {
+
+//         match self {
+//             BaseElement::ClientAuth(elt) => {
+//                 Ok(0x00)
+//             }
+//             BaseElement::ClientSessionKey(elt) => {
+//                 Ok(0x01)
+//             }
+//         }
+
+//     }
+
+
+
+// }
+
+
 /// Sent by the client to the server without encryption in order to authenticate,
 /// the server then compares with its internal login keys from past successful
 /// logins on the login app.
@@ -33,14 +61,15 @@ impl ClientAuth {
 
 impl SimpleElement for ClientAuth {
 
-    fn encode<W: Write>(&self, mut write: W) -> io::Result<()> {
+    fn encode(&self, write: &mut impl Write) -> io::Result<u8> {
         write.write_u32(self.login_key)?;
         write.write_u8(self.attempts_count)?;
-        write.write_u16(self.unk)
+        write.write_u16(self.unk)?;
+        Ok(Self::ID)
     }
 
-    fn decode<R: Read>(mut read: R, _len: usize) -> io::Result<Self> {
-        Ok(Self { 
+    fn decode(read: &mut impl Read, _len: usize, _id: u8) -> io::Result<Self> {
+        Ok(Self {
             login_key: read.read_u32()?, 
             attempts_count: read.read_u8()?,
             unk: read.read_u16()?,
@@ -64,14 +93,15 @@ pub struct ServerSessionKey {
 
 impl SimpleElement for ServerSessionKey {
 
-    fn encode<W: Write>(&self, mut write: W) -> io::Result<()> {
-        write.write_u32(self.session_key)
+    fn encode(&self, write: &mut impl Write) -> io::Result<u8> {
+        write.write_u32(self.session_key)?;
+        Ok(0)
     }
 
-    fn decode<R: Read>(mut read: R, _len: usize) -> io::Result<Self> {
+    fn decode(read: &mut impl Read, _len: usize, _id: u8) -> io::Result<Self> {
         Ok(Self { session_key: read.read_u32()? })
     }
-
+    
 }
 
 
@@ -90,11 +120,12 @@ impl ClientSessionKey {
 
 impl SimpleElement for ClientSessionKey {
 
-    fn encode<W: Write>(&self, mut write: W) -> io::Result<()> {
-        write.write_u32(self.session_key)
+    fn encode(&self, write: &mut impl Write) -> io::Result<u8> {
+        write.write_u32(self.session_key)?;
+        Ok(Self::ID)
     }
 
-    fn decode<R: Read>(mut read: R, _len: usize) -> io::Result<Self> {
+    fn decode(read: &mut impl Read, _len: usize, _id: u8) -> io::Result<Self> {
         Ok(Self { session_key: read.read_u32()? })
     }
 
@@ -119,7 +150,7 @@ pub struct CellEntityMethod {
 impl CellEntityMethod {
 
     pub const FIRST_ID: u8 = 0x0F;
-    pub const LAST_ID: u8 = 0x87;
+    pub const LAST_ID: u8  = 0x87;
 
     /// Convert a method index to a message id.
     pub const fn index_to_id(index: u8) -> u8 {
@@ -135,13 +166,14 @@ impl CellEntityMethod {
 
 impl SimpleElement for CellEntityMethod {
 
-    fn encode<W: Write>(&self, mut write: W) -> io::Result<()> {
+    fn encode(&self, write: &mut impl Write) -> io::Result<u8> {
         write.write_u32(self.entity_id)?;
-        write.write_blob(&self.data)
+        write.write_blob(&self.data)?;
+        Ok(0) // TODO:
     }
 
-    fn decode<R: Read>(mut read: R, len: usize) -> io::Result<Self> {
-        Ok(Self {
+    fn decode(read: &mut impl Read, len: usize, _id: u8) -> io::Result<Self> {
+        Ok(Self { // TODO: use id
             entity_id: read.read_u32()?,
             data: read.read_blob(len - 4)?,
         })
@@ -164,7 +196,7 @@ pub struct BaseEntityMethod {
 impl BaseEntityMethod {
 
     pub const FIRST_ID: u8 = 0x88;
-    pub const LAST_ID: u8 = 0xFE;
+    pub const LAST_ID: u8  = 0xFE;
 
     /// Convert a method index to a message id.
     pub const fn index_to_id(index: u8) -> u8 {
@@ -180,12 +212,15 @@ impl BaseEntityMethod {
 
 impl SimpleElement for BaseEntityMethod {
 
-    fn encode<W: Write>(&self, mut write: W) -> io::Result<()> {
-        write.write_blob(&self.data)
+    fn encode(&self, write: &mut impl Write) -> io::Result<u8> {
+        write.write_blob(&self.data)?;
+        Ok(0) // TODO:
     }
 
-    fn decode<R: Read>(mut read: R, len: usize) -> io::Result<Self> {
-        Ok(Self { data: read.read_blob(len)? })
+    fn decode(read: &mut impl Read, len: usize, _id: u8) -> io::Result<Self> {
+        Ok(Self { // TODO: use id
+            data: read.read_blob(len - 4)?,
+        })
     }
 
 }
