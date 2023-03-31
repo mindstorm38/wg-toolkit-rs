@@ -10,34 +10,6 @@ use crate::util::io::*;
 use super::{SimpleElement, TopElement, ElementLength};
 
 
-// /// This enumeration describes all possible elements that can be received by the
-// /// base application.
-// pub enum BaseElement {
-//     ClientAuth(ClientAuth),
-//     ClientSessionKey(ClientSessionKey),
-// }
-
-// // Proof of concept.
-// impl BaseElement {
-
-//     pub fn encode(&self, ) -> io::Result<u8> {
-
-//         match self {
-//             BaseElement::ClientAuth(elt) => {
-//                 Ok(0x00)
-//             }
-//             BaseElement::ClientSessionKey(elt) => {
-//                 Ok(0x01)
-//             }
-//         }
-
-//     }
-
-
-
-// }
-
-
 /// Sent by the client to the server without encryption in order to authenticate,
 /// the server then compares with its internal login keys from past successful
 /// logins on the login app.
