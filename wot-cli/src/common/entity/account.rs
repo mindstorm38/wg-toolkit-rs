@@ -25,13 +25,13 @@ pub struct Account<'a> {
 
 impl SimpleElement for Account<'_> {
     
-    fn encode<W: Write>(&self, mut write: W) -> io::Result<()> {
+    fn encode(&self, write: &mut impl Write) -> io::Result<()> {
         write.write_string_variable(&self.required_version)?;
         write.write_string_variable(&self.name)?;
         write.write_pickle(&**self.initial_server_settings)
     }
 
-    fn decode<R: Read>(mut read: R, _len: usize) -> io::Result<Self> {
+    fn decode(read: &mut impl Read, _len: usize) -> io::Result<Self> {
         Ok(Self {
             required_version: read.read_string_variable()?,
             name: read.read_string_variable()?,

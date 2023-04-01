@@ -33,14 +33,13 @@ impl ClientAuth {
 
 impl SimpleElement for ClientAuth {
 
-    fn encode(&self, write: &mut impl Write) -> io::Result<u8> {
+    fn encode(&self, write: &mut impl Write) -> io::Result<()> {
         write.write_u32(self.login_key)?;
         write.write_u8(self.attempts_count)?;
-        write.write_u16(self.unk)?;
-        Ok(Self::ID)
+        write.write_u16(self.unk)
     }
 
-    fn decode(read: &mut impl Read, _len: usize, _id: u8) -> io::Result<Self> {
+    fn decode(read: &mut impl Read, _len: usize) -> io::Result<Self> {
         Ok(Self {
             login_key: read.read_u32()?, 
             attempts_count: read.read_u8()?,
@@ -65,12 +64,11 @@ pub struct ServerSessionKey {
 
 impl SimpleElement for ServerSessionKey {
 
-    fn encode(&self, write: &mut impl Write) -> io::Result<u8> {
-        write.write_u32(self.session_key)?;
-        Ok(0)
+    fn encode(&self, write: &mut impl Write) -> io::Result<()> {
+        write.write_u32(self.session_key)
     }
 
-    fn decode(read: &mut impl Read, _len: usize, _id: u8) -> io::Result<Self> {
+    fn decode(read: &mut impl Read, _len: usize) -> io::Result<Self> {
         Ok(Self { session_key: read.read_u32()? })
     }
     
@@ -92,12 +90,11 @@ impl ClientSessionKey {
 
 impl SimpleElement for ClientSessionKey {
 
-    fn encode(&self, write: &mut impl Write) -> io::Result<u8> {
-        write.write_u32(self.session_key)?;
-        Ok(Self::ID)
+    fn encode(&self, write: &mut impl Write) -> io::Result<()> {
+        write.write_u32(self.session_key)
     }
 
-    fn decode(read: &mut impl Read, _len: usize, _id: u8) -> io::Result<Self> {
+    fn decode(read: &mut impl Read, _len: usize) -> io::Result<Self> {
         Ok(Self { session_key: read.read_u32()? })
     }
 
@@ -130,22 +127,21 @@ impl CellEntityMethod {
     }
 
     /// Convert a message id to method index.
-    pub const fn id_to_index(id: u8) -> u8 {
-        id - Self::FIRST_ID
+    pub const fn id_to_index(id: u8) -> u16 {
+        (id - Self::FIRST_ID) as _
     }
 
 }
 
 impl SimpleElement for CellEntityMethod {
 
-    fn encode(&self, write: &mut impl Write) -> io::Result<u8> {
+    fn encode(&self, write: &mut impl Write) -> io::Result<()> {
         write.write_u32(self.entity_id)?;
-        write.write_blob(&self.data)?;
-        Ok(0) // TODO:
+        write.write_blob(&self.data)
     }
 
-    fn decode(read: &mut impl Read, len: usize, _id: u8) -> io::Result<Self> {
-        Ok(Self { // TODO: use id
+    fn decode(read: &mut impl Read, len: usize) -> io::Result<Self> {
+        Ok(Self {
             entity_id: read.read_u32()?,
             data: read.read_blob(len - 4)?,
         })
@@ -176,21 +172,20 @@ impl BaseEntityMethod {
     }
 
     /// Convert a message id to method index.
-    pub const fn id_to_index(id: u8) -> u8 {
-        id - Self::FIRST_ID
+    pub const fn id_to_index(id: u8) -> u16 {
+        (id - Self::FIRST_ID) as _
     }
 
 }
 
 impl SimpleElement for BaseEntityMethod {
 
-    fn encode(&self, write: &mut impl Write) -> io::Result<u8> {
-        write.write_blob(&self.data)?;
-        Ok(0) // TODO:
+    fn encode(&self, write: &mut impl Write) -> io::Result<()> {
+        write.write_blob(&self.data)
     }
 
-    fn decode(read: &mut impl Read, len: usize, _id: u8) -> io::Result<Self> {
-        Ok(Self { // TODO: use id
+    fn decode(read: &mut impl Read, len: usize) -> io::Result<Self> {
+        Ok(Self {
             data: read.read_blob(len - 4)?,
         })
     }

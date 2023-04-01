@@ -9,6 +9,7 @@ use glam::Vec3A;
 use crate::util::io::*;
 
 use super::{Element, SimpleElement, TopElement, EmptyElement, ElementLength};
+use super::entity::{ExposedMethod, MethodConfig};
 
 
 /// The server informs us how frequently it is going to send update
@@ -28,14 +29,13 @@ impl UpdateFrequencyNotification {
 
 impl SimpleElement for UpdateFrequencyNotification {
 
-    fn encode(&self, write: &mut impl Write) -> io::Result<u8> {
+    fn encode(&self, write: &mut impl Write) -> io::Result<()> {
         write.write_u8(self.frequency)?;
         write.write_u16(1)?;
-        write.write_u32(self.game_time)?;
-        Ok(Self::ID)
+        write.write_u32(self.game_time)
     }
 
-    fn decode(read: &mut impl Read, _len: usize, _id: u8) -> io::Result<Self> {
+    fn decode(read: &mut impl Read, _len: usize) -> io::Result<Self> {
         Ok(Self { 
             frequency: read.read_u8()?,
             // Skip 2 bytes that we don't use.
@@ -63,12 +63,11 @@ impl SetGameTime {
 
 impl SimpleElement for SetGameTime {
 
-    fn encode(&self, write: &mut impl Write) -> io::Result<u8> {
-        write.write_u32(self.game_time)?;
-        Ok(Self::ID)
+    fn encode(&self, write: &mut impl Write) -> io::Result<()> {
+        write.write_u32(self.game_time)
     }
 
-    fn decode(read: &mut impl Read, _len: usize, _id: u8) -> io::Result<Self> {
+    fn decode(read: &mut impl Read, _len: usize) -> io::Result<Self> {
         Ok(Self { game_time: read.read_u32()? })
     }
 
@@ -91,12 +90,11 @@ impl ResetEntities {
 
 impl SimpleElement for ResetEntities {
 
-    fn encode(&self, write: &mut impl Write) -> io::Result<u8> {
-        write.write_bool(self.keep_player_on_base)?;
-        Ok(Self::ID)
+    fn encode(&self, write: &mut impl Write) -> io::Result<()> {
+        write.write_bool(self.keep_player_on_base)
     }
 
-    fn decode(read: &mut impl Read, _len: usize, _id: u8) -> io::Result<Self> {
+    fn decode(read: &mut impl Read, _len: usize) -> io::Result<Self> {
         Ok(Self { keep_player_on_base: read.read_bool()? })
     }
 
@@ -139,21 +137,20 @@ impl CreateBasePlayer<()> {
 
 impl<E: Element<Config = ()>> SimpleElement for CreateBasePlayer<E> {
 
-    fn encode(&self, write: &mut impl Write) -> io::Result<u8> {
+    fn encode(&self, write: &mut impl Write) -> io::Result<()> {
         write.write_u32(self.entity_id)?;
         write.write_u16(self.entity_type)?;
         write.write_string_variable(&self.unk)?;
         self.entity_data.encode(&mut *write, &())?;
-        write.write_u8(self.entity_components_count)?;
-        Ok(0x05)
+        write.write_u8(self.entity_components_count)
     }
 
-    fn decode(read: &mut impl Read, len: usize, _id: u8) -> io::Result<Self> {
+    fn decode(read: &mut impl Read, len: usize) -> io::Result<Self> {
         Ok(Self {
             entity_id: read.read_u32()?,
             entity_type: read.read_u16()?,
             unk: read.read_string_variable()?,
-            entity_data: E::decode(&mut *read, len - 7, 0, &())?,
+            entity_data: E::decode(&mut *read, len - 7, &())?,
             entity_components_count: read.read_u8()?,
         })
     }
@@ -185,12 +182,11 @@ impl TickSync {
 
 impl SimpleElement for TickSync {
 
-    fn encode(&self, write: &mut impl Write) -> io::Result<u8> {
-        write.write_u8(self.tick)?;
-        Ok(Self::ID)
+    fn encode(&self, write: &mut impl Write) -> io::Result<()> {
+        write.write_u8(self.tick)
     }
 
-    fn decode(read: &mut impl Read, _len: usize, _id: u8) -> io::Result<Self> {
+    fn decode(read: &mut impl Read, _len: usize) -> io::Result<Self> {
         Ok(Self { tick: read.read_u8()? })
     }
 
@@ -210,9 +206,7 @@ impl SelectPlayerEntity {
     pub const ID: u8 = 0x1A;
 }
 
-impl EmptyElement for SelectPlayerEntity {
-    const ID: u8 = Self::ID;
-}
+impl EmptyElement for SelectPlayerEntity { }
 
 
 /// This is when an update is being forced back for an (ordinarily)
@@ -234,16 +228,15 @@ impl ForcedPosition {
 
 impl SimpleElement for ForcedPosition {
 
-    fn encode(&self, write: &mut impl Write) -> io::Result<u8> {
+    fn encode(&self, write: &mut impl Write) -> io::Result<()> {
         write.write_u32(self.entity_id)?;
         write.write_u32(self.space_id)?;
         write.write_u32(self.vehicle_entity_id)?;
         write.write_vec3(self.position)?;
-        write.write_vec3(self.direction)?;
-        Ok(Self::ID)
+        write.write_vec3(self.direction)
     }
 
-    fn decode(read: &mut impl Read, _len: usize, _id: u8) -> io::Result<Self> {
+    fn decode(read: &mut impl Read, _len: usize) -> io::Result<Self> {
         Ok(Self {
             entity_id: read.read_u32()?,
             space_id: read.read_u32()?,
@@ -258,11 +251,11 @@ impl SimpleElement for ForcedPosition {
 
 /// A call to a selected entity's method.
 #[derive(Debug)]
-pub struct EntityMethod {
-    
+pub struct EntityMethod<M> {
+    pub method: M,
 }
 
-impl EntityMethod {
+impl EntityMethod<()> {
     
     pub const FIRST_ID: u8 = 0x4E;
     pub const LAST_ID: u8 = 0xA6;
@@ -273,8 +266,25 @@ impl EntityMethod {
     }
 
     /// Convert a message id to method index.
-    pub const fn id_to_index(id: u8) -> u8 {
-        id - Self::FIRST_ID
+    pub const fn id_to_index(id: u8) -> u16 {
+        (id - Self::FIRST_ID) as _
+    }
+
+}
+
+impl<M: ExposedMethod> Element for EntityMethod<M> {
+
+    type Config = MethodConfig;
+
+    fn encode(&self, write: &mut impl Write, _config: &Self::Config) -> io::Result<()> {
+        self.method.encode(write)
+    }
+
+    fn decode(read: &mut impl Read, len: usize, config: &Self::Config) -> io::Result<Self> {
+        let index = EntityMethod::id_to_index(config.id);
+        Ok(Self {
+            method: M::decode(read, len, index)?,
+        })
     }
 
 }
@@ -296,9 +306,9 @@ impl EntityProperty {
         Self::FIRST_ID + index
     }
 
-    /// Convert a message id to property index.
-    pub const fn id_to_index(id: u8) -> u8 {
-        id - Self::FIRST_ID
+    /// Convert a message id to method index.
+    pub const fn id_to_index(id: u8) -> u16 {
+        (id - Self::FIRST_ID) as _
     }
 
 }

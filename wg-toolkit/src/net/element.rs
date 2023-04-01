@@ -31,16 +31,14 @@ pub trait Element: Sized {
     type Config;
 
     /// Encode the element with the given writer and the given configuration.
-    /// 
-    /// The numeric identifier of the element must be returned, zero can be
-    /// returned if the element is not intended to be a top element.
-    fn encode(&self, write: &mut impl Write, config: &Self::Config) -> io::Result<u8>;
+    fn encode(&self, write: &mut impl Write, config: &Self::Config) -> io::Result<()>;
 
     /// Decode the element from the given reader and the given configuration.
     /// 
-    /// The total length that is available in the reader is also given with
-    /// the numeric identifier of the element.
-    fn decode(read: &mut impl Read, len: usize, id: u8, config: &Self::Config) -> io::Result<Self>;
+    /// The total length that is available in the reader is also given. **Note
+    /// that** the given length will be equal to zero if the element's length
+    /// is set to [`ElementLength::Unknown`] (relevant for top elements).
+    fn decode(read: &mut impl Read, len: usize, config: &Self::Config) -> io::Result<Self>;
 
 }
 
@@ -59,16 +57,14 @@ pub trait TopElement: Element {
 pub trait SimpleElement: Sized {
 
     /// Encode the element with the given writer.
-    /// 
-    /// The numeric identifier of the element must be returned, zero can be
-    /// returned if the element is not intended to be a top element.
-    fn encode(&self, write: &mut impl Write) -> io::Result<u8>;
+    fn encode(&self, write: &mut impl Write) -> io::Result<()>;
 
     /// Decode the element from the given reader.
     /// 
-    /// The total length that is available in the reader is also given with
-    /// the numeric identifier of the element.
-    fn decode(read: &mut impl Read, len: usize, id: u8) -> io::Result<Self>;
+    /// The total length that is available in the reader is also given. **Note
+    /// that** the given length will be equal to zero if the element's length
+    /// is set to [`ElementLength::Unknown`] (relevant for top elements).
+    fn decode(read: &mut impl Read, len: usize) -> io::Result<Self>;
 
 }
 
@@ -77,13 +73,13 @@ impl<E: SimpleElement> Element for E {
     type Config = ();
 
     #[inline]
-    fn encode(&self, write: &mut impl Write, _config: &Self::Config) -> io::Result<u8> {
+    fn encode(&self, write: &mut impl Write, _config: &Self::Config) -> io::Result<()> {
         SimpleElement::encode(self, write)
     }
 
     #[inline]
-    fn decode(read: &mut impl Read, len: usize, id: u8, _config: &Self::Config) -> io::Result<Self> {
-        SimpleElement::decode(read, len, id)
+    fn decode(read: &mut impl Read, len: usize, _config: &Self::Config) -> io::Result<Self> {
+        SimpleElement::decode(read, len)
     }
 
 }
@@ -93,17 +89,15 @@ impl<E: SimpleElement> Element for E {
 /// automatically implements nothing for encode and provides the default 
 /// value on decoding without actually reading. The trait [`TopElement`]
 /// is also implemented to specify a fixed length of 0.
-pub trait EmptyElement: Default {
-    const ID: u8;
-}
+pub trait EmptyElement: Default {}
 
 impl<E: EmptyElement> SimpleElement for E {
 
-    fn encode(&self, _write: &mut impl Write) -> io::Result<u8> {
-        Ok(Self::ID)
+    fn encode(&self, _write: &mut impl Write) -> io::Result<()> {
+        Ok(())
     }
 
-    fn decode(_read: &mut impl Read, _len: usize, _id: u8) -> io::Result<Self> {
+    fn decode(_read: &mut impl Read, _len: usize) -> io::Result<Self> {
         Ok(Self::default())
     }
     
@@ -177,16 +171,15 @@ impl ElementLength {
 
 
 #[derive(Debug)]
-pub struct UnknownElement<const ID: u8>(pub Vec<u8>);
+pub struct UnknownElement(pub Vec<u8>);
 
-impl<const ID: u8> SimpleElement for UnknownElement<ID> {
+impl SimpleElement for UnknownElement {
 
-    fn encode(&self, write: &mut impl Write) -> io::Result<u8> {
-        write.write_blob(&self.0)?;
-        Ok(ID)
+    fn encode(&self, write: &mut impl Write) -> io::Result<()> {
+        write.write_blob(&self.0)
     }
 
-    fn decode(read: &mut impl Read, _len: usize, _id: u8) -> io::Result<Self> {
+    fn decode(read: &mut impl Read, _len: usize) -> io::Result<Self> {
         let mut buf = Vec::new();
         read.read_to_end(&mut buf)?;
         Ok(UnknownElement(buf))
@@ -194,20 +187,6 @@ impl<const ID: u8> SimpleElement for UnknownElement<ID> {
 
 }
 
-impl<const ID: u8> TopElement for UnknownElement<ID> {
+impl TopElement for UnknownElement {
     const LEN: ElementLength = ElementLength::Unknown;
 }
-
-// impl TopElement for UnknownElement {
-//     const LEN: ElementLength = ElementLength::Unknown;
-// }
-
-
-// TODO: Maybe do this later...
-// struct ElementSerializer<W: Write> {
-//     inner: W,
-// }
-
-// impl<W: Write> serde::Serializer for ElementSerializer<W> {
-    
-// }

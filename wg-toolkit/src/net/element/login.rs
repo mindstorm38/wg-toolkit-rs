@@ -37,12 +37,11 @@ impl Ping {
 
 impl SimpleElement for Ping {
 
-    fn encode(&self, write: &mut impl Write) -> io::Result<u8> {
-        write.write_u8(self.num)?;
-        Ok(Self::ID)
+    fn encode(&self, write: &mut impl Write) -> io::Result<()> {
+        write.write_u8(self.num)
     }
 
-    fn decode(read: &mut impl Read, _len: usize, _id: u8) -> io::Result<Self> {
+    fn decode(read: &mut impl Read, _len: usize) -> io::Result<Self> {
         Ok(Self { num: read.read_u8()? })
     }
 
@@ -176,23 +175,22 @@ impl Element for LoginRequest {
 
     type Config = LoginRequestEncryption;
 
-    fn encode(&self, write: &mut impl Write, config: &Self::Config) -> io::Result<u8> {
+    fn encode(&self, write: &mut impl Write, config: &Self::Config) -> io::Result<()> {
         write.write_u32(self.protocol)?;
         match config {
             LoginRequestEncryption::Clear => {
                 write.write_u8(0)?;
-                encode_login_params(write, self)?;
+                encode_login_params(write, self)
             }
             LoginRequestEncryption::Client(key) => {
                 write.write_u8(1)?;
-                encode_login_params(RsaWriter::new(write, &key), self)?;
+                encode_login_params(RsaWriter::new(write, &key), self)
             }
             LoginRequestEncryption::Server(_) => panic!("cannot encode with server login codec"),
         }
-        Ok(Self::ID)
     }
 
-    fn decode(read: &mut impl Read, _len: usize, _id: u8, config: &Self::Config) -> io::Result<Self> {
+    fn decode(read: &mut impl Read, _len: usize, config: &Self::Config) -> io::Result<Self> {
         let protocol = read.read_u32()?;
         if read.read_u8()? != 0 {
             if let LoginRequestEncryption::Server(key) = config {
@@ -266,7 +264,7 @@ impl Element for LoginResponse {
 
     type Config = LoginResponseEncryption;
 
-    fn encode(&self, write: &mut impl Write, config: &Self::Config) -> io::Result<u8> {
+    fn encode(&self, write: &mut impl Write, config: &Self::Config) -> io::Result<()> {
         
         match self {
             Self::Success(success) => {
@@ -300,11 +298,11 @@ impl Element for LoginResponse {
             Self::Unknown(code) => write.write_u8(*code)?
         }
 
-        Ok(0)
+        Ok(())
 
     }
 
-    fn decode(read: &mut impl Read, _len: usize, _id: u8, config: &Self::Config) -> io::Result<Self> {
+    fn decode(read: &mut impl Read, _len: usize, config: &Self::Config) -> io::Result<Self> {
         
         let error = match read.read_u8()? {
             1 => {
@@ -384,15 +382,15 @@ impl<E: Element> Element for ChallengeResponse<E> {
 
     type Config = E::Config;
 
-    fn encode(&self, write: &mut impl Write, config: &Self::Config) -> io::Result<u8> {
+    fn encode(&self, write: &mut impl Write, config: &Self::Config) -> io::Result<()> {
         write.write_f32(self.duration.as_secs_f32())?;
         self.data.encode(write, config)
     }
 
-    fn decode(read: &mut impl Read, len: usize, id: u8, config: &Self::Config) -> io::Result<Self> {
+    fn decode(read: &mut impl Read, len: usize, config: &Self::Config) -> io::Result<Self> {
         Ok(ChallengeResponse { 
             duration: Duration::from_secs_f32(read.read_f32()?), 
-            data: E::decode(read, len - 4, id, config)?
+            data: E::decode(read, len - 4, config)?
         })
     }
 
@@ -404,15 +402,15 @@ impl<E: Element> TopElement for ChallengeResponse<E> {
 
 impl SimpleElement for CuckooCycleResponse {
 
-    fn encode(&self, write: &mut impl Write) -> io::Result<u8> {
+    fn encode(&self, write: &mut impl Write) -> io::Result<()> {
         write.write_string_variable(&self.key)?;
         for &nonce in &self.solution {
             write.write_u32(nonce)?;
         }
-        Ok(0)
+        Ok(())
     }
 
-    fn decode(read: &mut impl Read, _len: usize, _id: u8) -> io::Result<Self> {
+    fn decode(read: &mut impl Read, _len: usize) -> io::Result<Self> {
 
         let key = read.read_string_variable()?;
         let mut solution = Vec::with_capacity(42);
