@@ -23,6 +23,10 @@ use base::BaseApp;
 use common::server_settings::ServerSettings;
 
 
+/// The game version this server support by default.
+const GAME_VERSION: &str = "eu_1.19.1_4";
+
+
 fn main() -> ExitCode {
 
     let matches = Command::new("wots")
@@ -36,7 +40,8 @@ fn main() -> ExitCode {
             .about("Start a simple World of Tanks server, composed of a single login and base applications")
             .arg(arg!(login_app_bind: --loginapp <BIND> "The address to bind the loginapp server.").default_value("127.0.0.1:20016"))
             .arg(arg!(base_app_bind: --baseapp <BIND> "The address to bind the loginapp server.").default_value("127.0.0.1:20017"))
-            .arg(arg!(priv_key_path: --privkey <PATH> "The path to the private key, used for loginapp encryption. Encryption is disabled if not provided.")))
+            .arg(arg!(priv_key_path: --privkey <PATH> "The path to the private key, used for loginapp encryption. Encryption is disabled if not provided."))
+            .arg(arg!(game_version: --version <ID> "The version identifier sent to the client and checked by it.").default_value(GAME_VERSION)))
         .get_matches();
 
     let res = match matches.subcommand() {
@@ -81,6 +86,8 @@ fn cmd_simple(matches: &ArgMatches) -> CmdResult<()> {
         _ => None,
     };
 
+    let required_version = matches.get_one::<String>("game_version").unwrap();
+
     // let server_settings_bytes = &include_bytes!("../../test.txt")[..41363];
     // let server_settings: Box<ServerSettings> = serde_pickle::from_slice(server_settings_bytes, serde_pickle::DeOptions::new().decode_strings()).unwrap();
     let server_settings = Box::new(ServerSettings::default());
@@ -90,6 +97,9 @@ fn cmd_simple(matches: &ArgMatches) -> CmdResult<()> {
 
     let mut base_app = BaseApp::new(base_app_bind, server_settings)
         .map_err(|e| format!("Failed to bind the baseapp: {e}"))?;
+
+    base_app.set_required_version(required_version);
+    println!("[ALL] Game version: {required_version}");
 
     println!("[LOGIN] Running on {:?}", login_app.app.addr());
     println!("[BASE] Running on {:?}", base_app.app.addr());

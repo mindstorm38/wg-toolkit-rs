@@ -1,8 +1,8 @@
-use std::borrow::Cow;
-use std::collections::HashMap;
-use std::collections::hash_map::Entry;
 use std::net::{SocketAddr, SocketAddrV4};
+use std::collections::hash_map::Entry;
+use std::collections::HashMap;
 use std::time::Instant;
+use std::borrow::Cow;
 use std::sync::Arc;
 use std::io;
 
@@ -47,6 +47,8 @@ pub struct BaseApp {
     start_time: Instant,
     /// The server settings, sent to new clients.
     server_settings: Box<ServerSettings>,
+    /// The required version string, sent to the client and then checked by it.
+    required_version: String,
 }
 
 impl BaseApp {
@@ -62,7 +64,13 @@ impl BaseApp {
             logged_counter: 0,
             start_time: Instant::now(),
             server_settings,
+            required_version: "eu_1.19.1_4".into(),
         })
+    }
+
+    #[inline]
+    pub fn set_required_version(&mut self, version: impl Into<String>) {
+        self.required_version = version.into();
     }
 
     pub fn handle(&mut self, event: &Event) {
@@ -197,7 +205,7 @@ impl BaseApp {
                                 entity_type: 1,
                                 unk: String::new(),
                                 entity_data: entity::Account {
-                                    required_version: "eu_1.19.1_4".into(),
+                                    required_version: self.required_version.clone(),
                                     name: "Mindstorm38_".into(),
                                     initial_server_settings: Cow::Borrowed(&self.server_settings),
                                 },
