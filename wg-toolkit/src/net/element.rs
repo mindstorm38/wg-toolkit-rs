@@ -188,50 +188,101 @@ impl ElementLength {
 }
 
 
-/// This structure can be used to hold ranges of elements' ids.
+/// An utility structure for storing ranges of element's ids. It provides way
+/// of converting between **element id** (with optional **sub-id**) and 
+/// **exposed id**.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ElementIdRange {
-    /// Included first element id.
     pub first: u8,
-    /// Included last element id.
     pub last: u8,
 }
 
 impl ElementIdRange {
 
-    /// Construct a message range with included and excluded 
     pub const fn new(first: u8, last: u8) -> Self {
         Self { first, last }
     }
 
-    pub const fn contains(self, id: u8) -> bool {
-        self.first <= id && id <= self.last
-    }
-
-    pub const fn len(self) -> u8 {
+    /// Returns the number of slots in this range.
+    #[inline]
+    pub const fn slots_count(self) -> u8 {
         self.last - self.first + 1
     }
 
+    /// Returns the number of slots that requires a sub-id. These slots are 
+    /// starting from the end of the range. For example, if this function
+    /// returns 1, this means that the last slot (`.last`), if used, will be
+    /// followed by a sub-id.
+    /// 
+    /// You must given the total number of exposed ids, because the presence
+    /// of sub-id depends on how exposed ids can fit in the id range.
+    #[inline]
+    pub const fn sub_slots_count(self, exposed_count: u16) -> u8 {
+        // Calculate the number of excess exposed ids, compared to slots count.
+        let excess_count = exposed_count as i32 - self.slots_count() as i32;
+        // If the are excess slots, calculate how much additional bytes are 
+        // required to represent such number.
+        if excess_count > 0 {
+            (excess_count / 255 + 1) as u8
+        } else {
+            0
+        }
+    }
+    
+    /// Returns the number of full slots that don't require a sub-id. This
+    /// is the opposite of `sub_slots_count`, read its documentation.
+    #[inline]
+    pub const fn full_slots_count(self, exposed_count: u16) -> u8 {
+        self.slots_count() - self.sub_slots_count(exposed_count)
+    }
+
+    /// Get the element's id and optional sub-id from the given exposed id
+    /// and total count of exposed ids.
+    pub fn from_exposed_id(self, exposed_count: u16, exposed_id: u16) -> (u8, Option<u8>) {
+
+        let full_slots = self.full_slots_count(exposed_count);
+
+        if exposed_id < full_slots as u16 {
+            // If the exposed id fits in the full slots.
+            (self.first + exposed_id as u8, None)
+        } else {
+            // If the given exposed id require to be put in a sub-slot.
+            // First we get how much offset the given exposed id is from the first
+            // sub slot (full_slots represent the first sub slot).
+            let overflow = exposed_id - full_slots as u16;
+            let first_sub_slot = self.first + full_slots;
+            // Casts are safe.
+            ((first_sub_slot as u16 + overflow / 256) as u8, Some((overflow % 256) as u8))
+        }
+
+    }
+
+    /// Get the exposed id from an element, but only return some exposed id if
+    /// it fits into 
+    pub fn to_exposed_id_checked(self, exposed_count: u16, element_id: u8) -> Option<u16> {
+        let raw_exposed_id = element_id - self.first;
+        (raw_exposed_id < self.full_slots_count(exposed_count)).then_some(raw_exposed_id as u16)
+    }
+
+    /// Get the exposed id from an element id and optionally a sub-id, which 
+    /// should be lazily provided with a closure.
+    pub fn to_exposed_id(self, exposed_count: u16, element_id: u8, sub_id_getter: impl FnOnce() -> u8) -> u16 {
+        
+        // This is the raw exposed id, it will be used, with full_slots to determine
+        // if a sub-id is needed.
+        let exposed_id = element_id - self.first;
+        let full_slots = self.full_slots_count(exposed_count);
+        
+        if exposed_id < full_slots {
+            exposed_id as u16
+        } else {
+            // Calculate of the sub-slot offset within sub-slots.
+            let offset_id = exposed_id - full_slots;
+            let sub_id = sub_id_getter();
+            // Calculate the final exposed id from the sub-id and offset.
+            full_slots as u16 + 256 * offset_id as u16 + sub_id as u16
+        }
+        
+    }
+
 }
-
-
-// #[derive(Debug)]
-// pub struct UnknownElement(pub Vec<u8>);
-
-// impl SimpleElement for UnknownElement {
-
-//     fn encode(&self, write: &mut impl Write) -> io::Result<()> {
-//         write.write_blob(&self.0)
-//     }
-
-//     fn decode(read: &mut impl Read, _len: usize) -> io::Result<Self> {
-//         let mut buf = Vec::new();
-//         read.read_to_end(&mut buf)?;
-//         Ok(UnknownElement(buf))
-//     }
-
-// }
-
-// impl TopElement for UnknownElement {
-//     const LEN: ElementLength = ElementLength::Unknown;
-// }

@@ -9,7 +9,7 @@ use glam::Vec3A;
 use crate::net::bundle::Bundle;
 use crate::util::io::*;
 
-use super::{Element, SimpleElement, TopElement, EmptyElement, ElementLength};
+use super::{Element, SimpleElement, TopElement, EmptyElement, ElementLength, ElementIdRange};
 use super::entity::ExposedMethod;
 
 
@@ -258,18 +258,27 @@ pub struct EntityMethodBundle<'a>(pub &'a mut Bundle);
 
 impl<'a> EntityMethodBundle<'a> {
 
-    pub const FIRST_ID: u8 = 0x4E;
-    pub const LAST_ID: u8 = 0xA6;
+    pub const ID_RANGE: ElementIdRange = ElementIdRange::new(0x4E, 0xA6);
 
     /// Add the given method call to the bundle.
     pub fn add_method<M: ExposedMethod>(&mut self, method: M) {
 
-        struct MethodElement<M: ExposedMethod>(M, ElementLength);
+        struct MethodElement<M: ExposedMethod> {
+            method: M,
+            sub_id: Option<u8>,
+        }
 
         impl<M: ExposedMethod> SimpleElement for MethodElement<M> {
 
             fn encode(&self, write: &mut impl Write) -> io::Result<()> {
-                self.0.encode(write)
+
+                // Write the sub-id if required.
+                if let Some(sub_id) = self.sub_id {
+                    write.write_u8(sub_id)?;
+                }
+
+                self.method.encode(write)
+
             }
 
             fn decode(_read: &mut impl Read, _len: usize) -> io::Result<Self> {
@@ -281,17 +290,27 @@ impl<'a> EntityMethodBundle<'a> {
         impl<M: ExposedMethod> TopElement for MethodElement<M> {
 
             const LEN: ElementLength = ElementLength::Callback(|id| {
-                ElementLength::Variable16
+                
+                if let Some(exposed_id) = EntityMethodBundle::ID_RANGE.to_exposed_id_checked(M::count(), id) {
+                    M::len(exposed_id)
+                } else {
+                    // All methods that are in sub-slots are encoded with variable 16.
+                    ElementLength::Variable16
+                }
+
             });
 
         }
 
-        // TODO: It will be later needed to check for overflow of id.
-        let index = method.index();
-        let id = Self::FIRST_ID + index as u8;
-        let len = M::len(index);
+        let (
+            element_id, 
+            sub_id
+        ) = EntityMethodBundle::ID_RANGE.from_exposed_id(M::count(), method.index());
 
-        self.0.add_simple_element(id, MethodElement(method, len));
+        self.0.add_simple_element(element_id, MethodElement {
+            method,
+            sub_id,
+        });
 
     }
 
