@@ -112,47 +112,64 @@ impl<E: EmptyElement> TopElement for E {
 /// This describes how the length of an element should be encoded in the packet.
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum ElementLength {
-    /// The size of the element is fixed, and every written element must be of this size.
+    /// A fixed length element, the length is not written in the header.
     Fixed(u32),
-    /// The size of the element is variable, and is encoded on 8 bits.
+    /// The length is encoded on 8 bits in the element's header.
     Variable8,
-    /// The size of the element is variable, and is encoded on 16 bits.
+    /// The length is encoded on 16 bits in the element's header.
     Variable16,
-    /// The size of the element is variable, and is encoded on 24 bits.
+    /// The length is encoded on 24 bits in the element's header.
     Variable24,
-    /// The size of the element is variable, and is encoded on 32 bits.
+    /// The length is encoded on 32 bits in the element's header.
     Variable32,
-    /// The size of the element is unknown at runtime and will be determined by
-    /// the decoder or the encoder by how much the reader or write is consumed.
-    /// 
-    /// *This is the way to go for lengths of type Callback in BigWorld engine.*
-    Unknown,
+    /// The real length of the element is queried dynamically with a callback,
+    /// given the element's identifier.
+    Callback(fn(id: u8) -> ElementLength),
+    // /// The size of the element is unknown at runtime and will be determined by
+    // /// the decoder or the encoder by how much the reader or write is consumed.
+    // /// 
+    // /// *This is the way to go for lengths of type Callback in BigWorld engine.*
+    // Unknown,
 }
 
 impl ElementLength {
 
     /// Read the length from a given reader.
-    pub fn read<R: Read>(&self, mut reader: R) -> std::io::Result<Option<u32>> {
-        match self {
-            Self::Fixed(len) => Ok(Some(*len)),
-            Self::Variable8 => reader.read_u8().map(|n| Some(n as u32)),
-            Self::Variable16 => reader.read_u16().map(|n| Some(n as u32)),
-            Self::Variable24 => reader.read_u24().map(|n| Some(n)),
-            Self::Variable32 => reader.read_u32().map(|n| Some(n)),
-            Self::Unknown => Ok(None),
+    pub fn read(mut self, mut reader: impl Read, id: u8) -> std::io::Result<u32> {
+
+        // If the length is a callback, get the real length from the message id.
+        if let Self::Callback(cb) = self {
+            self = cb(id);
         }
+
+        match self {
+            Self::Fixed(len) => Ok(len),
+            Self::Variable8 => reader.read_u8().map(|n| n as u32),
+            Self::Variable16 => reader.read_u16().map(|n| n as u32),
+            Self::Variable24 => reader.read_u24().map(|n| n),
+            Self::Variable32 => reader.read_u32().map(|n| n),
+            // Self::Unknown => Ok(None),
+            Self::Callback(_) => unreachable!("a callback returned a callback length")
+        }
+
     }
 
     /// Write the length to the given writer.
-    pub fn write<W: Write>(&self, mut writer: W, len: u32) -> std::io::Result<()> {
+    pub fn write(self, mut writer: impl Write, len: u32) -> std::io::Result<()> {
+
         match self {
-            Self::Fixed(fixed_len) => { assert_eq!(*fixed_len, len); Ok(()) },
+            Self::Fixed(expected_len) => { 
+                assert_eq!(expected_len, len); 
+                Ok(()) 
+            }
             Self::Variable8 => writer.write_u8(len as u8),
             Self::Variable16 => writer.write_u16(len as u16),
             Self::Variable24 => writer.write_u24(len),
             Self::Variable32 => writer.write_u32(len),
-            Self::Unknown => Ok(()),
+            Self::Callback(_) => Ok(())
+            // Self::Unknown => Ok(()),
         }
+
     }
 
     /// Return the size in bytes of this type of length.
@@ -163,30 +180,58 @@ impl ElementLength {
             Self::Variable16 => 2,
             Self::Variable24 => 3,
             Self::Variable32 => 4,
-            Self::Unknown => 0,
+            Self::Callback(_) => 0,
+            // Self::Unknown => 0,
         }
     }
 
 }
 
 
-#[derive(Debug)]
-pub struct UnknownElement(pub Vec<u8>);
+/// This structure can be used to hold ranges of elements' ids.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ElementIdRange {
+    /// Included first element id.
+    pub first: u8,
+    /// Included last element id.
+    pub last: u8,
+}
 
-impl SimpleElement for UnknownElement {
+impl ElementIdRange {
 
-    fn encode(&self, write: &mut impl Write) -> io::Result<()> {
-        write.write_blob(&self.0)
+    /// Construct a message range with included and excluded 
+    pub const fn new(first: u8, last: u8) -> Self {
+        Self { first, last }
     }
 
-    fn decode(read: &mut impl Read, _len: usize) -> io::Result<Self> {
-        let mut buf = Vec::new();
-        read.read_to_end(&mut buf)?;
-        Ok(UnknownElement(buf))
+    pub const fn contains(self, id: u8) -> bool {
+        self.first <= id && id <= self.last
+    }
+
+    pub const fn len(self) -> u8 {
+        self.last - self.first + 1
     }
 
 }
 
-impl TopElement for UnknownElement {
-    const LEN: ElementLength = ElementLength::Unknown;
-}
+
+// #[derive(Debug)]
+// pub struct UnknownElement(pub Vec<u8>);
+
+// impl SimpleElement for UnknownElement {
+
+//     fn encode(&self, write: &mut impl Write) -> io::Result<()> {
+//         write.write_blob(&self.0)
+//     }
+
+//     fn decode(read: &mut impl Read, _len: usize) -> io::Result<Self> {
+//         let mut buf = Vec::new();
+//         read.read_to_end(&mut buf)?;
+//         Ok(UnknownElement(buf))
+//     }
+
+// }
+
+// impl TopElement for UnknownElement {
+//     const LEN: ElementLength = ElementLength::Unknown;
+// }

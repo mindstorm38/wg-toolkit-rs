@@ -6,10 +6,11 @@ use std::io::{self, Write, Read};
 
 use glam::Vec3A;
 
+use crate::net::bundle::Bundle;
 use crate::util::io::*;
 
 use super::{Element, SimpleElement, TopElement, EmptyElement, ElementLength};
-use super::entity::{ExposedMethod, MethodConfig};
+use super::entity::ExposedMethod;
 
 
 /// The server informs us how frequently it is going to send update
@@ -249,66 +250,73 @@ impl SimpleElement for ForcedPosition {
 }
 
 
-/// A call to a selected entity's method.
-#[derive(Debug)]
-pub struct EntityMethod<M> {
-    pub method: M,
-}
 
-impl EntityMethod<()> {
-    
+
+
+/// A wrapper for a bundle that can be used 
+pub struct EntityMethodBundle<'a>(pub &'a mut Bundle);
+
+impl<'a> EntityMethodBundle<'a> {
+
     pub const FIRST_ID: u8 = 0x4E;
     pub const LAST_ID: u8 = 0xA6;
 
-    /// Convert a method index to a message id.
-    pub const fn index_to_id(index: u8) -> u8 {
-        Self::FIRST_ID + index
-    }
+    /// Add the given method call to the bundle.
+    pub fn add_method<M: ExposedMethod>(&mut self, method: M) {
 
-    /// Convert a message id to method index.
-    pub const fn id_to_index(id: u8) -> u16 {
-        (id - Self::FIRST_ID) as _
-    }
+        struct MethodElement<M: ExposedMethod>(M, ElementLength);
 
-}
+        impl<M: ExposedMethod> SimpleElement for MethodElement<M> {
 
-impl<M: ExposedMethod> Element for EntityMethod<M> {
+            fn encode(&self, write: &mut impl Write) -> io::Result<()> {
+                self.0.encode(write)
+            }
 
-    type Config = MethodConfig;
+            fn decode(_read: &mut impl Read, _len: usize) -> io::Result<Self> {
+                unimplemented!("decode is unsupported")
+            }
 
-    fn encode(&self, write: &mut impl Write, _config: &Self::Config) -> io::Result<()> {
-        self.method.encode(write)
-    }
+        }
 
-    fn decode(read: &mut impl Read, len: usize, config: &Self::Config) -> io::Result<Self> {
-        let index = EntityMethod::id_to_index(config.id);
-        Ok(Self {
-            method: M::decode(read, len, index)?,
-        })
-    }
+        impl<M: ExposedMethod> TopElement for MethodElement<M> {
 
-}
+            const LEN: ElementLength = ElementLength::Callback(|id| {
+                ElementLength::Variable16
+            });
 
+        }
 
-/// Setting a selected entity's property value.
-#[derive(Debug)]
-pub struct EntityProperty {
+        // TODO: It will be later needed to check for overflow of id.
+        let index = method.index();
+        let id = Self::FIRST_ID + index as u8;
+        let len = M::len(index);
 
-}
+        self.0.add_simple_element(id, MethodElement(method, len));
 
-impl EntityProperty {
-
-    pub const FIRST_ID: u8 = 0xA7;
-    pub const LAST_ID: u8 = 0xFE;
-
-    /// Convert a property index to a message id.
-    pub const fn index_to_id(index: u8) -> u8 {
-        Self::FIRST_ID + index
-    }
-
-    /// Convert a message id to method index.
-    pub const fn id_to_index(id: u8) -> u16 {
-        (id - Self::FIRST_ID) as _
     }
 
 }
+
+
+// /// Setting a selected entity's property value.
+// #[derive(Debug)]
+// pub struct EntityProperty {
+
+// }
+
+// impl EntityProperty {
+
+//     pub const FIRST_ID: u8 = 0xA7;
+//     pub const LAST_ID: u8 = 0xFE;
+
+//     /// Convert a property index to a message id.
+//     pub const fn index_to_id(index: u8) -> u8 {
+//         Self::FIRST_ID + index
+//     }
+
+//     /// Convert a message id to method index.
+//     pub const fn id_to_index(id: u8) -> u16 {
+//         (id - Self::FIRST_ID) as _
+//     }
+
+// }

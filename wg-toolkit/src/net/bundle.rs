@@ -472,7 +472,7 @@ impl<'a> BundleElementReader<'a> {
         let start_packet = self.bundle_reader.packet().unwrap();
 
         let elt_id = self.bundle_reader.read_u8()?;
-        let elt_len = E::LEN.read(&mut self.bundle_reader)?;
+        let elt_len = E::LEN.read(&mut self.bundle_reader, elt_id)?;
 
         let reply_id = if request {
             let reply_id = self.bundle_reader.read_u32()?;
@@ -484,23 +484,28 @@ impl<'a> BundleElementReader<'a> {
 
         let elt_data_begin = self.bundle_reader.pos;
 
-        let element = 
-            if let Some(len) = elt_len {
-                let mut limited = Read::take(&mut self.bundle_reader, len as u64);
-                E::decode(&mut limited, len as usize, config)
-            } else {
-                E::decode(&mut self.bundle_reader, 0, config)
-            }?;
+        let mut elt_reader = Read::take(&mut self.bundle_reader, elt_len as u64);
+        let element = E::decode(&mut elt_reader, elt_len as usize, config)?;
+
+        // let element = 
+        //     if let Some(len) = elt_len {
+        //         let mut limited = Read::take(&mut self.bundle_reader, len as u64);
+        //         E::decode(&mut limited, len as usize, config)
+        //     } else {
+        //         E::decode(&mut self.bundle_reader, 0, config)
+        //     }?;
 
         // We seek to the end only if we want to go next.
         if next {
 
-            // If decoding is successful (and element has determined length), 
-            // jump to the next packet, this happen if not all the element
-            // has been read.
-            if let Some(len) = elt_len {
-                self.bundle_reader.goto(elt_data_begin + len as usize);
-            }
+            // // If decoding is successful (and element has determined length), 
+            // // jump to the next packet, this happen if not all the element
+            // // has been read.
+            // if let Some(len) = elt_len {
+            //     self.bundle_reader.goto(elt_data_begin + len as usize);
+            // }
+
+            self.bundle_reader.goto(elt_data_begin + elt_len as usize);
 
             // Here we check if we have changed packets during decoding of the element.
             // If changed, we change the next request offset.

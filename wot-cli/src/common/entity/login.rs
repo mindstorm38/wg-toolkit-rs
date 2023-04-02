@@ -31,28 +31,28 @@ impl SimpleElement for Login {
 }
 
 
-// /// Describe methods sent from the server to the client when the selected
-// /// entity is [`Login`].
-// pub enum LoginClientMethod {
-//     /// Kick the client with a periphery identifier.
-//     KickFromServer {
-//         checkout_periphery_id: i32,
-//     },
-//     /// Send the login queue number.
-//     QueueNumber {
-//         queue_number: u64,
-//     },
-//     /// Set the periphery rooting group for the client.
-//     PeripheryRoutingGroup {
-//         /// The routing group text identifier.
-//         routing_group: String,
-//         /// The list of available periphery identifiers available to the
-//         /// client. Note that theses groups and periphery identifiers are
-//         /// sent as part of the global server settings:
-//         /// [`crate::common::ServerSettings`].
-//         available_hosts: Vec<i32>,
-//     },
-// }
+/// Describe methods sent from the server to the client when the selected
+/// entity is [`Login`].
+pub enum LoginClientMethod {
+    /// Kick the client with a periphery identifier.
+    KickFromServer {
+        checkout_periphery_id: i32,
+    },
+    /// Send the login queue number.
+    QueueNumber {
+        queue_number: u64,
+    },
+    /// Set the periphery rooting group for the client.
+    PeripheryRoutingGroup {
+        /// The routing group text identifier.
+        routing_group: String,
+        /// The list of available periphery identifiers available to the
+        /// client. Note that theses groups and periphery identifiers are
+        /// sent as part of the global server settings:
+        /// [`crate::common::ServerSettings`].
+        available_hosts: Vec<i32>,
+    },
+}
 
 
 
