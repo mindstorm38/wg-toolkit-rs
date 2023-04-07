@@ -6,17 +6,16 @@ use std::io::{self, Write, Read};
 
 use glam::Vec3A;
 
-use crate::net::bundle::Bundle;
 use crate::util::io::*;
 
-use super::{Element, SimpleElement, TopElement, EmptyElement, ElementLength, ElementIdRange};
-use super::entity::ExposedMethod;
+use super::{Element, SimpleElement, TopElement, NoopElement, ElementLength, ElementIdRange};
+use super::entity::{MethodCall};
 
 
 /// The server informs us how frequently it is going to send update
 /// the the client, and also give the server game time (exactly the
 /// same as [`SetGameTime`] element, but inlined here).
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct UpdateFrequencyNotification {
     /// The frequency in hertz.
     pub frequency: u8,
@@ -52,7 +51,7 @@ impl TopElement for UpdateFrequencyNotification {
 
 
 /// The server informs us of the current (server) game time.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SetGameTime {
     /// The server game time.
     pub game_time: u32,
@@ -80,7 +79,7 @@ impl TopElement for SetGameTime {
 
 
 /// The server wants to resets the entities in the Area of Interest (AoI).
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ResetEntities {
     pub keep_player_on_base: bool,
 }
@@ -112,7 +111,7 @@ impl TopElement for ResetEntities {
 /// The remaining data will later be decoded properly depending on the
 /// entity type, it's used for initializing its properties (TODO).
 /// For example the `Login` entity receive the account UID.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CreateBasePlayer<E> {
     /// The unique identifier of the entity being created.
     pub entity_id: u32,
@@ -172,7 +171,7 @@ impl<E: Element<Config = ()>> TopElement for CreateBasePlayer<E> {
 
 
 /// It is used as a timestamp for the elements in a bundle.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TickSync {
     pub tick: u8,
 }
@@ -200,21 +199,24 @@ impl TopElement for TickSync {
 
 /// Sent by the server to inform that subsequent elements will target
 /// the player entity.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct SelectPlayerEntity;
 
 impl SelectPlayerEntity {
     pub const ID: u8 = 0x1A;
 }
 
-impl EmptyElement for SelectPlayerEntity { }
+impl NoopElement for SelectPlayerEntity { }
+impl TopElement for SelectPlayerEntity {
+    const LEN: ElementLength = ElementLength::Fixed(0);
+}
 
 
 /// This is when an update is being forced back for an (ordinarily)
 /// client controlled entity, including for the player. Usually this is
 /// due to a physics correction from the server, but it could be for any
 /// reason decided by the server (e.g. server-initiated teleport).
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ForcedPosition {
     pub entity_id: u32,
     pub space_id: u32,
@@ -250,71 +252,20 @@ impl SimpleElement for ForcedPosition {
 }
 
 
+pub const ENTITY_METHOD_ID_RANGE: ElementIdRange = ElementIdRange::new(0x4E, 0xA6);
 
 
+/// Call a method on the currently selected client's entity.
+pub struct EntityMethod<M: MethodCall> {
+    pub method: M,
+}
 
-/// A wrapper for a bundle that can be used 
-pub struct EntityMethodBundle<'a>(pub &'a mut Bundle);
+impl<M: MethodCall> EntityMethod<M> {
 
-impl<'a> EntityMethodBundle<'a> {
 
-    pub const ID_RANGE: ElementIdRange = ElementIdRange::new(0x4E, 0xA6);
-
-    /// Add the given method call to the bundle.
-    pub fn add_method<M: ExposedMethod>(&mut self, method: M) {
-
-        struct MethodElement<M: ExposedMethod> {
-            method: M,
-            sub_id: Option<u8>,
-        }
-
-        impl<M: ExposedMethod> SimpleElement for MethodElement<M> {
-
-            fn encode(&self, write: &mut impl Write) -> io::Result<()> {
-
-                // Write the sub-id if required.
-                if let Some(sub_id) = self.sub_id {
-                    write.write_u8(sub_id)?;
-                }
-
-                self.method.encode(write)
-
-            }
-
-            fn decode(_read: &mut impl Read, _len: usize) -> io::Result<Self> {
-                unimplemented!("decode is unsupported")
-            }
-
-        }
-
-        impl<M: ExposedMethod> TopElement for MethodElement<M> {
-
-            const LEN: ElementLength = ElementLength::Callback(|id| {
-                
-                if let Some(exposed_id) = EntityMethodBundle::ID_RANGE.to_exposed_id_checked(M::count(), id) {
-                    M::len(exposed_id)
-                } else {
-                    // All methods that are in sub-slots are encoded with variable 16.
-                    ElementLength::Variable16
-                }
-
-            });
-
-        }
-
-        let (
-            element_id, 
-            sub_id
-        ) = EntityMethodBundle::ID_RANGE.from_exposed_id(M::count(), method.index());
-
-        self.0.add_simple_element(element_id, MethodElement {
-            method,
-            sub_id,
-        });
-
-    }
 
 }
+
 
 
 // /// Setting a selected entity's property value.

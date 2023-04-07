@@ -38,14 +38,14 @@ impl TopElement for ReplyHeader {
 
 /// A wrapper for a reply element, with the request ID and the underlying element.
 #[derive(Debug)]
-pub struct Reply<E: Element> {
+pub struct Reply<E> {
     /// The request ID this reply is for.
     pub request_id: u32,
     /// The inner reply element.
     pub element: E
 }
 
-impl<E: Element> Reply<E> {
+impl<E> Reply<E> {
 
     #[inline]
     pub fn new(request_id: u32, element: E) -> Self {

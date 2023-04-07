@@ -11,8 +11,7 @@ use rand::rngs::OsRng;
 use rand::RngCore;
 
 use wgtk::net::bundle::{BundleElement, Bundle};
-use wgtk::net::app::{App, Event, EventKind};
-use wgtk::net::element::UnknownElement;
+use wgtk::net::socket::{WgSocket, Event, EventKind};
 
 use wgtk::net::element::base::{
     ClientAuth, ServerSessionKey, ClientSessionKey,
@@ -36,7 +35,7 @@ use crate::common::entity;
 /// The state of the base app. It is the app where player are playing.
 pub struct BaseApp {
     /// Underlying application.
-    pub app: App,
+    pub app: WgSocket,
     /// List of clients pending for switching from login app to base app.
     pending_clients: HashMap<u32, PendingBaseClient>,
     /// List of clients logged in the base app mapped to their socket address.
@@ -58,7 +57,7 @@ impl BaseApp {
 
     pub fn new(addr: SocketAddrV4, server_settings: Box<ServerSettings>) -> io::Result<Self> {
         Ok(Self {
-            app: App::new(addr)?,
+            app: WgSocket::new(addr)?,
             pending_clients: HashMap::new(),
             logged_clients: HashMap::new(),
             logged_counter: 0,
@@ -123,7 +122,7 @@ impl BaseApp {
                         self.logged_clients.insert(addr, BaseClient::new(logged_key));
 
                         println!("{prefix} <-- Session key: {logged_key}");
-                        self.app.send(Bundle::new().add_simple_reply(ServerSessionKey {
+                        self.app.send(Bundle::new().write_simple_reply(ServerSessionKey {
                             session_key: logged_key,
                         }, client_auth.request_id.unwrap()), addr).unwrap();
 
@@ -154,7 +153,7 @@ impl BaseApp {
                             client.login_sent = true;
                             client.account_to_send = true;
 
-                            bundle.add_simple_element(UpdateFrequencyNotification::ID, UpdateFrequencyNotification {
+                            bundle.write_simple_element(UpdateFrequencyNotification::ID, UpdateFrequencyNotification {
                                 frequency: Self::UPDATE_FREQ,
                                 game_time: self.current_time(),
                             });
@@ -164,7 +163,7 @@ impl BaseApp {
                             bundle.clear();
                             
                             self.timestamp_bundle(&mut bundle);
-                            bundle.add_simple_element(CreateBasePlayer::ID, CreateBasePlayer {
+                            bundle.write_simple_element(CreateBasePlayer::ID, CreateBasePlayer {
                                 entity_id: 37289213,
                                 entity_type: 11,
                                 unk: String::new(),
@@ -178,8 +177,8 @@ impl BaseApp {
                             bundle.clear();
 
                             self.timestamp_bundle(&mut bundle);
-                            bundle.add_simple_element(SelectPlayerEntity::ID, SelectPlayerEntity);
-                            bundle.add_simple_element(EntityMethod::index_to_id(2), UnknownElement(vec![
+                            bundle.write_simple_element(SelectPlayerEntity::ID, SelectPlayerEntity);
+                            bundle.write_simple_element(EntityMethod::index_to_id(2), UnknownElement(vec![
                                 21, 7, 100, 101, 102, 97, 117, 108, 116, 12, 128, 2, 93, 113, 1, 40, 75, 201, 75, 202, 101, 46
                             ]));
                             println!("{prefix} <-- Select player entity");
@@ -188,7 +187,7 @@ impl BaseApp {
                             bundle.clear();
 
                             self.timestamp_bundle(&mut bundle);
-                            bundle.add_simple_element(ResetEntities::ID, ResetEntities { 
+                            bundle.write_simple_element(ResetEntities::ID, ResetEntities { 
                                 keep_player_on_base: false
                             });
                             println!("{prefix} <-- Reset entities (false)");
@@ -200,7 +199,7 @@ impl BaseApp {
                             client.account_to_send = false;
 
                             self.timestamp_bundle(&mut bundle);
-                            bundle.add_simple_element(CreateBasePlayer::ID, CreateBasePlayer {
+                            bundle.write_simple_element(CreateBasePlayer::ID, CreateBasePlayer {
                                 entity_id: 37289214,
                                 entity_type: 1,
                                 unk: String::new(),
@@ -216,8 +215,8 @@ impl BaseApp {
                             bundle.clear();
 
                             self.timestamp_bundle(&mut bundle);
-                            bundle.add_simple_element(SelectPlayerEntity::ID, SelectPlayerEntity);
-                            bundle.add_simple_element(EntityMethod::index_to_id(43), UnknownElement(vec![
+                            bundle.write_simple_element(SelectPlayerEntity::ID, SelectPlayerEntity);
+                            bundle.write_simple_element(EntityMethod::index_to_id(43), UnknownElement(vec![
                                 32, 1, 255, 28, 1, 0, 128, 2, 125, 113, 1, 40, 85, 9, 115, 101, 114, 118, 101, 114, 85, 84, 67, 113, 2, 71, 65, 216, 255, 76, 97, 86, 57, 210, 85, 15, 99, 117, 114, 114, 101, 110, 116, 86, 101, 104, 73, 110, 118, 73, 68, 113, 3, 75, 0, 85, 10, 100, 97, 116, 97, 98, 97, 115, 101, 73, 68, 113, 4, 74, 121, 37, 237, 30, 85, 14, 97, 111, 103, 97, 115, 83, 116, 97, 114, 116, 101, 100, 65, 116, 113, 5, 71, 65, 216, 255, 76, 97, 85, 226, 109, 85, 16, 115, 101, 115, 115, 105, 111, 110, 83, 116, 97, 114, 116, 101, 100, 65, 116, 113, 6, 74, 133, 49, 253, 99, 85, 22, 98, 111, 111, 116, 99, 97, 109, 112, 67, 111, 109, 112, 108, 101, 116, 101, 100, 67, 111, 117, 110, 116, 113, 7, 75, 1, 85, 14, 105, 115, 65, 111, 103, 97, 115, 69, 110, 97, 98, 108, 101, 100, 113, 8, 136, 85, 16, 98, 111, 111, 116, 99, 97, 109, 112, 82, 117, 110, 67, 111, 117, 110, 116, 113, 9, 75, 0, 85, 14, 99, 111, 108, 108, 101, 99, 116, 85, 105, 83, 116, 97, 116, 115, 113, 10, 136, 85, 28, 105, 115, 76, 111, 110, 103, 68, 105, 115, 99, 111, 110, 110, 101, 99, 116, 101, 100, 70, 114, 111, 109, 67, 101, 110, 116, 101, 114, 113, 11, 137, 85, 11, 108, 111, 103, 85, 88, 69, 118, 101, 110, 116, 115, 113, 12, 137, 85, 20, 98, 111, 111, 116, 99, 97, 109, 112, 78, 101, 101, 100, 65, 119, 97, 114, 100, 105, 110, 103, 113, 13, 137, 117, 46
                             ]));
                             println!("{prefix} <-- Select player entity");
@@ -295,7 +294,7 @@ impl BaseApp {
 
     /// Append a tick sync message to this bundle according to the current time.
     fn timestamp_bundle(&self, bundle: &mut Bundle) {
-        bundle.add_simple_element(TickSync::ID, TickSync { 
+        bundle.write_simple_element(TickSync::ID, TickSync { 
             tick: self.current_time_tick() 
         });
     }

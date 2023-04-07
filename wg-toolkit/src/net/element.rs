@@ -85,13 +85,12 @@ impl<E: SimpleElement> Element for E {
 }
 
 
-/// An alternative trait to both [`Element`] and [`TopElement`] that 
-/// automatically implements nothing for encode and provides the default 
-/// value on decoding without actually reading. The trait [`TopElement`]
-/// is also implemented to specify a fixed length of 0.
-pub trait EmptyElement: Default {}
+/// An alternative trait to both [`Element`] that automatically implements 
+/// nothing for encode and provides the default value on decoding without 
+/// actually reading.
+pub trait NoopElement: Default {}
 
-impl<E: EmptyElement> SimpleElement for E {
+impl<E: NoopElement> SimpleElement for E {
 
     fn encode(&self, _write: &mut impl Write) -> io::Result<()> {
         Ok(())
@@ -103,7 +102,11 @@ impl<E: EmptyElement> SimpleElement for E {
     
 }
 
-impl<E: EmptyElement> TopElement for E {
+
+/// The empty tuple is considered an empty element. This can sometime
+/// be useful for default generic types.
+impl NoopElement for () { }
+impl TopElement for () {
     const LEN: ElementLength = ElementLength::Fixed(0);
 }
 
@@ -125,11 +128,6 @@ pub enum ElementLength {
     /// The real length of the element is queried dynamically with a callback,
     /// given the element's identifier.
     Callback(fn(id: u8) -> ElementLength),
-    // /// The size of the element is unknown at runtime and will be determined by
-    // /// the decoder or the encoder by how much the reader or write is consumed.
-    // /// 
-    // /// *This is the way to go for lengths of type Callback in BigWorld engine.*
-    // Unknown,
 }
 
 impl ElementLength {
@@ -148,8 +146,7 @@ impl ElementLength {
             Self::Variable16 => reader.read_u16().map(|n| n as u32),
             Self::Variable24 => reader.read_u24().map(|n| n),
             Self::Variable32 => reader.read_u32().map(|n| n),
-            // Self::Unknown => Ok(None),
-            Self::Callback(_) => unreachable!("a callback returned a callback length")
+            Self::Callback(_) => panic!("cyclic callback")
         }
 
     }
@@ -167,7 +164,6 @@ impl ElementLength {
             Self::Variable24 => writer.write_u24(len),
             Self::Variable32 => writer.write_u32(len),
             Self::Callback(_) => Ok(())
-            // Self::Unknown => Ok(()),
         }
 
     }
@@ -181,7 +177,6 @@ impl ElementLength {
             Self::Variable24 => 3,
             Self::Variable32 => 4,
             Self::Callback(_) => 0,
-            // Self::Unknown => 0,
         }
     }
 
@@ -191,6 +186,8 @@ impl ElementLength {
 /// An utility structure for storing ranges of element's ids. It provides way
 /// of converting between **element id** (with optional **sub-id**) and 
 /// **exposed id**.
+/// 
+/// This structure is small and therefore can be copied.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ElementIdRange {
     pub first: u8,

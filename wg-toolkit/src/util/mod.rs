@@ -2,7 +2,6 @@
 
 use std::fmt::{self, Write};
 
-pub mod cursor;
 pub mod io;
 pub mod fnv;
 

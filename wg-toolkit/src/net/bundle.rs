@@ -66,27 +66,27 @@ impl Bundle {
 
     /// Add an element to this bundle.
     #[inline]
-    pub fn add_element<E: TopElement>(&mut self, id: u8, elt: E, config: &E::Config) -> &mut Self {
-        self.add_element_raw(id, elt, config, None)
+    pub fn write_element<E: TopElement>(&mut self, id: u8, elt: E, config: &E::Config) -> &mut Self {
+        self.write_element_raw(id, elt, config, None)
     }
 
     /// Add a simple element to this bundle. Such elements have no config.
     #[inline]
-    pub fn add_simple_element<E: TopElement<Config = ()>>(&mut self, id: u8, elt: E) -> &mut Self {
-        self.add_element(id, elt, &())
+    pub fn write_simple_element<E: TopElement<Config = ()>>(&mut self, id: u8, elt: E) -> &mut Self {
+        self.write_element(id, elt, &())
     }
 
     /// Add a request element to this bundle, with a given request ID.
     #[inline]
-    pub fn add_request<E: TopElement>(&mut self, id: u8, elt: E, config: &E::Config, request_id: u32) -> &mut Self {
-        self.add_element_raw(id, elt, config, Some(request_id))
+    pub fn write_request<E: TopElement>(&mut self, id: u8, elt: E, config: &E::Config, request_id: u32) -> &mut Self {
+        self.write_element_raw(id, elt, config, Some(request_id))
     }
 
     /// Add a request element to this bundle, with a given request ID. 
     /// Such elements have no config.
     #[inline]
-    pub fn add_simple_request<E: TopElement<Config = ()>>(&mut self, id: u8, elt: E, request_id: u32) -> &mut Self {
-        self.add_request(id, elt, &(), request_id)
+    pub fn write_simple_request<E: TopElement<Config = ()>>(&mut self, id: u8, elt: E, request_id: u32) -> &mut Self {
+        self.write_request(id, elt, &(), request_id)
     }
 
     /// Add a reply element to this bundle, for a given request ID.
@@ -94,20 +94,20 @@ impl Bundle {
     /// Such elements are special and don't require an ID, because they are always of
     /// a 32-bit variable length and prefixed with the request ID.
     #[inline]
-    pub fn add_reply<E: Element>(&mut self, elt: E, config: &E::Config, request_id: u32) -> &mut Self {
-        self.add_element(REPLY_ID, Reply::new(request_id, elt), config)
+    pub fn write_reply<E: Element>(&mut self, elt: E, config: &E::Config, request_id: u32) -> &mut Self {
+        self.write_element(REPLY_ID, Reply::new(request_id, elt), config)
     }
 
     /// Add a reply element to this bundle, for a given request ID.
     /// Such elements have no config.
     #[inline]
-    pub fn add_simple_reply<E: Element<Config = ()>>(&mut self, elt: E, request_id: u32) -> &mut Self {
-        self.add_reply(elt, &(), request_id)
+    pub fn write_simple_reply<E: Element<Config = ()>>(&mut self, elt: E, request_id: u32) -> &mut Self {
+        self.write_reply(elt, &(), request_id)
     }
 
     /// Raw method to add an element to this bundle, given an ID, the element and its 
     /// config. With an optional request ID.
-    pub fn add_element_raw<E: TopElement>(&mut self, id: u8, elt: E, config: &E::Config, request: Option<u32>) -> &mut Self {
+    pub fn write_element_raw<E: TopElement>(&mut self, id: u8, elt: E, config: &E::Config, request: Option<u32>) -> &mut Self {
 
         if self.force_new_packet {
             self.add_packet();
@@ -154,10 +154,10 @@ impl Bundle {
         }
 
         // Write the actual element's content.
-        let mut writer = BundleWriter::new(self);
+        let mut writer = IoCounter::new(BundleWriter::new(self));
         // For now we just unwrap the encode result, because no IO error should be produced by a BundleWriter.
         elt.encode(&mut writer, config).unwrap();
-        let length = writer.len as u32;
+        let length = writer.count() as u32;
 
         // Finally write id and length, we can unwrap because we know that enough length is available.
         let header_slice = &mut self.packets[cur_packet_idx].content_mut()[cur_packet_elt_offset..];
@@ -247,7 +247,6 @@ impl Bundle {
 /// adding packets if needed.
 struct BundleWriter<'a> {
     bundle: &'a mut Bundle,
-    len: usize
 }
 
 impl<'a> BundleWriter<'a> {
@@ -255,7 +254,7 @@ impl<'a> BundleWriter<'a> {
     /// Construct a new bundle writer, must be constructed only if at least one packet
     /// is already existing in the bundle.
     fn new(bundle: &'a mut Bundle) -> Self {
-        Self { bundle, len: 0 }
+        Self { bundle }
     }
 
 }
@@ -265,7 +264,6 @@ impl<'a> Write for BundleWriter<'a> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let slice = self.bundle.reserve(buf.len());
         slice.copy_from_slice(&buf[..slice.len()]);
-        self.len += slice.len();
         Ok(slice.len())
     }
 
@@ -394,12 +392,6 @@ impl<'a> BundleElementReader<'a> {
         }
     }
 
-    /// Read the current element's identifier. This call return the same result until
-    /// you explicitly choose to go to the next element while reading the element
-    pub fn read_id(&self) -> Option<u8> {
-        self.bundle_reader.body.get(0).copied()
-    }
-
     /// Return `true` if the current element is a request, this is just dependent of
     /// the current position within the current packet.
     pub fn is_request(&self) -> bool {
@@ -408,11 +400,17 @@ impl<'a> BundleElementReader<'a> {
         self.next_request_offset != 0 && data_pos == self.next_request_offset
     }
 
+    /// Read the current element's identifier. This call return the same result until
+    /// you explicitly choose to go to the next element while reading the element
+    pub fn next_id(&self) -> Option<u8> {
+        self.bundle_reader.body.get(0).copied()
+    }
+
     /// Read the current element, return a guard that you should use a codec to decode
     /// the element depending on its type with. *This is a simpler version to use over
     /// standard `read_element` method because it handle reply elements for you.*
     pub fn next_element(&mut self) -> Option<BundleElement<'_, 'a>> {
-        match self.read_id() {
+        match self.next_id() {
             Some(REPLY_ID) => {
                 match self.read_element::<ReplyHeader>(&(), false) {
                     Ok(elt) => {
@@ -423,7 +421,7 @@ impl<'a> BundleElementReader<'a> {
                 }
             }
             Some(id) => {
-                Some(BundleElement::Top(id, TopElementReader(self)))
+                Some(BundleElement::Top(id, TopElementReader(self, id)))
             }
             None => None
         }
@@ -487,23 +485,8 @@ impl<'a> BundleElementReader<'a> {
         let mut elt_reader = Read::take(&mut self.bundle_reader, elt_len as u64);
         let element = E::decode(&mut elt_reader, elt_len as usize, config)?;
 
-        // let element = 
-        //     if let Some(len) = elt_len {
-        //         let mut limited = Read::take(&mut self.bundle_reader, len as u64);
-        //         E::decode(&mut limited, len as usize, config)
-        //     } else {
-        //         E::decode(&mut self.bundle_reader, 0, config)
-        //     }?;
-
         // We seek to the end only if we want to go next.
         if next {
-
-            // // If decoding is successful (and element has determined length), 
-            // // jump to the next packet, this happen if not all the element
-            // // has been read.
-            // if let Some(len) = elt_len {
-            //     self.bundle_reader.goto(elt_data_begin + len as usize);
-            // }
 
             self.bundle_reader.goto(elt_data_begin + elt_len as usize);
 
@@ -536,7 +519,7 @@ impl fmt::Debug for BundleElementReader<'_> {
         f.debug_struct("BundleElementReader")
             .field("bundle_reader", &self.bundle_reader)
             .field("next_request_offset", &self.next_request_offset)
-            .field("read_id()", &self.read_id())
+            .field("next_id()", &self.next_id())
             .field("is_request()", &self.is_request())
             .finish()
     }
@@ -545,8 +528,8 @@ impl fmt::Debug for BundleElementReader<'_> {
 
 /// An element read from `BundleElementReader` and `BundleElement` variants,
 /// also containing the element's ID and an optional request ID.
-#[derive(Debug)]
-pub struct ReadElement<E: Element> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReadElement<E> {
     /// Numeric identifier of the element.
     pub id: u8,
     /// The actual element.
@@ -556,12 +539,25 @@ pub struct ReadElement<E: Element> {
     pub request_id: Option<u32>
 }
 
-impl<E: Element> Into<ReadElement<E>> for ReadElement<Reply<E>> {
-    fn into(self) -> ReadElement<E> {
+impl<E> ReadElement<E> {
+
+    /// Map this read element's type into another one with the given closure.
+    pub fn map<U, F: FnOnce(E) -> U>(self, f: F) -> ReadElement<U> {
+        ReadElement { 
+            id: self.id, 
+            element: f(self.element), 
+            request_id: self.request_id
+        }
+    }
+
+}
+
+impl<E: Element> From<ReadElement<Reply<E>>> for ReadElement<E> {
+    fn from(read: ReadElement<Reply<E>>) -> Self {
         ReadElement {
             id: REPLY_ID,
-            element: self.element.element,
-            request_id: self.request_id
+            element: read.element.element,
+            request_id: read.request_id
         }
     }
 }
@@ -604,9 +600,15 @@ impl BundleElement<'_, '_> {
 
 /// The simple variant of element, provides direct decoding using a codec.
 #[derive(Debug)]
-pub struct TopElementReader<'reader, 'bundle>(&'reader mut BundleElementReader<'bundle>);
+pub struct TopElementReader<'reader, 'bundle>(&'reader mut BundleElementReader<'bundle>, u8);
 
 impl TopElementReader<'_, '_> {
+
+    /// Get the numeric identifier of the element being read.
+    #[inline]
+    pub fn id(&self) -> u8 {
+        self.1
+    }
 
     /// Same as `read` but never go to the next element *(this is why this method doesn't take
     /// self by value)*.

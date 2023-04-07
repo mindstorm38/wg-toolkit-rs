@@ -11,7 +11,7 @@ use rand::RngCore;
 use rsa::RsaPrivateKey;
 
 use wgtk::net::bundle::{BundleElement, Bundle};
-use wgtk::net::app::{App, Event, EventKind};
+use wgtk::net::socket::{WgSocket, Event, EventKind};
 use wgtk::util::TruncateFmt;
 
 use wgtk::net::element::login::{
@@ -30,7 +30,7 @@ use crate::base::BaseApp;
 /// app address.
 pub struct LoginApp {
     /// The application.
-    pub app: App,
+    pub app: WgSocket,
     /// The RSA private key for login app.
     priv_key: Option<Arc<RsaPrivateKey>>,
     /// A client for the login app.
@@ -41,7 +41,7 @@ impl LoginApp {
 
     pub fn new(addr: SocketAddrV4, priv_key: Option<Arc<RsaPrivateKey>>) -> io::Result<Self> {
         Ok(Self {
-            app: App::new(addr)?,
+            app: WgSocket::new(addr)?,
             priv_key,
             clients: HashMap::new(),
         })
@@ -80,7 +80,7 @@ impl LoginApp {
                 println!("{prefix} <-- Pong #{}", elt.element.num);
                 
                 self.app.send(Bundle::new()
-                    .add_simple_reply(elt.element, elt.request_id.unwrap()), client.addr).unwrap();
+                    .write_simple_reply(elt.element, elt.request_id.unwrap()), client.addr).unwrap();
                 
                 true
     
@@ -115,7 +115,7 @@ impl LoginApp {
     
                     println!("{prefix} <-- Cuckoo cycle challenge");
 
-                    bundle.add_reply(
+                    bundle.write_reply(
                         LoginResponse::Challenge(challenge), 
                         &encryption, 
                         elt.request_id.unwrap()
@@ -134,7 +134,7 @@ impl LoginApp {
     
                     println!("{prefix} <-- Success, addr: {}, login key: {}", success.addr, success.login_key);
 
-                    bundle.add_reply(
+                    bundle.write_reply(
                         LoginResponse::Success(success), 
                         &encryption, 
                         elt.request_id.unwrap()

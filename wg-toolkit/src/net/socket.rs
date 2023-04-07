@@ -1,4 +1,4 @@
-//! Providing basic app structure.
+//! Providing an bundle-oriented socket, backed by an UDP socket.
 
 use std::collections::HashMap;
 use std::net::{SocketAddr, SocketAddrV4};
@@ -14,22 +14,16 @@ use super::packet::{Packet, RawPacket, PacketConfig, PacketSyncError};
 use super::bundle::{BundleAssembler, Bundle};
 use super::filter::{BlowfishReader, BlowfishWriter, blowfish::BLOCK_SIZE};
 
-// use crate::util::BytesFmt;
-
 
 const COMMON_EVENT: Token = Token(0);
 
 
-/// A base structure for network applications. This basically provides
-/// a practical interface for the UDP server where packets are automatically
-/// built into bundles, with de-fragmentation if needed. 
+/// A socket providing interface for sending and receiving bundles of elements, 
+/// backed by an UDP server with support for blowfish channel encryption.
 /// 
 /// It also provides fragmentation support when sending bundles that contains 
 /// more than one packet.
-/// 
-/// It optionally allow filtering sent and received packets through blowfish
-/// depending on the remote socket address.
-pub struct App {
+pub struct WgSocket {
     /// Bound address for UDP server.
     addr: SocketAddrV4,
     /// The socket used for sending and receiving UDP packets.
@@ -50,7 +44,7 @@ pub struct App {
     encryption_packet: Box<RawPacket>,
 }
 
-impl App {
+impl WgSocket {
 
     pub fn new(addr: SocketAddrV4) -> io::Result<Self> {
 
@@ -514,3 +508,34 @@ pub enum PacketError {
     /// The packet should be decrypted but it failed.
     InvalidEncryption,
 }
+
+
+
+// pub struct ElementApp<S> {
+//     app: App,
+//     shared: S,
+//     callbacks: Box<[Option<Box<dyn UntypedElementCallback>>]>
+// }
+
+
+// trait UntypedElementCallback {
+
+// }
+
+// pub trait ElementCallback {
+
+
+
+// }
+
+
+
+// fn test() {
+
+//     let mut app: ElementApp = todo!();
+
+//     app.add_callback(0x00, || {
+
+//     });
+
+// }

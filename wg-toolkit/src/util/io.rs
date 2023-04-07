@@ -402,3 +402,66 @@ pub trait WgWriteExt: Write {
 
 impl<R: Read> WgReadExt for R {}
 impl<W: Write> WgWriteExt for W {}
+
+
+/// A wrapper for a [`Read`] or [`Write`] implementor that will increment
+/// an internal counter when a byte is either read or written.
+pub struct IoCounter<I> {
+    inner: I,
+    count: usize,
+}
+
+impl<I> IoCounter<I> {
+
+    #[inline]
+    pub fn new(inner: I) -> Self {
+        Self {
+            inner,
+            count: 0,
+        }
+    }
+
+    #[inline]
+    pub fn count(&self) -> usize {
+        self.count
+    }
+
+    #[inline]
+    pub fn into_inner(self) -> I {
+        self.inner
+    }
+
+}
+
+impl<R: Read> Read for IoCounter<R> {
+
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let len = self.inner.read(buf)?;
+        self.count += len;
+        Ok(len)
+    }
+
+    // TODO: Support vectored read later...
+
+}
+
+impl<W: Write> Write for IoCounter<W> {
+
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let len = self.inner.write(buf)?;
+        self.count += len;
+        Ok(len)
+    }
+
+    fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
+        self.inner.write_all(buf)?;
+        self.count += buf.len();
+        Ok(())
+    }
+
+    #[inline]
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
+    }
+
+}

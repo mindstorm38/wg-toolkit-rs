@@ -5,9 +5,11 @@
 
 use std::io::{self, Read, Write};
 
+use crate::net::bundle::{Bundle, TopElementReader, ReadElement, ReadElementError};
 use crate::util::io::*;
 
-use super::{SimpleElement, TopElement, ElementLength};
+use super::{SimpleElement, TopElement, NoopElement, ElementLength, ElementIdRange};
+use super::entity::{MethodCall, MethodCallWrapper, MethodCallExt};
 
 
 /// Sent by the client to the server without encryption in order to authenticate,
@@ -16,7 +18,7 @@ use super::{SimpleElement, TopElement, ElementLength};
 /// 
 /// This element is usually a request, in such case a [`ServerSessionKey`] must be 
 /// sent as a reply.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ClientAuth {
     /// The login key that was sent by the login application, part of the  element
     /// [`super::login::LoginSuccess`].
@@ -56,7 +58,7 @@ impl TopElement for ClientAuth {
 
 /// Replied by the server to the client when receiving a [`ClientAuth`] request 
 /// element. The key must be a new session 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ServerSessionKey {
     /// The server session key, should not be the same as the login session key.
     pub session_key: u32,
@@ -78,7 +80,7 @@ impl SimpleElement for ServerSessionKey {
 /// Sent by the client on login (and apparently randomly after login) to return 
 /// the session key that was sent by the server in the [`ServerSessionKey`] 
 /// reply.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ClientSessionKey {
     /// The server session key
     pub session_key: u32,
@@ -105,93 +107,101 @@ impl TopElement for ClientSessionKey {
 }
 
 
+pub const CELL_ENTITY_METHOD_ID_RANGE: ElementIdRange = ElementIdRange::new(0x0F, 0x87);
+pub const BASE_ENTITY_METHOD_ID_RANGE: ElementIdRange = ElementIdRange::new(0x88, 0xFE);
+
+
 /// Sent by the client to the base app to call a cell method for the given
 /// entity ID.
-#[derive(Debug)]
-pub struct CellEntityMethod {
+#[derive(Debug, Clone)]
+pub struct CellEntityMethod<M: MethodCall> {
     /// The entity ID on which we'll call the method, must be set to 0 if
     /// the current player is targeted.
     pub entity_id: u32,
-    /// The raw data of the method call.
-    pub data: Vec<u8>
+    /// The method call.
+    pub method: M,
 }
 
-impl CellEntityMethod {
+impl<M: MethodCall> CellEntityMethod<M> {
 
-    pub const FIRST_ID: u8 = 0x0F;
-    pub const LAST_ID: u8  = 0x87;
-
-    /// Convert a method index to a message id.
-    pub const fn index_to_id(index: u8) -> u8 {
-        Self::FIRST_ID + index
+    /// Write this cell entity method call to the given bundle.
+    pub fn write(self, bundle: &mut Bundle) {
+        MethodCallWrapper::new(self.method, CellEntityMethodExt {
+            entity_id: self.entity_id,
+        }).write(bundle);
     }
 
-    /// Convert a message id to method index.
-    pub const fn id_to_index(id: u8) -> u16 {
-        (id - Self::FIRST_ID) as _
-    }
-
-}
-
-impl SimpleElement for CellEntityMethod {
-
-    fn encode(&self, write: &mut impl Write) -> io::Result<()> {
-        write.write_u32(self.entity_id)?;
-        write.write_blob(&self.data)
-    }
-
-    fn decode(read: &mut impl Read, len: usize) -> io::Result<Self> {
-        Ok(Self {
-            entity_id: read.read_u32()?,
-            data: read.read_blob(len - 4)?,
+    /// Read this cell entity method call from the given top element reader.
+    pub fn read(reader: TopElementReader) -> Result<ReadElement<Self>, ReadElementError> {
+        MethodCallWrapper::<M, CellEntityMethodExt>::read(reader).map(|res| {
+            res.map(|wrapper| Self {
+                entity_id: wrapper.ext.entity_id,
+                method: wrapper.method,
+            })
         })
     }
 
 }
 
-impl TopElement for CellEntityMethod {
+struct CellEntityMethodExt {
+    entity_id: u32,
+}
+
+impl MethodCallExt for CellEntityMethodExt {
+    const ID_RANGE: ElementIdRange = CELL_ENTITY_METHOD_ID_RANGE;
+}
+
+impl SimpleElement for CellEntityMethodExt {
+
+    fn encode(&self, write: &mut impl Write) -> io::Result<()> {
+        write.write_u32(self.entity_id)
+    }
+
+    fn decode(read: &mut impl Read, _len: usize) -> io::Result<Self> {
+        Ok(Self { entity_id: read.read_u32()? })
+    }
+
+}
+
+impl TopElement for CellEntityMethodExt {
     const LEN: ElementLength = ElementLength::Variable16;
 }
 
 
 /// Sent by the client to the base app to call a base method for the 
 /// currently connected entity.
-#[derive(Debug)]
-pub struct BaseEntityMethod {
-    pub data: Vec<u8>,
+#[derive(Debug, Clone)]
+pub struct BaseEntityMethod<M: MethodCall> {
+    pub method: M,
 }
 
-impl BaseEntityMethod {
+impl<M: MethodCall> BaseEntityMethod<M> {
 
-    pub const FIRST_ID: u8 = 0x88;
-    pub const LAST_ID: u8  = 0xFE;
-
-    /// Convert a method index to a message id.
-    pub const fn index_to_id(index: u8) -> u8 {
-        Self::FIRST_ID + index
+    /// Write this base entity method call to the given bundle.
+    pub fn write(self, bundle: &mut Bundle) {
+        MethodCallWrapper::new(self.method, BaseEntityMethodExt).write(bundle);
     }
 
-    /// Convert a message id to method index.
-    pub const fn id_to_index(id: u8) -> u16 {
-        (id - Self::FIRST_ID) as _
-    }
-
-}
-
-impl SimpleElement for BaseEntityMethod {
-
-    fn encode(&self, write: &mut impl Write) -> io::Result<()> {
-        write.write_blob(&self.data)
-    }
-
-    fn decode(read: &mut impl Read, len: usize) -> io::Result<Self> {
-        Ok(Self {
-            data: read.read_blob(len - 4)?,
+    /// Read this base entity method call from the given top element reader.
+    pub fn read(reader: TopElementReader) -> Result<ReadElement<Self>, ReadElementError> {
+        MethodCallWrapper::<M, BaseEntityMethodExt>::read(reader).map(|res| {
+            res.map(|wrapper| Self {
+                method: wrapper.method,
+            })
         })
     }
 
 }
 
-impl TopElement for BaseEntityMethod {
+#[derive(Default)]
+struct BaseEntityMethodExt;
+
+impl MethodCallExt for BaseEntityMethodExt {
+    const ID_RANGE: ElementIdRange = BASE_ENTITY_METHOD_ID_RANGE;
+}
+
+impl NoopElement for BaseEntityMethodExt {}
+
+impl TopElement for BaseEntityMethodExt {
     const LEN: ElementLength = ElementLength::Variable16;
 }

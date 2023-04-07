@@ -48,7 +48,3 @@ net = [
 
 [lib]
 name = "wgtk"
-
-[[example]]
-name = "server"
-required-features = ["net"]
