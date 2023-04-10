@@ -2,7 +2,7 @@
 
 use std::io::{self, Write, Read};
 
-use crate::net::bundle::{Bundle, TopElementReader, ReadElement, ReadElementError};
+use crate::net::bundle::{BundleElementWriter, TopElementReader, BundleElement, BundleResult};
 use crate::util::io::*;
 
 use super::{ElementLength, ElementIdRange, Element, TopElement};
@@ -78,18 +78,18 @@ where
         Self { method, ext: prefix }
     }
 
-    pub fn write(self, bundle: &mut Bundle) {
+    pub fn write(self, mut writer: BundleElementWriter) {
 
         let (
             element_id, 
             sub_id
         ) = P::ID_RANGE.from_exposed_id(M::count(), self.method.index());
     
-        bundle.write_element(element_id, self, &(0, sub_id));
+        writer.write(element_id, self, &(0, sub_id));
 
     }
 
-    pub fn read(reader: TopElementReader) -> Result<ReadElement<Self>, ReadElementError> {
+    pub fn read(reader: TopElementReader) -> BundleResult<BundleElement<Self>> {
         let element_id = reader.id();
         reader.read::<Self>(&(element_id, None))
     }

@@ -499,7 +499,7 @@ pub enum EventKind {
 }
 
 /// Kind of packet errors.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum PacketError {
     /// The packet could not be synchronized from its data.
     Sync(PacketSyncError),
@@ -508,34 +508,3 @@ pub enum PacketError {
     /// The packet should be decrypted but it failed.
     InvalidEncryption,
 }
-
-
-
-// pub struct ElementApp<S> {
-//     app: App,
-//     shared: S,
-//     callbacks: Box<[Option<Box<dyn UntypedElementCallback>>]>
-// }
-
-
-// trait UntypedElementCallback {
-
-// }
-
-// pub trait ElementCallback {
-
-
-
-// }
-
-
-
-// fn test() {
-
-//     let mut app: ElementApp = todo!();
-
-//     app.add_callback(0x00, || {
-
-//     });
-
-// }

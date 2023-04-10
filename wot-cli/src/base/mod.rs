@@ -10,7 +10,7 @@ use blowfish::Blowfish;
 use rand::rngs::OsRng;
 use rand::RngCore;
 
-use wgtk::net::bundle::{BundleElement, Bundle};
+use wgtk::net::bundle::{ElementReader, Bundle};
 use wgtk::net::socket::{WgSocket, Event, EventKind};
 
 use wgtk::net::element::base::{
@@ -76,7 +76,7 @@ impl BaseApp {
 
         match &event.kind {
             EventKind::Bundle(bundle) => {
-                let mut reader = bundle.get_element_reader();
+                let mut reader = bundle.element_reader();
                 while let Some(element) = reader.next_element() {
                     if !self.handle_element(event.addr, element) {
                         break
@@ -90,7 +90,7 @@ impl BaseApp {
 
     }
 
-    fn handle_element(&mut self, addr: SocketAddr, element: BundleElement) -> bool {
+    fn handle_element(&mut self, addr: SocketAddr, element: ElementReader) -> bool {
 
         let mut prefix = format!("[BASE/{addr}]");
 
@@ -100,7 +100,7 @@ impl BaseApp {
         }
 
         match element {
-            BundleElement::Top(ClientAuth::ID, reader) => {
+            ElementReader::Top(ClientAuth::ID, reader) => {
 
                 let client_auth = reader.read_simple::<ClientAuth>().unwrap();
 
@@ -136,7 +136,7 @@ impl BaseApp {
                 true
 
             }
-            BundleElement::Top(ClientSessionKey::ID, reader) => {
+            ElementReader::Top(ClientSessionKey::ID, reader) => {
                 
                 let client_session_auth = reader.read_simple::<ClientSessionKey>().unwrap();
                 let session_key = client_session_auth.element.session_key;
@@ -236,7 +236,7 @@ impl BaseApp {
                 true
 
             }
-            BundleElement::Top(CellEntityMethod::FIRST_ID..=CellEntityMethod::LAST_ID, reader) => {
+            ElementReader::Top(CellEntityMethod::FIRST_ID..=CellEntityMethod::LAST_ID, reader) => {
 
                 let method = reader.read_simple::<CellEntityMethod>().unwrap();
                 let method_idx = CellEntityMethod::id_to_index(method.id);
@@ -246,7 +246,7 @@ impl BaseApp {
                 true
 
             }
-            BundleElement::Top(id @ BaseEntityMethod::FIRST_ID..=BaseEntityMethod::LAST_ID, reader) => {
+            ElementReader::Top(id @ BaseEntityMethod::FIRST_ID..=BaseEntityMethod::LAST_ID, reader) => {
 
                 let method = reader.read_simple::<BaseEntityMethod>().unwrap();
                 let method_idx = BaseEntityMethod::id_to_index(id);
@@ -256,11 +256,11 @@ impl BaseApp {
                 true
 
             }
-            BundleElement::Top(id, _) => {
+            ElementReader::Top(id, _) => {
                 println!("{prefix} --> Unknown #{id}");
                 false
             }
-            BundleElement::Reply(id, _) => {
+            ElementReader::Reply(id, _) => {
                 println!("{prefix} --> Unknown reply to #{id}");
                 false
             }

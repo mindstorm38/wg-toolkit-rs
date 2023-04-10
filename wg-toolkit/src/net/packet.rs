@@ -868,7 +868,7 @@ mod flags {
 
 
 /// Packet synchronization error.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum PacketSyncError {
     /// Unknown flags are used, the packet can't be decoded because this usually
     /// increase length of the footer.

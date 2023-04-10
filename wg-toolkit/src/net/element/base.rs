@@ -5,7 +5,7 @@
 
 use std::io::{self, Read, Write};
 
-use crate::net::bundle::{Bundle, TopElementReader, ReadElement, ReadElementError};
+use crate::net::bundle::{BundleElementWriter, TopElementReader, BundleElement, BundleResult};
 use crate::util::io::*;
 
 use super::{SimpleElement, TopElement, NoopElement, ElementLength, ElementIdRange};
@@ -125,14 +125,14 @@ pub struct CellEntityMethod<M: MethodCall> {
 impl<M: MethodCall> CellEntityMethod<M> {
 
     /// Write this cell entity method call to the given bundle.
-    pub fn write(self, bundle: &mut Bundle) {
+    pub fn write(self, writer: BundleElementWriter) {
         MethodCallWrapper::new(self.method, CellEntityMethodExt {
             entity_id: self.entity_id,
-        }).write(bundle);
+        }).write(writer);
     }
 
     /// Read this cell entity method call from the given top element reader.
-    pub fn read(reader: TopElementReader) -> Result<ReadElement<Self>, ReadElementError> {
+    pub fn read(reader: TopElementReader) -> BundleResult<BundleElement<Self>> {
         MethodCallWrapper::<M, CellEntityMethodExt>::read(reader).map(|res| {
             res.map(|wrapper| Self {
                 entity_id: wrapper.ext.entity_id,
@@ -178,12 +178,12 @@ pub struct BaseEntityMethod<M: MethodCall> {
 impl<M: MethodCall> BaseEntityMethod<M> {
 
     /// Write this base entity method call to the given bundle.
-    pub fn write(self, bundle: &mut Bundle) {
-        MethodCallWrapper::new(self.method, BaseEntityMethodExt).write(bundle);
+    pub fn write(self, writer: BundleElementWriter) {
+        MethodCallWrapper::new(self.method, BaseEntityMethodExt).write(writer);
     }
 
     /// Read this base entity method call from the given top element reader.
-    pub fn read(reader: TopElementReader) -> Result<ReadElement<Self>, ReadElementError> {
+    pub fn read(reader: TopElementReader) -> BundleResult<BundleElement<Self>> {
         MethodCallWrapper::<M, BaseEntityMethodExt>::read(reader).map(|res| {
             res.map(|wrapper| Self {
                 method: wrapper.method,

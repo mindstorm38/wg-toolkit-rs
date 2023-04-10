@@ -10,7 +10,7 @@ use rand::rngs::OsRng;
 use rand::RngCore;
 use rsa::RsaPrivateKey;
 
-use wgtk::net::bundle::{BundleElement, Bundle};
+use wgtk::net::bundle::{ElementReader, Bundle};
 use wgtk::net::socket::{WgSocket, Event, EventKind};
 use wgtk::util::TruncateFmt;
 
@@ -50,7 +50,7 @@ impl LoginApp {
     pub fn handle(&mut self, event: &Event, base_app: &mut BaseApp) {
         match &event.kind {
             EventKind::Bundle(bundle) => {
-                let mut reader = bundle.get_element_reader();
+                let mut reader = bundle.element_reader();
                 while let Some(element) = reader.next_element() {
                     if !self.handle_element(event.addr, element, &mut *base_app) {
                         break
@@ -63,7 +63,7 @@ impl LoginApp {
         }
     }
 
-    fn handle_element(&mut self, addr: SocketAddr, element: BundleElement, base_app: &mut BaseApp) -> bool {
+    fn handle_element(&mut self, addr: SocketAddr, element: ElementReader, base_app: &mut BaseApp) -> bool {
 
         let client = match self.clients.entry(addr) {
             Entry::Occupied(o) => o.into_mut(),
@@ -73,7 +73,7 @@ impl LoginApp {
         let prefix = format!("[LOGIN/{}]", client.addr);
 
         match element {
-            BundleElement::Top(Ping::ID, reader) => {
+            ElementReader::Top(Ping::ID, reader) => {
     
                 let elt = reader.read_simple::<Ping>().unwrap();
                 println!("{prefix} --> Ping #{}", elt.element.num);
@@ -85,7 +85,7 @@ impl LoginApp {
                 true
     
             }
-            BundleElement::Top(LoginRequest::ID, reader) => {
+            ElementReader::Top(LoginRequest::ID, reader) => {
     
                 let encryption = match self.priv_key {
                     Some(ref key) => LoginRequestEncryption::Server(key.clone()),
@@ -147,17 +147,17 @@ impl LoginApp {
                 true
     
             }
-            BundleElement::Top(ChallengeResponse::ID, reader) => {
+            ElementReader::Top(ChallengeResponse::ID, reader) => {
                 let _ = reader.read_simple::<ChallengeResponse<CuckooCycleResponse>>().unwrap();
                 println!("{prefix} --> Challenge response");
                 client.challenge_complete = true;
                 true
             }
-            BundleElement::Top(id, _) => {
+            ElementReader::Top(id, _) => {
                 println!("{prefix} --> Unknown #{id}");
                 false
             }
-            BundleElement::Reply(id, _) => {
+            ElementReader::Reply(id, _) => {
                 println!("{prefix} --> Unknown reply to #{id}");
                 false
             }
