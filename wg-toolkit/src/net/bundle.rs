@@ -295,6 +295,7 @@ pub struct BundleElement<E> {
     /// Numeric identifier of the element.
     pub id: u8,
     /// The actual element.
+    /// TODO: Rename to "payload"
     pub element: E,
     /// The request ID if the element is a request. Not to be confused 
     /// with the reply ID if the element is a `Reply`.
@@ -486,13 +487,13 @@ impl<'a> BundleElementReader<'a> {
                 match self.read_element::<ReplyHeader>(&(), false) {
                     Ok(elt) => {
                         debug_assert!(elt.request_id.is_none(), "Replies should not be request at the same time.");
-                        Some(ElementReader::Reply(elt.element.request_id, ReplyElementReader(self)))
+                        Some(ElementReader::Reply(ReplyElementReader(self, elt.element.request_id)))
                     }
                     Err(_) => None
                 }
             }
             Some(id) => {
-                Some(ElementReader::Top(id, TopElementReader(self, id)))
+                Some(ElementReader::Top(TopElementReader(self, id)))
             }
             None => None
         }
@@ -601,21 +602,21 @@ impl fmt::Debug for BundleElementReader<'_> {
 #[derive(Debug)]
 pub enum ElementReader<'reader, 'bundle> {
     /// A top element with a proper ID and a reader.
-    Top(u8, TopElementReader<'reader, 'bundle>),
+    Top(TopElementReader<'reader, 'bundle>),
     /// A reply element with request ID and a reader.
-    Reply(u32, ReplyElementReader<'reader, 'bundle>)
+    Reply(ReplyElementReader<'reader, 'bundle>)
 }
 
 impl ElementReader<'_, '_> {
 
     /// Return `true` if this element is a simple one.
     pub fn is_simple(&self) -> bool {
-        matches!(self, ElementReader::Top(_, _))
+        matches!(self, ElementReader::Top(_))
     }
 
     /// Return `true` if this element is a reply.
     pub fn is_reply(&self) -> bool {
-        matches!(self, ElementReader::Reply(_, _))
+        matches!(self, ElementReader::Reply(_))
     }
 
 }
@@ -660,9 +661,15 @@ impl TopElementReader<'_, '_> {
 /// The reply variant of element, provides a way to read replies and get `Reply` elements
 /// containing the final element.
 #[derive(Debug)]
-pub struct ReplyElementReader<'reader, 'bundle>(&'reader mut BundleElementReader<'bundle>);
+pub struct ReplyElementReader<'reader, 'bundle>(&'reader mut BundleElementReader<'bundle>, u32);
 
 impl<'reader, 'bundle> ReplyElementReader<'reader, 'bundle> {
+
+    /// Get the request id this reply is for.
+    #[inline]
+    pub fn request_id(&self) -> u32 {
+        self.1
+    }
 
     /// Same as `read` but never go to the next element *(this is why this method doesn't take
     /// self by value)*.

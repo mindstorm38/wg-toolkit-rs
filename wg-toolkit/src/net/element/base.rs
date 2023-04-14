@@ -12,6 +12,21 @@ use super::{SimpleElement, TopElement, NoopElement, ElementLength, ElementIdRang
 use super::entity::{MethodCall, MethodCallWrapper, MethodCallExt};
 
 
+/// This modules defines in constants the numerical identifiers for
+/// base app elements.
+pub mod id {
+
+    use super::ElementIdRange;
+
+    pub const CLIENT_AUTH: u8           = 0x00;
+    pub const CLIENT_SESSION_KEY: u8    = 0x01;
+
+    pub const CELL_ENTITY_METHOD: ElementIdRange = ElementIdRange::new(0x0F, 0x87);
+    pub const BASE_ENTITY_METHOD: ElementIdRange = ElementIdRange::new(0x88, 0xFE);
+
+}
+
+
 /// Sent by the client to the server without encryption in order to authenticate,
 /// the server then compares with its internal login keys from past successful
 /// logins on the login app.
@@ -27,10 +42,6 @@ pub struct ClientAuth {
     pub attempts_count: u8,
     /// Unknown 16-bits value at the end.
     pub unk: u16,
-}
-
-impl ClientAuth {
-    pub const ID: u8 = 0x00;
 }
 
 impl SimpleElement for ClientAuth {
@@ -107,10 +118,6 @@ impl TopElement for ClientSessionKey {
 }
 
 
-pub const CELL_ENTITY_METHOD_ID_RANGE: ElementIdRange = ElementIdRange::new(0x0F, 0x87);
-pub const BASE_ENTITY_METHOD_ID_RANGE: ElementIdRange = ElementIdRange::new(0x88, 0xFE);
-
-
 /// Sent by the client to the base app to call a cell method for the given
 /// entity ID.
 #[derive(Debug, Clone)]
@@ -148,7 +155,7 @@ struct CellEntityMethodExt {
 }
 
 impl MethodCallExt for CellEntityMethodExt {
-    const ID_RANGE: ElementIdRange = CELL_ENTITY_METHOD_ID_RANGE;
+    const ID_RANGE: ElementIdRange = id::CELL_ENTITY_METHOD;
 }
 
 impl SimpleElement for CellEntityMethodExt {
@@ -197,7 +204,7 @@ impl<M: MethodCall> BaseEntityMethod<M> {
 struct BaseEntityMethodExt;
 
 impl MethodCallExt for BaseEntityMethodExt {
-    const ID_RANGE: ElementIdRange = BASE_ENTITY_METHOD_ID_RANGE;
+    const ID_RANGE: ElementIdRange = id::BASE_ENTITY_METHOD;
 }
 
 impl NoopElement for BaseEntityMethodExt {}

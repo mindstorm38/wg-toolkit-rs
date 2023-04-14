@@ -3,9 +3,11 @@
 
 use std::collections::HashMap;
 use std::net::{SocketAddrV4, SocketAddr};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::io;
 
+use blowfish::Blowfish;
 use rand::rngs::OsRng;
 use rand::RngCore;
 
@@ -18,6 +20,10 @@ use super::packet::Packet;
 
 
 pub mod login;
+pub mod base;
+
+pub use login::{LoginAppInterface, LoginAppShared};
+pub use base::{BaseAppInterface, BaseAppShared};
 
 
 /// A callback-based interface for sending and receiving elements, 
@@ -27,7 +33,7 @@ pub mod login;
 /// passed to callbacks when called, this usually is the shared state 
 /// of the application. The shared data will be passed by mutable 
 /// reference because this interface is single-threaded.
-pub struct Interface<S: InterfaceShared> {
+pub struct Interface<S: Shared> {
     /// The inner socket providing interface for sending and receiving 
     /// bundles of packets (themselves containing elements).
     socket: WgSocket,
@@ -43,10 +49,13 @@ pub struct Interface<S: InterfaceShared> {
     request_manager: RequestManager<S>,
 }
 
-impl<S: InterfaceShared> Interface<S> {
+impl<S: Shared> Interface<S> {
 
+    /// Internal init value for no callback, used in array initializer.
     const INIT_TOP_CALLBACK: Option<TopCallback<S>> = None;
 
+    /// Try to create a new interface bound to the given socket address,
+    /// and using the given shared state.
     pub fn new(addr: SocketAddrV4, shared: S) -> io::Result<Self> {
         Ok(Self {
             socket: WgSocket::new(addr)?,
@@ -55,6 +64,28 @@ impl<S: InterfaceShared> Interface<S> {
             top_callbacks: Box::new([Self::INIT_TOP_CALLBACK; 255]),
             request_manager: RequestManager::new(),
         })
+    }
+
+    #[inline]
+    pub fn shared(&self) -> &S {
+        &self.shared
+    }
+
+    #[inline]
+    pub fn shared_mut(&mut self) -> &mut S {
+        &mut self.shared
+    }
+
+    /// Register a raw callback, such callback only takes the element
+    /// reader with the peer. The callback make what it want with the
+    /// reader.
+    #[inline]
+    pub fn register_raw<U>(&mut self, id: u8, callback: U)
+    where
+        U: 'static + FnMut(&mut S, TopElementReader, Peer<S>) -> BundleResult<bool>,
+    {
+        assert_ne!(id, 0xFF, "id 0xFF reserved for reply elements");
+        self.top_callbacks[id as usize] = Some(Box::new(callback));
     }
 
     /// Register a callback for the given element id and type. This 
@@ -66,16 +97,12 @@ impl<S: InterfaceShared> Interface<S> {
     pub fn register_simple<E, U>(&mut self, id: u8, mut callback: U)
     where
         E: TopElement<Config = ()>,
-        U: 'static + FnMut(&mut S, BundleElement<E>, InterfacePeer<S>),
+        U: 'static + FnMut(&mut S, BundleElement<E>, Peer<S>),
     {
-
-        assert_ne!(id, 0xFF, "id reserved for reply elements");
-
-        self.top_callbacks[id as usize] = Some(Box::new(move |state, reader, peer| {
+        self.register_raw(id, move |state, reader, peer| {
             callback(state, reader.read_simple::<E>()?, peer);
-            Ok(())
-        }));
-
+            Ok(true) // True to continue reading.
+        });
     }
 
     /// Register a callback for the given element id and type. This 
@@ -89,18 +116,14 @@ impl<S: InterfaceShared> Interface<S> {
     pub fn register<E, C, U, V>(&mut self, id: u8, mut callback: U, mut callback_config: V)
     where
         E: TopElement<Config = C>,
-        U: 'static + FnMut(&mut S, BundleElement<E>, InterfacePeer<S>),
+        U: 'static + FnMut(&mut S, BundleElement<E>, Peer<S>),
         V: 'static + FnMut(&mut S, SocketAddr) -> C,
     {
-
-        assert_ne!(id, 0xFF, "id reserved for reply elements");
-
-        self.top_callbacks[id as usize] = Some(Box::new(move |state, reader, peer| {
+        self.register_raw(id, move |state, reader, peer| {
             let config = callback_config(state, peer.addr);
             callback(state, reader.read::<E>(&config)?, peer);
-            Ok(())
-        }));
-
+            Ok(true) // True to continue reading.
+        });
     }
 
     /// Poll events from the underlying socket and route them to 
@@ -133,39 +156,34 @@ impl<S: InterfaceShared> Interface<S> {
     /// returns true if if the iterator of elements should continue.
     fn handle_element(&mut self, addr: SocketAddr, element: ElementReader) -> BundleResult<bool> {
         match element {
-            ElementReader::Top(id, reader) => {
+            ElementReader::Top(reader) => {
                 // Note: the id should not be equal to 0xFF, which is 
                 //   the reply element's ID, so it's safe to .
-                if let Some(mut callback) = self.top_callbacks[id as usize].take() {
-                    callback(&mut self.shared, reader, InterfacePeer {
+                if let Some(mut callback) = self.top_callbacks[reader.id() as usize].take() {
+                    callback(&mut self.shared, reader, Peer {
                         addr,
                         bundle: &mut self.bundle,
                         socket: &mut self.socket,
                         request_manager: &mut self.request_manager,
-                    })?;
-                    // Callbacks either fails but in case of success it
-                    // should go next element (so return true).
-                    Ok(true)
+                    })
                 } else {
                     self.shared.on_element(reader)
                 }
             }
-            ElementReader::Reply(request_id, reader) => {
+            ElementReader::Reply(reader) => {
 
                 if let Some((
                     mut callback, 
                     _instant
-                )) = self.request_manager.callbacks.remove(&request_id) {
-                    callback(&mut self.shared, reader, InterfacePeer {
+                )) = self.request_manager.callbacks.remove(&reader.request_id()) {
+                    callback(&mut self.shared, reader, Peer {
                         addr,
                         bundle: &mut self.bundle,
                         socket: &mut self.socket,
                         request_manager: &mut self.request_manager,
-                    })?;
-                    Ok(true)
+                    })
                 } else {
-                    // TODO: Watcher, trigger unknown reply.
-                    todo!()
+                    self.shared.on_reply(reader)
                 }
 
             }
@@ -175,8 +193,8 @@ impl<S: InterfaceShared> Interface<S> {
     /// Obtain a handle to a peer given its address. This handle can be
     /// used to sent elements and requests to it. This inherently makes
     /// no IO, but will do when elements are added.
-    pub fn peer(&mut self, addr: SocketAddr) -> InterfacePeer<S> {
-        InterfacePeer { 
+    pub fn peer(&mut self, addr: SocketAddr) -> Peer<S> {
+        Peer { 
             addr, 
             bundle: &mut self.bundle, 
             socket: &mut self.socket, 
@@ -191,16 +209,19 @@ impl<S: InterfaceShared> Interface<S> {
 /// element's id. This closure is not typed for the element's type, but 
 /// this closure's implementation will internally read the actual 
 /// element's type and transfer it to the user's callback.
-type TopCallback<S> = Box<dyn FnMut(&mut S, TopElementReader, InterfacePeer<S>) -> BundleResult<()>>;
+type TopCallback<S> = Box<dyn FnMut(&mut S, TopElementReader, Peer<S>) -> BundleResult<bool>>;
 
 /// Same kind of type alias as [`TopCallback`], but for requests' replies.
-type ReplyCallback<S> = Box<dyn FnMut(&mut S, ReplyElementReader, InterfacePeer<S>) -> BundleResult<()>>;
+type ReplyCallback<S> = Box<dyn FnMut(&mut S, ReplyElementReader, Peer<S>) -> BundleResult<bool>>;
 
 
 /// This trait must be implemented by the shared state type of the
 /// interface, it doesn't require to implement functions but you can
 /// implement "watcher" functions, that are like global callbacks.
-pub trait InterfaceShared {
+/// 
+/// *For now the implementors must be static in order to simplify the
+/// internal implementation of the [`Interface`] structure.*
+pub trait Shared: 'static {
 
     /// Called when a packet was lost because it cannot be reconstructed
     /// into a bundle.
@@ -214,7 +235,16 @@ pub trait InterfaceShared {
     /// iterating over next elements in the bundle.
     fn on_element(&mut self, reader: TopElementReader) -> BundleResult<bool> {
         let _ = reader;
-        Ok(false)
+        Ok(false) // Default to false to stop iteration.
+    }
+
+    /// Called when a reply has no registered request callback, in such
+    /// case this function is a fallback responsible for handling or not
+    /// the element. It should return no error and true in order to 
+    /// continue iterating over next elements in the bundle.
+    fn on_reply(&mut self, reader: ReplyElementReader) -> BundleResult<bool> {
+        let _ = reader;
+        Ok(false) // Default to false to stop iteration.
     }
 
 }
@@ -273,6 +303,17 @@ impl<S> RequestManager<S> {
         request_id
     }
 
+    /// Register a raw request callback, such callback only takes the 
+    /// reply element reader with the peer. The callback make what it 
+    /// want with the reader.
+    #[inline]
+    pub fn register_raw<U>(&mut self, callback: U) -> u32
+    where
+        U: 'static + FnMut(&mut S, ReplyElementReader, Peer<S>) -> BundleResult<bool>,
+    {
+        self.add_pending_callback(Box::new(callback))
+    }
+
     /// Register a request callback, it's only valid for simple elements
     /// and therefore have no provided configuration. The request id
     /// associated to this callback is then returned.
@@ -280,12 +321,12 @@ impl<S> RequestManager<S> {
     pub fn register_simple<E, U>(&mut self, mut callback: U) -> u32
     where
         E: TopElement<Config = ()>,
-        U: 'static + FnMut(&mut S, BundleElement<E>, InterfacePeer<S>),
+        U: 'static + FnMut(&mut S, BundleElement<E>, Peer<S>),
     {
-        self.add_pending_callback(Box::new(move |state, reader, peer| {
+        self.register_raw(move |state, reader, peer| {
             callback(state, reader.read_simple::<E>()?, peer);
-            Ok(())
-        }))
+            Ok(true) // True to continue reading.
+        })
     }
 
     /// Register a request callback, this callback can accept element
@@ -295,33 +336,21 @@ impl<S> RequestManager<S> {
     pub fn register<E, C, U, V>(&mut self, mut callback: U, mut callback_config: V) -> u32
     where
         E: TopElement<Config = C>,
-        U: 'static + FnMut(&mut S, BundleElement<E>, InterfacePeer<S>),
+        U: 'static + FnMut(&mut S, BundleElement<E>, Peer<S>),
         V: 'static + FnMut(&mut S, SocketAddr) -> C,
     {
-        self.add_pending_callback(Box::new(move |state, reader, peer| {
+        self.register_raw(move |state, reader, peer| {
             let config = callback_config(state, peer.addr);
             callback(state, reader.read::<E>(&config)?, peer);
-            Ok(())
-        }))
+            Ok(true) // True to continue reading.
+        })
     }
 
 }
 
 
-/// Standard error possible for interface.
-#[derive(Debug, Error)]
-pub enum InterfaceError {
-    /// Underlying bundle error, maybe while reading an element.
-    #[error("bundle error: {0}")]
-    Bundle(#[from] BundleError),
-    /// Underlying IO error while polling events from the socket.
-    #[error("io error: {0}")]
-    Io(#[from] io::Error),
-}
-
-
-/// This represent the peer when
-pub struct InterfacePeer<'a, S> {
+/// The structure represent a handle to a interface's peer.
+pub struct Peer<'a, S> {
     /// The peer socket address.
     addr: SocketAddr,
     /// The bundle to write elements into.
@@ -332,12 +361,20 @@ pub struct InterfacePeer<'a, S> {
     request_manager: &'a mut RequestManager<S>,
 }
 
-impl<'a, S> InterfacePeer<'a, S> {
+impl<'a, S> Peer<'a, S> {
 
     /// Get the peer's socket address.
     #[inline]
     pub fn addr(&self) -> SocketAddr {
         self.addr
+    }
+
+    /// Enable channel encryption for this peer with the given blowfish
+    /// key. This key will be used to encrypt and decrypt each next
+    /// transaction with this particular peer's socket address.
+    #[inline]
+    pub fn set_channel(&mut self, blowfish: Arc<Blowfish>) {
+        self.socket.set_channel(self.addr, blowfish);
     }
 
     /// Get the element writer to use for writing elements, if you need
@@ -384,8 +421,20 @@ impl<'a, S> InterfacePeer<'a, S> {
 
 }
 
-impl<'a, S> Drop for InterfacePeer<'a, S> {
+impl<'a, S> Drop for Peer<'a, S> {
     fn drop(&mut self) {
         self.flush();
     }
+}
+
+
+/// Standard error possible for interface.
+#[derive(Debug, Error)]
+pub enum InterfaceError {
+    /// Underlying bundle error, maybe while reading an element.
+    #[error("bundle error: {0}")]
+    Bundle(#[from] BundleError),
+    /// Underlying IO error while polling events from the socket.
+    #[error("io error: {0}")]
+    Io(#[from] io::Error),
 }

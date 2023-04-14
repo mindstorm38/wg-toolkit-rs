@@ -22,6 +22,15 @@ use crate::util::io::*;
 use super::{Element, SimpleElement, TopElement, ElementLength};
 
 
+/// This modules defines in constants the numerical identifiers for
+/// login app elements.
+pub mod id {
+    pub const LOGIN_REQUEST: u8         = 0x00;
+    pub const PING: u8                  = 0x02;
+    pub const CHALLENGE_RESPONSE: u8    = 0x03;
+}
+
+
 /// A ping sent from the client to the login app or replied from the
 /// login app to the client.
 #[derive(Debug, Clone, Copy)]
@@ -29,10 +38,6 @@ pub struct Ping {
     /// The number of the ping, the same number must be sent back to
     /// the client when login app receives it.
     pub num: u8,
-}
-
-impl Ping {
-    pub const ID: u8 = 0x02;
 }
 
 impl SimpleElement for Ping {
@@ -63,10 +68,6 @@ pub struct LoginRequest {
     pub context: String,
     pub digest: Option<[u8; 16]>,
     pub nonce: u32,
-}
-
-impl LoginRequest {
-    pub const ID: u8 = 0x00;
 }
 
 
@@ -144,10 +145,6 @@ pub struct ChallengeResponse<T> {
     pub duration: Duration,
     /// Inner data of the challenge response.
     pub data: T,
-}
-
-impl ChallengeResponse<()> {
-    pub const ID: u8 = 0x03;
 }
 
 /// Describe a challenge response for cuckoo cycle challenge type.

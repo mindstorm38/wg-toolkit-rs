@@ -72,7 +72,8 @@ impl WgSocket {
     }
 
     /// Associate a new channel to the given address with the given blowfish
-    /// encryption.
+    /// encryption. This blowfish encryption will be used for all 
+    /// transaction to come with this given socket address.
     pub fn set_channel(&mut self, addr: SocketAddr, blowfish: Arc<Blowfish>) {
         self.channels.insert(addr, Channel::new(blowfish));
     }

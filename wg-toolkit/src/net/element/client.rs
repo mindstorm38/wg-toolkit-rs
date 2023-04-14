@@ -12,6 +12,32 @@ use super::{Element, SimpleElement, TopElement, NoopElement, ElementLength, Elem
 use super::entity::{MethodCall};
 
 
+/// This modules defines in constants the numerical identifiers for
+/// client app elements.
+pub mod id {
+
+    use super::ElementIdRange;
+
+    pub const UPDATE_FREQUENCY_NOTIFICATION: u8 = 0x02;
+    pub const SET_GAME_TIME: u8                 = 0x03;
+    pub const RESET_ENTITIES: u8                = 0x04;
+    pub const CREATE_BASE_PLAYER: u8            = 0x05;
+    pub const CREATE_CELL_PLAYER: u8            = 0x06;
+    // TODO: 0x07: DummyPacket
+    // TODO: 0x08: SpaceProperty
+    // TODO: 0x09: AddSpaceGeometryMapping
+    // TODO: 0x0A: RemoveSpaceGeometryMapping
+    // TODO: 0x0B: CreateEntity
+    // TODO: 0x0C: CreateEntityDetailed
+    pub const TICK_SYNC: u8                     = 0x13;
+    pub const SELECT_PLAYER_ENTITY: u8          = 0x1A;
+    pub const FORCED_POSITION: u8               = 0x1B;
+
+    pub const ENTITY_METHOD: ElementIdRange     = ElementIdRange::new(0xA7, 0xFE);
+
+}
+
+
 /// The server informs us how frequently it is going to send update
 /// the the client, and also give the server game time (exactly the
 /// same as [`SetGameTime`] element, but inlined here).
@@ -21,10 +47,6 @@ pub struct UpdateFrequencyNotification {
     pub frequency: u8,
     /// The server game time.
     pub game_time: u32,
-}
-
-impl UpdateFrequencyNotification {
-    pub const ID: u8 = 0x02;
 }
 
 impl SimpleElement for UpdateFrequencyNotification {
@@ -57,10 +79,6 @@ pub struct SetGameTime {
     pub game_time: u32,
 }
 
-impl SetGameTime {
-    pub const ID: u8 = 0x03;
-}
-
 impl SimpleElement for SetGameTime {
 
     fn encode(&self, write: &mut impl Write) -> io::Result<()> {
@@ -82,10 +100,6 @@ impl TopElement for SetGameTime {
 #[derive(Debug, Clone)]
 pub struct ResetEntities {
     pub keep_player_on_base: bool,
-}
-
-impl ResetEntities {
-    pub const ID: u8 = 0x04;
 }
 
 impl SimpleElement for ResetEntities {
@@ -131,10 +145,6 @@ pub struct CreateBasePlayer<E> {
     pub entity_components_count: u8,
 }
 
-impl CreateBasePlayer<()> {
-    pub const ID: u8 = 0x05;
-}
-
 impl<E: Element<Config = ()>> SimpleElement for CreateBasePlayer<E> {
 
     fn encode(&self, write: &mut impl Write) -> io::Result<()> {
@@ -161,23 +171,10 @@ impl<E: Element<Config = ()>> TopElement for CreateBasePlayer<E> {
 }
 
 
-// TODO: 0x06: CreateCellPlayer
-// TODO: 0x07: DummyPacket
-// TODO: 0x08: SpaceProperty
-// TODO: 0x09: AddSpaceGeometryMapping
-// TODO: 0x0A: RemoveSpaceGeometryMapping
-// TODO: 0x0B: CreateEntity
-// TODO: 0x0C: CreateEntityDetailed
-
-
 /// It is used as a timestamp for the elements in a bundle.
 #[derive(Debug, Clone)]
 pub struct TickSync {
     pub tick: u8,
-}
-
-impl TickSync {
-    pub const ID: u8 = 0x13;
 }
 
 impl SimpleElement for TickSync {
@@ -202,10 +199,6 @@ impl TopElement for TickSync {
 #[derive(Debug, Default, Clone, Copy)]
 pub struct SelectPlayerEntity;
 
-impl SelectPlayerEntity {
-    pub const ID: u8 = 0x1A;
-}
-
 impl NoopElement for SelectPlayerEntity { }
 impl TopElement for SelectPlayerEntity {
     const LEN: ElementLength = ElementLength::Fixed(0);
@@ -223,10 +216,6 @@ pub struct ForcedPosition {
     pub vehicle_entity_id: u32,
     pub position: Vec3A,
     pub direction: Vec3A,
-}
-
-impl ForcedPosition {
-    pub const ID: u8 = 0x1B;
 }
 
 impl SimpleElement for ForcedPosition {
