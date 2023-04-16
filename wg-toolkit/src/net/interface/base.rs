@@ -46,7 +46,6 @@ impl<S: BaseAppShared> BaseAppInterface<S> {
                 start_time: Instant::now(),
                 update_freq: 10, // Default to 10 Hz
             },
-            pending_clients: HashMap::new(),
             clients: HashMap::new(),
             clients_counter: 0,
         })?;
@@ -69,10 +68,8 @@ pub struct BaseApp<S: BaseAppShared> {
     shared: S,
     /// The base app timer.
     timer: Timer,
-    /// List of clients pending for switching from login app to base app.
-    pending_clients: HashMap<u32, PendingClient<S::Account>>,
     /// List of clients logged in the base app mapped to their socket address.
-    clients: HashMap<SocketAddr, Client<S::Account>>,
+    clients: HashMap<SocketAddr, Client>,
     /// Used to track the number of logged clients, in order to allocated
     /// session ids.
     clients_counter: u32,
@@ -115,22 +112,22 @@ impl<S: BaseAppShared> BaseApp<S> {
         let request_id = element.request_id.unwrap();
         let peer_addr = peer.addr();
 
-        if let Some(pending_login) = self.pending_clients.remove(&login_key) {
-            if pending_login.addr == peer_addr {
+        if let Ok((
+            expected_addr, 
+            blowfish
+        )) = self.shared.try_login(login_key, peer_addr) {
 
-                peer.set_channel(pending_login.blowfish);
+            self.clients_counter = self.clients_counter.checked_add(1).expect("too much logged clients");
+            let session_key = self.clients_counter;
 
-                self.clients_counter = self.clients_counter.checked_add(1).expect("too much logged clients");
-                let logged_key = self.clients_counter;
+            self.clients.insert(peer_addr, Client::new(session_key));
+            self.shared.on_login(session_key);
 
-                self.clients.insert(peer_addr, Client::new(pending_login.account, logged_key));
+            // Sent the server session key.
+            peer.element_writer().write_simple_reply(ServerSessionKey {
+                session_key,
+            }, request_id);
 
-                // Sent the server session key.
-                peer.element_writer().write_simple_reply(ServerSessionKey {
-                    session_key: logged_key,
-                }, request_id);
-
-            }
         }
 
     }
@@ -204,12 +201,15 @@ impl<S: BaseAppShared> Shared for BaseApp<S> { }
 /// global events.
 pub trait BaseAppShared: Shared {
 
-    /// Shared type for accounts.
-    type Account;
+    /// Try to login with the given login key from a given peer address, 
+    /// this login key should've been sent by the login app. If login 
+    /// is successful the channel's encryption key should be returned.
+    fn try_login(&mut self, login_key: u32, addr: SocketAddr) -> Result<Arc<Blowfish>, ()>;
 
-    type LoginEntity: Element<Config = ()>;
-
-    fn new_login_entity(&self, account: &Self::Account) -> (Self::LoginEntity, u16);
+    /// Called upon successful login, the session key is given.
+    fn on_login(&mut self, session_key: u32) {
+        let _ = session_key;
+    }
 
 }
 
@@ -241,9 +241,7 @@ impl<A> PendingClient<A> {
 
 /// Internal structure used to track a client logged in the base app.
 #[derive(Debug)]
-struct Client<A> {
-    /// Underlying account.
-    account: Box<A>,
+struct Client {
     /// The session key of the client.
     session_key: u32,
     /// Tracked client state.
@@ -253,9 +251,8 @@ struct Client<A> {
 impl<A> Client<A> {
 
     #[inline]
-    pub fn new(account: Box<A>, session_key: u32) -> Self {
+    pub fn new(session_key: u32) -> Self {
         Self { 
-            account,
             session_key, 
             state: ClientState::Initial,
         }
