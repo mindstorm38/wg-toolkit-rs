@@ -18,8 +18,9 @@ use super::filter::{BlowfishReader, BlowfishWriter, blowfish::BLOCK_SIZE};
 const COMMON_EVENT: Token = Token(0);
 
 
-/// A socket providing interface for sending and receiving bundles of elements, 
-/// backed by an UDP server with support for blowfish channel encryption.
+/// A socket providing interface for sending and receiving bundles of elements, backed by
+/// an UDP server with support for blowfish channel encryption. This socket is event
+/// oriented, using a poll function that will wait for incoming network datagram.
 /// 
 /// It also provides fragmentation support when sending bundles that contains 
 /// more than one packet.
@@ -127,6 +128,7 @@ impl WgSocket {
             // Only the last packet has a cumulative ack.
             if sequence_num == sequence_last_num {
                 if let Some(channel) = channel.as_mut() {
+                    // FIXME: Do not set 0 as cumulative ack.
                     packet_config.set_cumulative_ack(channel.get_cumulative_ack_exclusive().unwrap_or(0));
                 }
             }
@@ -330,8 +332,11 @@ fn decrypt_packet(packet: &Packet, bf: &Blowfish) -> Result<Box<Packet>, ()> {
 }
 
 
-/// Encrypt packet with the given blowfish key and returns the vector holding
-/// the whole encrypted data to be sent.
+/// Encrypt source packet with the given blowfish key and write it to the destination
+/// raw packet. Everything except the packet prefix is encrypted, and the destination
+/// packet will have a size that is a multiple of blowfish's block size (8). The clear
+/// data is also padded to block size, but with additional data at the end: encryption
+/// signature (0xDEADBEEF in little endian) and the wastage count + 1 on the last byte.
 fn encrypt_packet(src_packet: &RawPacket, bf: &Blowfish, dst_packet: &mut RawPacket) {
     
     // Get the minimum, unpadded length of this packet with encryption footer appended to it.

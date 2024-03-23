@@ -17,7 +17,7 @@ pub const PACKET_MAX_LEN: usize = 1300;
 pub const PACKET_PREFIX_LEN: usize = 4;
 /// Flags are u16.
 pub const PACKET_FLAGS_LEN: usize = 2;
-/// Minimum length of a raw packet.
+/// Minimum length of a raw packet, containing prefix and flags.
 pub const PACKET_MIN_LEN: usize = PACKET_PREFIX_LEN + PACKET_FLAGS_LEN;
 
 /// Maximum size that can possibly taken by the footer.

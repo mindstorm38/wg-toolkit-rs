@@ -20,10 +20,10 @@ use super::packet::Packet;
 
 
 pub mod login;
-pub mod base;
+// pub mod base;
 
-pub use login::{LoginAppInterface, LoginAppShared};
-pub use base::{BaseAppInterface, BaseAppShared};
+pub use login::{LoginInterface, LoginShared};
+// pub use base::{BaseAppInterface, BaseAppShared};
 
 
 /// A callback-based interface for sending and receiving elements, 
@@ -66,11 +66,13 @@ impl<S: Shared> Interface<S> {
         })
     }
 
+    /// Get a shared reference to the shared state.
     #[inline]
     pub fn shared(&self) -> &S {
         &self.shared
     }
 
+    /// Get a shared mutable reference to the shared state.
     #[inline]
     pub fn shared_mut(&mut self) -> &mut S {
         &mut self.shared
@@ -155,6 +157,7 @@ impl<S: Shared> Interface<S> {
     /// Internal function that handle a received bundle element, it 
     /// returns true if if the iterator of elements should continue.
     fn handle_element(&mut self, addr: SocketAddr, element: ElementReader) -> BundleResult<bool> {
+        debug_assert!(self.bundle.is_empty());
         match element {
             ElementReader::Top(reader) => {
                 // Note: the id should not be equal to 0xFF, which is 
@@ -194,6 +197,7 @@ impl<S: Shared> Interface<S> {
     /// used to sent elements and requests to it. This inherently makes
     /// no IO, but will do when elements are added.
     pub fn peer(&mut self, addr: SocketAddr) -> Peer<S> {
+        debug_assert!(self.bundle.is_empty());
         Peer { 
             addr, 
             bundle: &mut self.bundle, 
@@ -382,7 +386,7 @@ impl<'a, S> Peer<'a, S> {
     /// [`request_manager`] and register your request's callback to get
     /// the associated request id.
     #[inline]
-    pub fn element_writer(&mut self) -> BundleElementWriter {
+    pub fn element_writer(&mut self) -> BundleElementWriter<'_> {
         self.bundle.element_writer()
     }
 
@@ -438,3 +442,5 @@ pub enum InterfaceError {
     #[error("io error: {0}")]
     Io(#[from] io::Error),
 }
+
+pub type InterfaceResult<T> = Result<T, InterfaceError>;

@@ -26,11 +26,11 @@ use super::{Interface, Shared, Peer};
 
 
 /// Interface implementation for login app.
-pub struct LoginAppInterface<S: LoginAppShared> {
-    pub inner: Interface<LoginApp<S>>,
+pub struct LoginInterface<S: LoginShared> {
+    inner: Interface<LoginApp<S>>,
 }
 
-impl<S: LoginAppShared> LoginAppInterface<S> {
+impl<S: LoginShared> LoginInterface<S> {
 
     pub fn new(addr: SocketAddrV4, shared: S) -> io::Result<Self> {
 
@@ -48,10 +48,20 @@ impl<S: LoginAppShared> LoginAppInterface<S> {
 
     }
 
+    #[inline]
+    pub fn shared(&self) -> &S {
+        &self.inner.shared().shared
+    }
+
+    #[inline]
+    pub fn shared_mut(&mut self) -> &mut S {
+        &mut self.inner.shared_mut().shared
+    }
+
 }
 
 /// Shared data for the login app.
-pub struct LoginApp<S: LoginAppShared> {
+pub struct LoginApp<S: LoginShared> {
     /// Inner login-app-specific shared data.
     #[allow(unused)] // TODO: remove
     shared: S,
@@ -63,7 +73,7 @@ pub struct LoginApp<S: LoginAppShared> {
     clients: HashMap<SocketAddr, Client>,
 }
 
-impl<S: LoginAppShared> LoginApp<S> {
+impl<S: LoginShared> LoginApp<S> {
 
     /// Element handler for ping elements, this implementation send back
     /// the ping element has a reply.
@@ -150,13 +160,13 @@ impl<S: LoginAppShared> LoginApp<S> {
 
 }
 
-impl<S: LoginAppShared> Shared for LoginApp<S> { }
+impl<S: LoginShared> Shared for LoginApp<S> { }
 
 
 /// Login-app-specific shared interface, the implementor must also
 /// implement [`InterfaceShared`] as it will used as a callback for
 /// global events.
-pub trait LoginAppShared: Shared {
+pub trait LoginShared: Shared {
 
     /// Try to login, if successful it must return a tuple containing
     /// the base app address and login key to use. If it's a success,
