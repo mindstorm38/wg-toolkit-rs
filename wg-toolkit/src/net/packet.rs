@@ -393,11 +393,11 @@ impl Packet {
         self.first_request_offset = 0;
     }
 
-    /// Synchronize internal packet's data from its state. This function takes a
-    /// configuration that will be applied to the packet, the configuration must
+    /// Write the given configuration to this packet's flags and footer. This function 
+    /// takes a configuration that will be applied to the packet, the configuration must
     /// be mutable because the function will try to put the maximum number of
     /// acks in the footer, the remaining acks will be left over in the config.
-    pub fn sync_data(&mut self, config: &mut PacketConfig) {
+    pub fn write_config(&mut self, config: &mut PacketConfig) {
 
         // If the footer is already filled
         if self.footer_offset < self.raw.data_len() {
@@ -490,12 +490,13 @@ impl Packet {
 
     }
 
-    /// Synchronize internal packet's state from its raw data.
+    /// Read the configuration from this packet's flags and footer.
     /// 
     /// *Note that* the given length must account for the prefix.
     ///
-    /// *If this function returns an error, the integrity of the internal state is not guaranteed.*
-    pub fn sync_state(&mut self, len: usize, config: &mut PacketConfig) -> Result<(), PacketSyncError> {
+    /// *If this function returns an error, the integrity of the configuration is not 
+    /// guaranteed.*
+    pub fn read_config(&mut self, len: usize, config: &mut PacketConfig) -> Result<(), PacketConfigError> {
 
         // We set the length of the raw packet, it allow us to use 
         // 'shrink_read' on it to read each footer element.
@@ -518,7 +519,7 @@ impl Packet {
             flags::IS_RELIABLE;
 
         if flags & !KNOWN_FLAGS != 0 {
-            return Err(PacketSyncError::UnknownFlags(flags & !KNOWN_FLAGS));
+            return Err(PacketConfigError::UnknownFlags(flags & !KNOWN_FLAGS));
         }
 
         if flags & flags::HAS_CHECKSUM != 0 {
@@ -529,7 +530,7 @@ impl Packet {
             let computed_checksum = calc_checksum(Cursor::new(self.raw.body()));
 
             if expected_checksum != computed_checksum {
-                return Err(PacketSyncError::InvalidChecksum)
+                return Err(PacketConfigError::InvalidChecksum)
             }
 
         }
@@ -553,7 +554,7 @@ impl Packet {
 
             let count = self.raw.shrink(1)[0];
             if count == 0 {
-                return Err(PacketSyncError::Corrupted)
+                return Err(PacketConfigError::Corrupted)
             }
 
             for _ in 0..count {
@@ -578,7 +579,7 @@ impl Packet {
         if flags & flags::HAS_REQUESTS != 0 {
             let offset = self.raw.shrink_read(2).read_u16::<LE>().unwrap() as usize;
             if offset < PACKET_FLAGS_LEN {
-                return Err(PacketSyncError::Corrupted)
+                return Err(PacketConfigError::Corrupted)
             } else {
                 self.set_first_request_offset(offset);
             }
@@ -591,7 +592,7 @@ impl Packet {
             let first_num = cursor.read_u32::<LE>().unwrap();
             let last_num = cursor.read_u32::<LE>().unwrap();
             if first_num >= last_num {
-                return Err(PacketSyncError::Corrupted)
+                return Err(PacketConfigError::Corrupted)
             } else {
                 config.set_sequence_range(first_num, last_num);
             }
@@ -758,6 +759,7 @@ impl PacketConfig {
     /// ack, use `clear_cumulative_ack` instead.
     #[inline]
     pub fn set_cumulative_ack(&mut self, num: u32) {
+        assert_ne!(num, 0, "cumulative ack is exclusive so it cannot be zero");
         self.cumulative_ack = Some(num);
     }
 
@@ -867,15 +869,18 @@ mod flags {
 }
 
 
-/// Packet synchronization error.
-#[derive(Debug, Clone)]
-pub enum PacketSyncError {
+/// Packet error when reading invalid config from a packet.
+#[derive(Debug, Clone, thiserror::Error)]
+pub enum PacketConfigError {
     /// Unknown flags are used, the packet can't be decoded because this usually
     /// increase length of the footer.
+    #[error("unknown flags: {0:04X}")]
     UnknownFlags(u16),
     /// The packet is corrupted, the footer might be too short or an invalid bit
     /// pattern has been read.
+    #[error("corrupted")]
     Corrupted,
     /// The packet checksum and calculated checksum aren't equal.
+    #[error("invalid checksum")]
     InvalidChecksum
 }

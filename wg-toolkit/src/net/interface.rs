@@ -11,10 +11,8 @@ use blowfish::Blowfish;
 use rand::rngs::OsRng;
 use rand::RngCore;
 
-use thiserror::Error;
-
 use super::bundle::{ElementReader, TopElementReader, BundleElement, BundleResult, BundleError, Bundle, ReplyElementReader, BundleElementWriter};
-use super::socket::{WgSocket, Event, EventKind, PacketError};
+use super::socket::{BundleSocket, Bun};
 use super::element::TopElement;
 use super::packet::Packet;
 
@@ -36,7 +34,7 @@ pub use login::{LoginInterface, LoginShared};
 pub struct Interface<S: Shared> {
     /// The inner socket providing interface for sending and receiving 
     /// bundles of packets (themselves containing elements).
-    socket: WgSocket,
+    socket: BundleSocket,
     /// The shared data that is passed by mutable reference to all 
     /// callbacks as the first parameter (allowing methods).
     shared: S,
@@ -58,7 +56,7 @@ impl<S: Shared> Interface<S> {
     /// and using the given shared state.
     pub fn new(addr: SocketAddrV4, shared: S) -> io::Result<Self> {
         Ok(Self {
-            socket: WgSocket::new(addr)?,
+            socket: BundleSocket::new(addr)?,
             shared,
             bundle: Bundle::new(),
             top_callbacks: Box::new([Self::INIT_TOP_CALLBACK; 255]),
@@ -229,7 +227,7 @@ pub trait Shared: 'static {
 
     /// Called when a packet was lost because it cannot be reconstructed
     /// into a bundle.
-    fn on_packet_error(&mut self, packet: &Packet, error: &PacketError) {
+    fn on_packet_error(&mut self, packet: &Packet, error: &BundleError) {
         let _ = (packet, error);
     }
 
@@ -360,7 +358,7 @@ pub struct Peer<'a, S> {
     /// The bundle to write elements into.
     bundle: &'a mut Bundle,
     /// The socket where bundles are sent.
-    socket: &'a mut WgSocket,
+    socket: &'a mut BundleSocket,
     /// Request tracker.
     request_manager: &'a mut RequestManager<S>,
 }
@@ -433,7 +431,7 @@ impl<'a, S> Drop for Peer<'a, S> {
 
 
 /// Standard error possible for interface.
-#[derive(Debug, Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum InterfaceError {
     /// Underlying bundle error, maybe while reading an element.
     #[error("bundle error: {0}")]

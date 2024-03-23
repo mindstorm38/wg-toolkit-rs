@@ -1,41 +1,51 @@
 //! Providing an bundle-oriented socket, backed by an UDP socket.
 
-use std::collections::HashMap;
-use std::net::{SocketAddr, SocketAddrV4};
-use std::sync::Arc;
-use std::time::Duration;
+use std::net::{SocketAddr, SocketAddrV4, UdpSocket};
+use std::collections::{HashMap, hash_map};
+use std::time::{Duration, Instant};
+use std::sync::{Arc, Mutex};
 use std::io::{self, Cursor};
 
 use blowfish::Blowfish;
-use mio::{Events, Poll, Interest, Token};
-use mio::net::UdpSocket;
 
-use super::packet::{Packet, RawPacket, PacketConfig, PacketSyncError};
-use super::bundle::{BundleAssembler, Bundle};
 use super::filter::{BlowfishReader, BlowfishWriter, blowfish::BLOCK_SIZE};
+use super::packet::{Packet, RawPacket, PacketConfig, PacketConfigError};
+use super::bundle::Bundle;
 
 
-const COMMON_EVENT: Token = Token(0);
+/// The (currently hardcoded) timeout on bundle fragments.
+const FRAGMENT_TIMEOUT: Duration = Duration::from_secs(10);
 
 
 /// A socket providing interface for sending and receiving bundles of elements, backed by
-/// an UDP server with support for blowfish channel encryption. This socket is event
-/// oriented, using a poll function that will wait for incoming network datagram.
+/// an UDP server with support for blowfish channel encryption. This socket is blocking
+/// on sends and receives.
 /// 
-/// It also provides fragmentation support when sending bundles that contains 
-/// more than one packet.
-pub struct WgSocket {
+/// It also provides fragmentation support when sending bundles that contains more than 
+/// one packet, channel blowfish encryption and packet acknowledgment.
+/// 
+/// This socket handle is actually just a shared pointer to shared data, it can be cloned
+/// as needed and used in multiple threads at the same time.
+#[derive(Clone)]
+pub struct BundleSocket {
+    /// Shared data.
+    shared: Arc<Shared>,
+}
+
+/// A reference counted shared underlying socket data.
+struct Shared {
     /// Bound address for UDP server.
     addr: SocketAddrV4,
     /// The socket used for sending and receiving UDP packets.
     socket: UdpSocket,
-    /// Socket poll.
-    socket_poll: Poll,
-    /// Socket events.
-    socket_events: Events,
-    /// The structure used to re-assemble bundles from received packets.
-    /// We associate a socket address used as packet origin.
-    bundle_assembler: BundleAssembler<SocketAddr>,
+    /// The mutable part of the shared data, behind a mutex lock.
+    mutable: Mutex<SharedMutable>,
+}
+
+/// Mutable shared socket data.
+struct SharedMutable {
+    /// Bundle fragments tracking.
+    fragments: HashMap<(SocketAddr, u32), BundleFragments>,
     /// The next sequence ID to use for bundles.
     next_sequence_num: u32,
     /// Registered channels on the app that defines a particular blowfish
@@ -43,40 +53,45 @@ pub struct WgSocket {
     channels: HashMap<SocketAddr, Channel>,
     /// A raw packet used as a temporary buffer for blowfish encryption.
     encryption_packet: Box<RawPacket>,
+    /// List of rejected packets.
+    rejected_packets: Vec<(SocketAddr, Box<Packet>, PacketRejectionError)>,
 }
 
-impl WgSocket {
+impl BundleSocket {
 
+    /// Create a new socket bound to the given address.
     pub fn new(addr: SocketAddrV4) -> io::Result<Self> {
 
-        let mut socket = UdpSocket::bind(SocketAddr::V4(addr))?;
-        let socket_poll = Poll::new()?;
-
-        socket_poll.registry().register(&mut socket, COMMON_EVENT, Interest::READABLE)?;
-
+        let socket = UdpSocket::bind(SocketAddr::V4(addr))?;
+        
         Ok(Self {
-            addr,
-            socket,
-            socket_poll,
-            socket_events: Events::with_capacity(128),
-            bundle_assembler: BundleAssembler::new(),
-            next_sequence_num: 0,
-            channels: HashMap::new(),
-            encryption_packet: Box::new(RawPacket::new()),
+            shared: Arc::new(Shared { 
+                addr, 
+                socket, 
+                mutable: Mutex::new(SharedMutable {
+                    fragments: HashMap::new(),
+                    next_sequence_num: 0,
+                    channels: HashMap::new(),
+                    encryption_packet: Box::new(RawPacket::new()),
+                    rejected_packets: Vec::new(),
+                }),
+            }),
         })
 
     }
 
+    /// Get the bind address of this socket.
     #[inline]
     pub fn addr(&self) -> SocketAddrV4 {
-        self.addr
+        self.shared.addr
     }
 
     /// Associate a new channel to the given address with the given blowfish
     /// encryption. This blowfish encryption will be used for all 
     /// transaction to come with this given socket address.
     pub fn set_channel(&mut self, addr: SocketAddr, blowfish: Arc<Blowfish>) {
-        self.channels.insert(addr, Channel::new(blowfish));
+        self.shared.mutable.lock().unwrap()
+            .channels.insert(addr, Channel::new(blowfish));
     }
 
     /// Send a bundle to a given address. Note that the bundle is finalized by
@@ -92,13 +107,24 @@ impl WgSocket {
             return Ok(0)
         }
 
-        let mut channel = self.channels.get_mut(&to);
+        // NOTE: This may potentially block is a received packet is being processed.
+        let mut mutable = self.shared.mutable.lock().unwrap();
+        let SharedMutable {
+            next_sequence_num,
+            channels,
+            encryption_packet,
+            ..
+        } = &mut *mutable;
+
+        // Get a potential reference to the channel this address is linked to.
+        let mut channel = channels.get_mut(&to);
 
         // Compute first and last sequence num and directly update next sequence num.
-        let sequence_first_num = self.next_sequence_num;
-        self.next_sequence_num += bundle.len() as u32;
-        let sequence_last_num = self.next_sequence_num - 1;
+        let sequence_first_num = *next_sequence_num;
+        *next_sequence_num = next_sequence_num.checked_add(bundle.len() as u32).expect("sequence num overflow");
+        let sequence_last_num = *next_sequence_num - 1;
 
+        // Create a common packet config for all the bundle.
         let mut packet_config = PacketConfig::new();
 
         // When on channel, we set appropriate flags and values.
@@ -128,14 +154,17 @@ impl WgSocket {
             // Only the last packet has a cumulative ack.
             if sequence_num == sequence_last_num {
                 if let Some(channel) = channel.as_mut() {
-                    // FIXME: Do not set 0 as cumulative ack.
-                    packet_config.set_cumulative_ack(channel.get_cumulative_ack_exclusive().unwrap_or(0));
+                    if let Some(num) = channel.get_cumulative_ack_exclusive() {
+                        packet_config.set_cumulative_ack(num);
+                    } else {
+                        packet_config.clear_cumulative_ack();
+                    }
                 }
             }
 
             // Set sequence number and sync data.
             packet_config.set_sequence_num(sequence_num);
-            packet.sync_data(&mut packet_config);
+            packet.write_config(&mut packet_config);
 
             // Reference to the actual raw packet to send.
             let raw_packet;
@@ -144,8 +173,8 @@ impl WgSocket {
 
                 channel.add_sent_ack(sequence_num);
 
-                encrypt_packet(packet.raw(), &channel.blowfish, &mut self.encryption_packet);
-                raw_packet = &*self.encryption_packet;
+                encrypt_packet(packet.raw(), &channel.blowfish, &mut **encryption_packet);
+                raw_packet = &**encryption_packet;
 
             } else {
                 raw_packet = packet.raw()
@@ -153,7 +182,7 @@ impl WgSocket {
             
             // println!("Sending {:X}", BytesFmt(raw_packet.data()));
 
-            size += self.socket.send_to(raw_packet.data(), to)?;
+            size += self.shared.socket.send_to(raw_packet.data(), to)?;
             sequence_num += 1;
 
         }
@@ -162,89 +191,133 @@ impl WgSocket {
 
     }
 
-    /// Poll events from this application.
-    /// 
-    /// *Note that* the list of events is cleared internally prior to polling.
-    pub fn poll(&mut self, events: &mut Vec<Event>, timeout: Option<Duration>) -> io::Result<()> {
+    /// Blocking receive of a packet, if a bundle can be constructed it is returned, if
+    /// not, none is returned instead. If the packet is rejected for any reason listed
+    /// in [`PacketRejectionError`], none is also returned but the packet is internally
+    /// queued and can later be retrieve with the error using 
+    /// [`Self::take_rejected_packets()`].
+    pub fn recv(&mut self) -> io::Result<Option<Bundle>> {
 
-        self.socket_poll.poll(&mut self.socket_events, timeout)?;
+        let mut packet = Packet::new_boxed();
+        let (len, addr) = self.shared.socket.recv_from(packet.raw_mut().raw_data_mut())?;
 
-        events.clear();
-        
-        for event in self.socket_events.iter() {
-            if event.token() == COMMON_EVENT && event.is_readable() {
+        // Adjust the data length depending on what have been received.
+        packet.raw_mut().set_data_len(len);
 
-                loop {
+        // NOTE: We lock only once we received the packet, so it's not blocking any other
+        // handle to this socket that want to send bundles.
+        let mut mutable = self.shared.mutable.lock().unwrap();
+        let SharedMutable {
+            channels,
+            fragments,
+            rejected_packets,
+            ..
+        } = &mut *mutable;
 
-                    let mut packet = Packet::new_boxed();
-                    
-                    let (len, addr) = match self.socket.recv_from(packet.raw_mut().raw_data_mut()) {
-                        Ok(t) => t,
-                        Err(e) if e.kind() == io::ErrorKind::WouldBlock => break,
-                        Err(e) => return Err(e),
-                    };
+        // Get a potential reference to the channel this address is linked to.
+        let mut channel = channels.get_mut(&addr);
 
-                    let mut channel = self.channels.get_mut(&addr);
+        // If the address is linked to a channel, we need to decrypt it according the 
+        // channel's blowfish key.
+        if let Some(channel) = channel.as_deref_mut() {
+            match decrypt_packet(&packet, &channel.blowfish) {
+                Ok(clear_packet) => packet = clear_packet,
+                Err(()) => {
+                    mutable.rejected_packets.push((addr, packet, PacketRejectionError::InvalidEncryption));
+                    return Ok(None);
+                }
+            }
+        }
 
-                    // Set the raw data length here, it's just temporary and will 
-                    // be overwritten by 'sync_state'.
-                    packet.raw_mut().set_data_len(len);
+        // Retrieve the real clear-text length after a potential decryption.
+        let len = packet.raw().data_len();
 
-                    if let Some(channel) = channel.as_deref_mut() {
-                        match decrypt_packet(&packet, &channel.blowfish) {
-                            Ok(clear_packet) => packet = clear_packet,
-                            Err(()) => {
-                                events.push(Event::new(addr, EventKind::PacketError(packet, PacketError::InvalidEncryption)));
-                                continue
+        // TODO: Use thread-local for packet config?
+        let mut packet_config = PacketConfig::new();
+        if let Err(error) = packet.read_config(len, &mut packet_config) {
+            mutable.rejected_packets.push((addr, packet, PacketRejectionError::Config(error)));
+            return Ok(None);
+        }
+
+        // Again, if we are in a channel, we handle packet acknowledgment.
+        if let Some(channel) = channel.as_deref_mut() {
+
+            // If packet is reliable, take its ack number and store it for future acknowledging.
+            if packet_config.reliable() {
+                channel.add_received_ack(packet_config.sequence_num());
+                channel.set_auto_ack();
+            }
+
+            if let Some(ack) = packet_config.cumulative_ack() {
+                channel.remove_cumulative_ack(ack);
+            }
+
+        }
+
+        // We can observe that packets with the flag 0x1000 are only used
+        // for auto acking with sometimes duplicated data that is sent
+        // just after. If it become a problem this check can be removed. 
+        if packet_config.unk_1000().is_none() {
+            
+            let instant = Instant::now();
+
+            match packet_config.sequence_range() {
+                // Only if there is a range and this range is not a single num.
+                Some((first_num, last_num)) if last_num > first_num => {
+
+                    let num = packet_config.sequence_num();
+
+                    match fragments.entry((addr, first_num)) {
+                        hash_map::Entry::Occupied(mut o) => {
+
+                            // If this fragments is too old, timeout every packet in it
+                            // and start again with the packet.
+                            // FIXME: Maybe dumb?
+                            if o.get().is_old(instant, FRAGMENT_TIMEOUT) {
+                                rejected_packets.extend(o.get_mut().drain()
+                                    .map(|packet| (addr, packet, PacketRejectionError::TimedOut)));
                             }
-                        }
-                    }
 
-                    // println!("Received {:X}", BytesFmt(packet.raw().data()));
+                            o.get_mut().set(num, packet);
 
-                    // Get length again because it might be modified by decrypt.
-                    let len = packet.raw().data_len();
-                    let mut packet_config = PacketConfig::new();
+                            // When all fragments are collected, remove entry and return.
+                            if o.get().is_full() {
+                                return Ok(Some(o.remove().into_bundle()));
+                            }
 
-                    if let Err(error) = packet.sync_state(len, &mut packet_config) {
-                        events.push(Event::new(addr, EventKind::PacketError(packet, PacketError::Sync(error))));
-                        continue
-                    }
-
-                    if let Some(channel) = channel.as_deref_mut() {
-
-                        // If packet is reliable, take its ack number and store it for future acknowledging.
-                        if packet_config.reliable() {
-                            channel.add_received_ack(packet_config.sequence_num());
-                            channel.set_auto_ack();
-                        }
-
-                        if let Some(ack) = packet_config.cumulative_ack() {
-                            channel.remove_cumulative_ack(ack);
-                        }
-
-                    }
-
-                    // We can observe that packets with the flag 0x1000 are only used
-                    // for auto acking with sometimes duplicated data that is sent
-                    // just after. If it become a problem this check can be removed. 
-                    if packet_config.unk_1000().is_none() {
-                        if let Some(bundle) = self.bundle_assembler.try_assemble(addr, packet, &packet_config) {
-                            events.push(Event::new(addr, EventKind::Bundle(bundle)));
+                        },
+                        hash_map::Entry::Vacant(v) => {
+                            let mut fragments = BundleFragments::new(last_num - first_num + 1);
+                            fragments.set(num, packet);
+                            v.insert(fragments);
                         }
                     }
 
                 }
-
+                // Not sequence range in the packet, create a bundle only with it.
+                _ => {
+                    return Ok(Some(Bundle::with_single(packet)));
+                }
             }
+
         }
 
-        events.extend(self.bundle_assembler.drain_old()
-            .into_iter()
-            .map(|(addr, p)| Event::new(addr, EventKind::PacketError(p, PacketError::BundleTimeout))));
+        // No error but no full bundle received.
+        Ok(None)
 
-        // Send auto acks.
-        for (addr, channel) in &mut self.channels {
+    }
+
+    /// Send all auto packet acknowledgments.
+    pub fn send_auto_ack(&mut self) {
+
+        let mut mutable = self.shared.mutable.lock().unwrap();
+        let SharedMutable {
+            channels,
+            encryption_packet,
+            ..
+        } = &mut *mutable;
+
+        for (addr, channel) in channels {
             if channel.take_auto_ack() {
                 
                 let mut packet_config = PacketConfig::new();
@@ -255,17 +328,42 @@ impl WgSocket {
                 packet_config.set_unk_1000(0);
 
                 let mut packet = Packet::new_boxed();
-                packet.sync_data(&mut packet_config);
+                packet.write_config(&mut packet_config);
 
-                encrypt_packet(packet.raw(), &channel.blowfish, &mut self.encryption_packet);
+                encrypt_packet(packet.raw(), &channel.blowfish, &mut **encryption_packet);
 
                 // println!("Sending auto ack {:X}", BytesFmt(self.encryption_packet.data()));
-                self.socket.send_to(self.encryption_packet.data(), *addr).unwrap();
+                self.shared.socket.send_to(encryption_packet.data(), *addr).unwrap();
 
             }
         }
 
-        Ok(())
+    }
+
+    /// Take the vector of all rejected packets and the rejection reason.
+    pub fn take_rejected_packets(&mut self) -> Vec<(SocketAddr, Box<Packet>, PacketRejectionError)> {
+
+        let mut mutable = self.shared.mutable.lock().unwrap();
+        let SharedMutable {
+            fragments,
+            rejected_packets,
+            ..
+        } = &mut *mutable;
+
+        // Before returning the vector, take all timed out fragments.
+        let instant = Instant::now();
+        fragments.retain(|(addr, _), fragments| {
+            if fragments.is_old(instant, FRAGMENT_TIMEOUT) {
+                rejected_packets.extend(fragments.drain()
+                    .map(|packet| (*addr, packet, PacketRejectionError::TimedOut)));
+                false
+            } else {
+                true
+            }
+        });
+
+        // NOTE: We just take the vector, so mutable data is not locked for too long.
+        std::mem::take(rejected_packets)
 
     }
 
@@ -476,41 +574,76 @@ impl Channel {
 
 }
 
-
-/// An event of the application.
-#[derive(Debug)]
-pub struct Event {
-    /// The source address of the event.
-    pub addr: SocketAddr,
-    /// The kind of event.
-    pub kind: EventKind
+/// Internal structure to keep fragments from a given sequence.
+struct BundleFragments {
+    fragments: Vec<Option<Box<Packet>>>,  // Using boxes to avoid moving huge structures.
+    seq_count: u32,
+    last_update: Instant,
 }
 
-impl Event {
+impl BundleFragments {
+
+    /// Create from sequence length.
+    fn new(seq_len: u32) -> Self {
+        Self {
+            fragments: (0..seq_len).map(|_| None).collect(),
+            seq_count: 0,
+            last_update: Instant::now()
+        }
+    }
+
+    /// This this fragments packets and reset internal count to zero.
+    fn drain(&mut self) -> impl Iterator<Item = Box<Packet>> {
+        self.seq_count = 0;
+        std::mem::take(&mut self.fragments)
+            .into_iter()
+            .filter_map(|slot| slot)
+    }
+
+    /// Set a fragment.
+    fn set(&mut self, num: u32, packet: Box<Packet>) {
+        let frag = &mut self.fragments[num as usize];
+        if frag.is_none() {
+            self.seq_count += 1;
+        }
+        self.last_update = Instant::now();
+        *frag = Some(packet);
+    }
 
     #[inline]
-    fn new(from: SocketAddr, kind: EventKind) -> Self {
-        Self { addr: from, kind }
+    fn is_old(&self, instant: Instant, timeout: Duration) -> bool {
+        instant - self.last_update > timeout
+    }
+
+    #[inline]
+    fn is_full(&self) -> bool {
+        self.seq_count as usize == self.fragments.len()
+    }
+
+    /// Convert this structure to a bundle, **safe to call only if `is_full() == true`**.
+    #[inline]
+    fn into_bundle(self) -> Bundle {
+        assert!(self.is_full());
+        let packets = self.fragments.into_iter()
+            .map(|o| o.unwrap())
+            .collect();
+        Bundle::with_multiple(packets)
     }
 
 }
 
-/// The kind of event.
-#[derive(Debug)]
-pub enum EventKind {
-    /// A fully received bundle.
-    Bundle(Bundle),
-    /// An error happened with a packet and it cannot be recovered.
-    PacketError(Box<Packet>, PacketError)
-}
 
-/// Kind of packet errors.
-#[derive(Debug, Clone)]
-pub enum PacketError {
-    /// The packet could not be synchronized from its data.
-    Sync(PacketSyncError),
-    /// The packet waited too much time to create a bundle.
-    BundleTimeout,
+///  Kind of error that caused a packet to be rejected from this socket and not received.
+#[derive(Debug, Clone, thiserror::Error)]
+pub enum PacketRejectionError {
+    /// The packet is part of a sequence but no other packets of the sequence have been
+    /// found and therefore no bundle can be reconstructed.
+    #[error("timed out")]
+    TimedOut,
     /// The packet should be decrypted but it failed.
+    #[error("invalid encryption")]
     InvalidEncryption,
+    /// The packet could not be synchronized from its data.
+    #[error("sync error: {0}")]
+    Config(#[from] PacketConfigError),
 }

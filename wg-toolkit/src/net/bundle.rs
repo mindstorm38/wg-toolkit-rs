@@ -1,24 +1,16 @@
 //! Structures for managing bundles of packets.
 
 use std::io::{self, Write, Cursor, Read};
-use std::collections::hash_map::Entry;
-use std::time::{Duration, Instant};
-use std::collections::HashMap;
-use std::hash::Hash;
 use std::fmt;
 
 use thiserror::Error;
 
-use super::packet::{Packet, PacketConfig, PACKET_FLAGS_LEN, PACKET_MAX_BODY_LEN};
+use super::packet::{Packet, PACKET_FLAGS_LEN, PACKET_MAX_BODY_LEN};
 use super::element::reply::{Reply, ReplyHeader, REPLY_ID};
 use super::element::{Element, TopElement};
 
 use crate::util::io::*;
 use crate::util::BytesFmt;
-
-
-/// The default timeout duration for bundle fragments before being forgotten.
-pub const BUNDLE_FRAGMENT_TIMEOUT: Duration = Duration::from_secs(10);
 
 
 /// A bundle is a sequence of packets that are used to store elements. 
@@ -713,131 +705,3 @@ pub enum BundleError {
 
 /// Common alias for standard bundle errors [`BundleError`].
 pub type BundleResult<T> = Result<T, BundleError>;
-
-
-/// A structure that reassemble received bundles' fragments. You can provide an
-/// additional key type `O` to be used to identify fragments' origin. For example
-/// it can be a client address.
-pub struct BundleAssembler<O = ()> {
-    /// Fragments tracker.
-    fragments: HashMap<(O, u32), BundleFragments>,
-}
-
-impl<O> BundleAssembler<O> {
-
-    pub fn new() -> Self {
-        Self {
-            fragments: HashMap::new(),
-        }
-    }
-
-}
-
-// Requires copy to ensure that `from` is small and can be copied
-// for each packet when draining old bundles.
-impl<O: Hash + Eq + Copy> BundleAssembler<O> {
-
-    /// Add the given packet to internal fragments and try to make a bundle if all fragments
-    /// were received. *Special case for packet with no sequence number, in such case a bundle
-    /// with this single packet is returned.*
-    pub fn try_assemble(&mut self, from: O, packet: Box<Packet>, packet_config: &PacketConfig) -> Option<Bundle> {
-        if let Some((seq_first, seq_last)) = packet_config.sequence_range() {
-            let seq = packet_config.sequence_num();
-            match self.fragments.entry((from, seq_first)) {
-                Entry::Occupied(mut o) => {
-                    if o.get().is_old() {
-                        o.get_mut().reset();
-                    }
-                    o.get_mut().set(seq, packet);
-                    if o.get().is_full() {
-                        Some(o.remove().into_bundle())
-                    } else {
-                        None
-                    }
-                },
-                Entry::Vacant(v) => {
-                    v.insert(BundleFragments::new(seq_last - seq_first + 1));
-                    None
-                }
-            }
-        } else {
-            Some(Bundle::with_single(packet))
-        }
-    }
-
-    /// Drain all timed out bundles, a bundle is timed out if it was not updated
-    /// (a packed being received) in the past [`BUNDLE_FRAGMENT_TIMEOUT`] duration.
-    /// 
-    /// The discarded packets are returned.
-    pub fn drain_old(&mut self) -> Vec<(O, Box<Packet>)> {
-        let mut packets = Vec::new();
-        self.fragments.retain(|(o, _), v| {
-            if v.is_old() {
-                packets.extend(v.fragments.drain(..)
-                    .filter_map(|p| p)
-                    .map(|p| (*o, p)));
-                false
-            } else {
-                true
-            }
-        });
-        packets
-    }
-
-}
-
-
-/// Internal structure to keep fragments from a given sequence.
-struct BundleFragments {
-    fragments: Vec<Option<Box<Packet>>>,  // Using boxes to avoid moving huge structures.
-    seq_count: u32,
-    last_update: Instant
-}
-
-impl BundleFragments {
-
-    /// Create from sequence length.
-    fn new(seq_len: u32) -> Self {
-        Self {
-            fragments: (0..seq_len).map(|_| None).collect(),
-            seq_count: 0,
-            last_update: Instant::now()
-        }
-    }
-
-    /// Reset all fragments.
-    fn reset(&mut self) {
-        self.fragments.iter_mut().for_each(|o| *o = None);
-        self.seq_count = 0;
-    }
-
-    /// Set a fragment.
-    fn set(&mut self, seq: u32, packet: Box<Packet>) {
-        let frag = &mut self.fragments[seq as usize];
-        if frag.is_none() {
-            self.seq_count += 1;
-        }
-        self.last_update = Instant::now();
-        *frag = Some(packet);
-    }
-
-    #[inline]
-    fn is_old(&self) -> bool {
-        self.last_update.elapsed() > BUNDLE_FRAGMENT_TIMEOUT
-    }
-
-    #[inline]
-    fn is_full(&self) -> bool {
-        self.seq_count as usize == self.fragments.len()
-    }
-
-    /// Convert this structure to a bundle, **safe to call only if `is_full() == true`**.
-    fn into_bundle(self) -> Bundle {
-        debug_assert!(self.is_full());
-        let packets = self.fragments.into_iter()
-            .map(|o| o.unwrap())
-            .collect();
-        Bundle::with_multiple(packets)
-    }
-
-}

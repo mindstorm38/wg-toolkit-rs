@@ -11,7 +11,7 @@ use rand::rngs::OsRng;
 use rand::RngCore;
 
 use wgtk::net::bundle::{ElementReader, Bundle};
-use wgtk::net::socket::{WgSocket, Event, EventKind};
+use wgtk::net::socket::{BundleSocket, Event, EventKind};
 
 use wgtk::net::element::base::{
     ClientAuth, ServerSessionKey, ClientSessionKey,
@@ -35,7 +35,7 @@ use crate::common::entity;
 /// The state of the base app. It is the app where player are playing.
 pub struct BaseApp {
     /// Underlying application.
-    pub app: WgSocket,
+    pub app: BundleSocket,
     /// List of clients pending for switching from login app to base app.
     pending_clients: HashMap<u32, PendingBaseClient>,
     /// List of clients logged in the base app mapped to their socket address.
@@ -57,7 +57,7 @@ impl BaseApp {
 
     pub fn new(addr: SocketAddrV4, server_settings: Box<ServerSettings>) -> io::Result<Self> {
         Ok(Self {
-            app: WgSocket::new(addr)?,
+            app: BundleSocket::new(addr)?,
             pending_clients: HashMap::new(),
             logged_clients: HashMap::new(),
             logged_counter: 0,
