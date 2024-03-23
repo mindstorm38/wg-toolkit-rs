@@ -44,6 +44,9 @@ pub trait Element: Sized {
 
 /// A "top element" extends the behavior of a regular [`Element`] by providing
 /// a length that describes how to encode and decode the length of this element.
+/// Only top elements can be directly written and read from a bundle, non-top 
+/// elements are however useful when embedded in other (top) elements, such as
+/// reply element.
 pub trait TopElement: Element {
 
     /// The type of length that prefixes the element's content and describe
@@ -52,8 +55,9 @@ pub trait TopElement: Element {
 
 }
 
-/// This trait provides an easier implementation of [`Element`], therefore
-/// both traits cannot be implemented at the same time.
+/// This trait provides an easier implementation of [`Element`] with not config value as
+/// opposed to regular elements, therefore both traits cannot be implemented at the same 
+/// time.
 pub trait SimpleElement: Sized {
 
     /// Encode the element with the given writer.
