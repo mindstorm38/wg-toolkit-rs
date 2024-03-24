@@ -12,8 +12,6 @@ pub mod pxml;
 pub mod space;
 pub mod model;
 
-#[cfg(feature = "res")]
 pub mod res;
 
-#[cfg(feature = "net")]
 pub mod net;

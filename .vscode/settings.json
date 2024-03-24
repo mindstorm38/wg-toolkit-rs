@@ -1,3 +1,3 @@
 {
-    "rust-analyzer.cargo.features": ["net"]
+    "rust-analyzer.cargo.features": []
 }

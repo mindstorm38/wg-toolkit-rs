@@ -118,6 +118,13 @@ pub trait WgReadExt: Read {
         Ok(buf)
     }
 
+    // /// Read a blob into the given destination (this exists to be analog to 
+    // /// [`Self::read_string_into()`] but it's literally a forward call to `read_exact`).
+    // #[inline]
+    // fn read_blob_into(&mut self, dst: &mut [u8]) -> io::Result<()> {
+    //     self.read_exact(dst)
+    // }
+
     /// Read a blob of a length that is specified with a packed u32 before the 
     /// actual vector.
     fn read_blob_variable(&mut self) -> io::Result<Vec<u8>> {
@@ -132,6 +139,21 @@ pub trait WgReadExt: Read {
         String::from_utf8(self.read_blob(len)?)
             .map_err(|_| io::ErrorKind::InvalidData.into())
     }
+
+    // /// Read an UTF-8 string into the given buffer, returning an error if the data is not
+    // /// valid UTF-8, and the given buffer is zero-ed out.
+    // fn read_string_into(&mut self, dst: &mut str) -> io::Result<()> {
+        
+    //     let bytes = unsafe { dst.as_bytes_mut() };
+    //     self.read_blob_into(bytes)?;
+
+    //     // Here we just run UTF-8 validation, and zero out if it fails.
+    //     std::str::from_utf8(bytes).map(|_| ()).map_err(|_| {
+    //         bytes.fill(0);
+    //         io::ErrorKind::InvalidData.into()
+    //     })
+
+    // }
 
     /// Read an UTF-8 string of a length that is specified with a packed u32
     /// before the actual vector.

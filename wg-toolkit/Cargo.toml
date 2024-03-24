@@ -16,35 +16,23 @@ byteorder = "1.4"       # Used for codecs read/writing.
 smallvec = "1.10"       # Used by pxml codec.
 base64 = "0.13"         # Used by pxml codec.
 glam = "0.21"           # Used for math vec types.
+indexmap = "2.2"        # Used for resource filesystem.
 
 # Used for codecs read/writing.
 serde = "1.0"
 serde-pickle = "1.0"
 
-# The following dependencies are used for res sub module.
-zip = { version = "0.6", optional = true }
-
 # The following dependencies are used for network sub module.
-mio = { version = "0.8", features = ["net", "os-poll"], optional = true }
-sha2 = { version = "0.10", optional = true }
-sha1 = { version = "0.10", optional = true }
-rand = { version = "0.8", optional = true }
-rsa = { version = "0.8", optional = true }
-blowfish = { version = "0.9", optional = true }
-crypto-common = { version = "0.1", optional = true }
+mio = { version = "0.8", features = ["net", "os-poll"] }
+crypto-common = "0.1"
+blowfish = "0.9"
+sha2 = "0.10"
+sha1 = "0.10"
+rand = "0.8"
+rsa = "0.8"
 
 [features]
 default = []
-res = ["dep:zip"]
-net = [
-    "dep:mio", 
-    "dep:sha1", 
-    "dep:sha2", 
-    "dep:rand", 
-    "dep:rsa", 
-    "dep:blowfish", 
-    "dep:crypto-common",
-]
 
 [lib]
 name = "wgtk"

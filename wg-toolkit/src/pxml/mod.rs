@@ -12,7 +12,7 @@ mod de;
 mod ser;
 
 pub use de::{from_reader, from_bytes, DeError};
-pub use ser::{to_writer};
+pub use ser::to_writer;
 
 
 /// Magic of a packed XML file.

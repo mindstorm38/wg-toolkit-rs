@@ -40,7 +40,10 @@ fn main() -> ExitCode {
             .arg_required_else_help(true)
             .subcommand_required(true)
             .subcommand(Command::new("ls")
-                .about("List files in a given directory")
+                .about("List directory contents")
+                .arg(arg!(res: <RES> "Path to the game's res/ directory")))
+            .subcommand(Command::new("cat")
+                .about("Concatenate files and print on the standard output")
                 .arg(arg!(res: <RES> "Path to the game's res/ directory"))))
         .get_matches();
 
@@ -71,6 +74,7 @@ fn cmd_pxml(matches: &ArgMatches) -> CmdResult<()> {
 fn cmd_res(matches: &ArgMatches) -> CmdResult<()> {
     match matches.subcommand() {
         Some(("ls", matches)) => res::cmd_res_ls(matches),
+        Some(("cat", matches)) => res::cmd_res_cat(matches),
         _ => unreachable!()
     }
 }
