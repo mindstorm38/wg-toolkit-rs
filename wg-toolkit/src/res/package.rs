@@ -6,8 +6,9 @@
 //! Following official specification: 
 //! https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT
 
-use std::fmt;
 use std::io::{self, Seek, Read, SeekFrom, BufReader};
+use std::sync::Arc;
+use std::fmt;
 
 use crate::util::io::WgReadExt;
 
@@ -24,17 +25,22 @@ const END_OF_CENTRAL_DIRECTORY_SIGNATURE: u32 = 0x06054b50;
 
 
 /// A package-specialized ZIP reader that is optimized for reading all file names as fast
-/// as possible. This reader only accesses file immutably.
-pub struct PackageReader<R> {
+/// as possible. This reader only accesses file immutably. This reader ignores folders.
+/// 
+/// If the underlying stream (such as file) is modified while this reader is create,
+/// subsequent file reads are really likely to error (will never panic!).
+pub struct PackageReader<R: Read + Seek> {
     /// Underlying reader. Not buffered because once the header has been parsed, the data
     /// reading will be spread way over the default 8 KB block of the buffered reader,
     /// so this is useless.
     inner: R,
-    /// This string buffer holds all file names, where subsequent file names can be 
-    /// optimized
-    name_buffer: String,
-    /// All informations about each file available to the reader.
-    file_infos: Vec<PackageFileInfo>,
+    /// This string buffer holds all file names, so only one allocation is needed for all
+    /// names. We use an immutable ref counted buffer because we don't alter it afterward,
+    /// and it might be shared between multiple readers.
+    name_buffer: Arc<str>,
+    /// All informations about each file available to the reader. Behind ref counted for
+    /// the same reason as [`Self::name_buffer`].
+    file_infos: Arc<[PackageFileInfo]>,
 }
 
 /// Internal metadata about a file.
@@ -51,16 +57,10 @@ struct PackageFileInfo {
 impl<R: Read + Seek> PackageReader<R> {
 
     /// Create a package reader with the underlying read+seek implementor.
-    pub fn new(reader: R) -> io::Result<Self> {
-
-        // Here we need to parse the "End of Central Directory".
-
+    pub fn new(mut reader: R) -> io::Result<Self> {
+        
         const HEADER_MIN_SIZE: u64 = 22;
         const HEADER_MAX_SIZE: u64 = 22 + u16::MAX as u64;
-
-        // For decoding the package structure we use a buffered reader to optimize
-        // our random reads.
-        let mut reader = BufReader::new(reader);
 
         // Here we try to find the position of the End of Central Directory.
         let file_length = reader.seek(SeekFrom::End(0))?;
@@ -116,6 +116,10 @@ impl<R: Read + Seek> PackageReader<R> {
         // Seek to the first Central Directory Header, reading is ready.
         reader.seek(SeekFrom::Start(central_directory_offset as u64))?;
 
+        // For decoding the package structure we use a buffered reader to optimize
+        // our random reads.
+        let mut reader = BufReader::new(reader);
+
         // At start, we only read file names and optimize their storage, the actual file
         // header, size, flags will be read only when the file is accessed, here we only
         // read file name and store the offset header.
@@ -148,7 +152,16 @@ impl<R: Read + Seek> PackageReader<R> {
             // Start by increasing the buffer capacity.
             let name_offset = name_buffer.len() as u32;  // FIXME: Checked cast
             name_buffer.resize(name_buffer.len() + file_name_len as usize, 0);
-            reader.read_exact(&mut name_buffer[name_offset as usize..][..file_name_len as usize])?;
+            let this_name_buffer = &mut name_buffer[name_offset as usize..][..file_name_len as usize];
+            reader.read_exact(this_name_buffer)?;
+
+            // If the name buffer is empty or ends with a slash, just ignore that because
+            // it's a folder and don't keep folders. We rollback changes to name buffer
+            // and continue on next iteration.
+            if let None | Some(b'/') = this_name_buffer.last() {
+                name_buffer.truncate(name_offset as usize);
+                continue;
+            }
             
             // Push the metadata to the files array.
             file_infos.push(PackageFileInfo {
@@ -163,10 +176,23 @@ impl<R: Read + Seek> PackageReader<R> {
 
         Ok(Self { 
             inner: reader.into_inner(), 
-            name_buffer,
-            file_infos,
+            name_buffer: Arc::from(name_buffer),
+            file_infos: Arc::from(file_infos),
         })
 
+    }
+
+    /// A fast clone of this package reader into a new fully independent reader, this 
+    /// will reuse the file list of the current reader. **The caller must ensure** that
+    /// this reader points to the same data as the current reader, if not the case,
+    /// file informations may be wrong and subsequent file reads are likely to return 
+    /// error, **this will never panic and not cause any UB!**
+    pub fn clone_with<NewR: Read + Seek>(&self, reader: NewR) -> PackageReader<NewR> {
+        PackageReader { 
+            inner: reader, 
+            name_buffer: Arc::clone(&self.name_buffer),
+            file_infos: Arc::clone(&self.file_infos),
+        }
     }
 
     /// Return the number of files in the package.
@@ -184,24 +210,24 @@ impl<R: Read + Seek> PackageReader<R> {
         })
     }
 
-    // Find a file index from its name.
+    // Find a file index from its name, this function check all names so it may take some
+    // time, it is preferable to keep an index 
     pub fn index_by_name(&self, file_name: &str) -> Option<usize> {
         self.names().position(|check| check == file_name)
     }
 
-    /// Open a package file by its name.
-    pub fn read_by_name(&mut self, file_name: &str) -> io::Result<PackageFileReader<'_, R>> {
-        // FIXME: For now it's a brute force, but later we could make a string map.
+    /// Open a package file by its name and return a borrowed reader if successful.
+    pub fn read_by_name(&mut self, file_name: &str) -> io::Result<PackageFileReader<&'_ mut R>> {
         let file_index = self.index_by_name(file_name)
             .ok_or(io::Error::from(io::ErrorKind::NotFound))?;
         self.read_by_index(file_index)
     }
 
-    /// Internal function to open a package from its metadata.
+    /// Open a package file by its index and return a borrowed reader if successful.
     /// 
     /// Note that the returned reader has no buffered over the original reader given at
     /// construction, you should handle buffering if necessary.
-    pub fn read_by_index(&mut self, file_index: usize) -> io::Result<PackageFileReader<'_, R>> {
+    pub fn read_by_index(&mut self, file_index: usize) -> io::Result<PackageFileReader<&'_ mut R>> {
 
         let info = self.file_infos.get(file_index)
             .ok_or(io::Error::from(io::ErrorKind::NotFound))?;
@@ -247,16 +273,38 @@ impl<R: Read + Seek> PackageReader<R> {
 
 /// A handle for reading a file in a package.
 #[derive(Debug)]
-pub struct PackageFileReader<'a, R> {
+pub struct PackageFileReader<R: Read + Seek> {
     /// Underlying reader.
-    inner: &'a mut R,
+    inner: R,
     /// Full length of this file.
     initial_len: u32,
     /// Remaining length to read from the file.
     remaining_len: u32,
 }
 
-impl<R: Read + Seek> Read for PackageFileReader<'_, R> {
+impl<R: Read + Seek> PackageFileReader<R> {
+
+    /// A fast copy of this package file reader. **The caller must ensure** that the
+    /// new reader points to the same blob of data as the current one and has exact
+    /// same seek boundaries. If not, this will result in incorrect yet safe data read.
+    /// 
+    /// This function immediately tries to seek to the same position, so it may error
+    /// out if seek fails.
+    /// 
+    /// This method takes self as mutable reference because it needs to read the current
+    /// seek position and it requires mutability.
+    pub fn try_clone_with<NewR: Read + Seek>(&mut self, mut reader: NewR) -> io::Result<PackageFileReader<NewR>> {
+        reader.seek(SeekFrom::Start(self.inner.stream_position()?))?;
+        Ok(PackageFileReader {
+            inner: reader,
+            initial_len: self.initial_len,
+            remaining_len: self.remaining_len,
+        })
+    }
+
+}
+
+impl<R: Read + Seek> Read for PackageFileReader<R> {
 
     #[inline]
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
@@ -279,7 +327,7 @@ impl<R: Read + Seek> Read for PackageFileReader<'_, R> {
 
 }
 
-impl<R: Read + Seek> Seek for PackageFileReader<'_, R> {
+impl<R: Read + Seek> Seek for PackageFileReader<R> {
 
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
 
@@ -332,7 +380,7 @@ impl<R: Read + Seek> Seek for PackageFileReader<'_, R> {
 
 }
 
-impl<R: fmt::Debug> fmt::Debug for PackageReader<R> {
+impl<R: Read + Seek + fmt::Debug> fmt::Debug for PackageReader<R> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PackageReader")
             .field("inner", &self.inner)
