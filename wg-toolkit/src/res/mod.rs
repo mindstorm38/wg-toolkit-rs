@@ -2,10 +2,12 @@
 
 pub mod package;
 
-use std::collections::{hash_map, BTreeMap, HashMap, HashSet};
-use std::path::PathBuf;
-use std::{fs, io, mem};
+use std::io::{Read, Seek, SeekFrom};
+use std::collections::BTreeMap;
 use std::fs::{File, ReadDir};
+use std::sync::{Arc, Mutex};
+use std::path::PathBuf;
+use std::{fs, io};
 
 use indexmap::IndexMap;
 
@@ -26,27 +28,34 @@ const PACKAGES_DIR_NAME: &'static str = "packages";
 /// Internally, this filesystem has a cache to improve response delay. The challenge is
 /// that directories may reside in many packages, but files are present only in one
 /// package.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ResFilesystem {
-    /// Path to the "res/" directory.
-    dir_path: PathBuf,
-    /// Pending packages to be opened and cached.
-    pending_package_cache: Vec<PathBuf>,
-    /// Cache for opened package files.
-    package_cache: IndexMap<PathBuf, PackageInfo>,
-    /// Cache for known files and directories.
-    file_cache: NodeCache,
+    /// Shared part of the filesystem, used when returning independent handles like
+    /// read dir iterator.
+    shared: Arc<SharedFilesystem>,
 }
 
-/// Various informations about a cached package.
+/// Immutable shared data 
 #[derive(Debug)]
-struct PackageInfo {
-    /// The original package reader, that is cloned when file handles are returned.
-    reader: PackageReader<File>,
-    /// This is used while searching for a file, each packages that has been checked is
-    /// marked with true, this avoid searching multiple times in the same package, this 
-    /// should be reset to false after each search.
-    excluded: bool,
+struct SharedFilesystem {
+    /// Path to the "res/" directory.
+    dir_path: PathBuf,
+    /// Mutable part of the shared data, behind mutex.
+    mutable: Mutex<PackageFilesystem>,
+}
+
+/// Mutex shared part of the resource filesystem.
+#[derive(Debug)]
+struct PackageFilesystem {
+    /// Pending packages to be opened and cached.
+    pending_package_path: Vec<PathBuf>,
+    /// Cache for opened package files.
+    package_reader_cache: IndexMap<PathBuf, PackageReader<File>>,
+    /// Package open errors are silently ignored when reading files and directories, so
+    /// this vector contains the errors that may happen and can later be retrieved.
+    package_open_errors: Vec<(PathBuf, io::Error)>,
+    /// Cache for known files and directories.
+    node_cache: NodeCache,
 }
 
 impl ResFilesystem {
@@ -76,223 +85,387 @@ impl ResFilesystem {
         }
 
         Ok(Self { 
-            dir_path,
-            pending_package_cache,
-            package_cache: IndexMap::new(),
-            file_cache: NodeCache::new(),
+            shared: Arc::new(SharedFilesystem {
+                dir_path,
+                mutable: Mutex::new(PackageFilesystem {
+                    pending_package_path: pending_package_cache,
+                    package_reader_cache: IndexMap::new(),
+                    package_open_errors: Vec::new(),
+                    node_cache: NodeCache::new(),
+                }),
+            }),
         })
 
     }
 
-    pub fn read(&mut self, file_path: &str) -> io::Result<PackageFileReader<File>> {
+    /// Read a file from its path in the resource filesystem.
+    pub fn read(&self, file_path: &str) -> io::Result<ResReadFile> {
 
-        let mut packages = Vec::new();
-        let state = self.file_cache.find_node_packages(file_path, &mut packages);
+        let native_file_path = self.shared.dir_path.join(file_path);
+        if native_file_path.is_file() {
+            match File::open(native_file_path) {
+                Ok(file) => return Ok(ResReadFile(ReadFileInner::Native(file))),
+                Err(_) => (), // For now we skip this.
+            }
+        }
 
-        // Iterate in reverse because most preferred packages are last.
-        for node_package in packages.iter().rev() {
+        self.shared.mutable.lock().unwrap()
+            .read(file_path)
+            .map(|reader| ResReadFile(ReadFileInner::Package(reader)))
 
-            let (package_path, package_info) = self.package_cache.get_index_mut(node_package.package_index).unwrap();
+    }
+
+    /// Read a directory's entries in the resource filesystem. This function may be 
+    /// blocking a short time because it needs to find the first node of that directory.
+    /// 
+    /// This function may return a file not found error if no package contains this 
+    /// directory.
+    pub fn read_dir(&self, dir_path: &str) -> io::Result<ResReadDir> {
+
+        // Remove an possible trailing separator.
+        let dir_path = dir_path.strip_suffix('/').unwrap_or(dir_path);
+
+        let native_dir_path = self.shared.dir_path.join(dir_path);
+        let native_read_dir = fs::read_dir(native_dir_path).ok();
+        
+        let mut mutable = self.shared.mutable.lock().unwrap();
+        let mut dir_index = None;
+
+        // Initially we want to know the cache node index, if not found we try to open
+        // and index the next pending package.
+        while dir_index.is_none() {
+            if let Some((find_dir_index, _)) = mutable.node_cache.find_dir(dir_path) {
+                dir_index = Some(find_dir_index);
+            } else if !mutable.try_open_pending_package() {
+                // No package contains this directory, only error if native read dir 
+                // also returned an error.
+                if native_read_dir.is_none() {
+                    return Err(io::ErrorKind::NotFound.into()); 
+                } else {
+                    break;
+                }
+            }
+        }
+
+        Ok(ResReadDir {
+            dir_path: Arc::from(dir_path),
+            native_read_dir,
+            package_read_dir: dir_index.map(|dir_index| PackageReadDir {
+                shared: Arc::clone(&self.shared),
+                dir_index,
+                remaining_names: Vec::new(),
+                last_children_count: 0,
+                last_children_last_node_index: 0,
+            }),
+        })
+    }
+
+}
+
+impl PackageFilesystem {
+
+    fn try_read(&mut self, file_path: &str) -> io::Result<Option<PackageFileReader<File>>> {
+        
+        if let Some((_, file_info)) = self.node_cache.find_file(file_path) {
             
-            // Ignore that package if it was already explored.
-            if package_info.excluded {
-                continue;
-            }
+            let (
+                package_path, 
+                package_reader,
+            ) = self.package_reader_cache.get_index_mut(file_info.package_index).unwrap();
+            let mut file_reader = package_reader.read_by_index(file_info.file_index)?;
 
-            package_info.excluded = true;
-            if !node_package.present {
-                continue;
-            }
+            // Now that we have the reader, we want to make it owned, to do that we clone
+            // it with a new handle to the underlying package file.
+            return file_reader.try_clone_with(File::open(package_path)?).map(Some);
 
-            // Skip file indices up to the hinted index.
-            let file_index = package_info.reader.names()
-                .enumerate()
-                .skip(node_package.file_index)
-                .find(|&(_, file_name)| file_name == file_path)
-                .map(|(file_index, _)| file_index);
+        } else {
+            Ok(None)
+        }
 
-            // If file is found, return an owned reader.
-            if let Some(file_index) = file_index {
+    }
 
-                // TODO: Add the file in the cache, found for the given package index.
+    /// Open the next pending package and index it into the cache. This returns true if a
+    /// pending package have been opened and cached, false if there are no more package.
+    /// 
+    /// An error is returned if the package could not be opened, this error is not 
+    /// critical in itself but the pending package will never be opened again.
+    /// 
+    /// Errors considered critical are ones that happen on already opened packages.
+    fn try_open_pending_package(&mut self) -> bool {
 
-                // NOTE: Error should not be "NotFound" here.
-                let mut reader = package_info.reader.read_by_index(file_index)?;
-                // Now that we have a borrowed reader, we want to clone and make an
-                // owned one that will not borrow this filesystem. To do that we
-                // simply re-open the file, expecting that it was not altered.
-                return reader.try_clone_with(File::open(package_path)?);
-                
-            }
+        while let Some(package_path) = self.pending_package_path.pop() {
+
+            let package_file = match File::open(&package_path) {
+                Ok(file) => file,
+                Err(e) => {
+                    self.package_open_errors.push((package_path, e));
+                    continue;
+                }
+            };
+
+            let package_reader = match PackageReader::new(package_file) {
+                Ok(reader) => reader,
+                Err(e) => {
+                    self.package_open_errors.push((package_path, e));
+                    continue;
+                }
+            };
+
+            let (
+                package_index, 
+                prev_package,
+            ) = self.package_reader_cache.insert_full(package_path, package_reader);
+            debug_assert!(prev_package.is_none(), "duplicate package reader");
+            
+            self.node_cache.index_package(package_index, &self.package_reader_cache[package_index]);
+            // println!("  cache size: {}", self.node_cache.nodes.len());
+            // println!("  dir count: {}", self.node_cache.dir_count);
+            // println!("  dir children max count: {}", self.node_cache.dir_children_max_count);
+            // println!("  node name max len: {}", self.node_cache.node_name_max_len);
+
+            return true;
+
 
         }
 
-        // If the file is not found but node packages set was exhaustive, then return no
-        if state == NodePackageState::Exhaustive {
-            return Err(io::ErrorKind::NotFound.into());
+        false
+
+    }
+
+    /// See [`ResFilesystem::read()`].
+    fn read(&mut self, file_path: &str) -> io::Result<PackageFileReader<File>> {
+
+        if let Some(file_reader) = self.try_read(file_path)? {
+            return Ok(file_reader);
         }
 
-        // Try to find it in not-yet-excluded packages.
-        for (package_index, (package_path, package_info)) in self.package_cache.iter_mut().enumerate() {
-
-            // If package is already excluded, don't fetch it.
-            if package_info.excluded {
-                continue;
+        // If not found in cache, try opening more packages until we find it.
+        while self.try_open_pending_package() {
+            if let Some(file_reader) = self.try_read(file_path)? {
+                return Ok(file_reader);
             }
-
-            let mut names_it = package_info.reader.names().enumerate()
-
         }
 
         Err(io::ErrorKind::NotFound.into())
 
     }
 
-    // /// Read a directory, the path may end with a slash.
-    // pub fn read_dir(&mut self, dir_path: &str) -> io::Result<()> {
+}
 
-    //     let mut result = Vec::new();
-    //     let dir_path = dir_path.strip_suffix('/').unwrap_or(dir_path);
-        
-    //     if let Some(dir_info) = self.dir_cache.get(dir_path) {
 
-    //         for &(package_index, package_in) in &dir_info.packages {
-    //             // Unwrap because this only contains index to loaded packages.
-    //             let package = self.package_cache[package_index].as_mut().unwrap();
-    //             package.excluded = true;
+/// A handle to reading a resource file, this abstraction hides the underlying file but
+/// it can be either a package file or a native file.
+#[derive(Debug)]
+pub struct ResReadFile(ReadFileInner);
 
-    //             for file_path in package.reader.names() {
-    //                 if file_path.as_bytes().starts_with(dir_path.as_bytes()) 
-    //                 && file_path.as_bytes()[dir_path.len()] == b'/' {
-    //                     let child_file_path = &file_path[dir_path.len() + 1..];
-    //                     if let Some((child_dir_name, _)) = child_file_path[dir_path.len() + 1..].split_once('/') {
-    //                         result.push(child_file_name)
-    //                     } else {
+/// Inner handle to
+#[derive(Debug)]
+enum ReadFileInner {
+    Package(PackageFileReader<File>),
+    Native(File),
+}
 
-    //                     }
-    //                     let (child_file_name, _) = child_file_path[dir_path.len() + 1..].split_once('/').unwrap_or((child_file_path, ""));
-                        
-    //                 }
-    //             }
+impl Read for ResReadFile {
 
-    //             // Search if any file name starts with this directory name + '/', this
-    //             // will be used later to iterate the file.
-    //             let first_file_index = package.reader.names()
-    //                 .position(|haystack| 
-    //                     haystack.starts_with(dir_path) && 
-    //                     haystack.as_bytes()[dir_path.len()] == b'/');
-                
-    //             // If the directory is found in the package.
-    //             if let Some(first_file_index) = first_file_index {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        match &mut self.0 {
+            ReadFileInner::Package(package) => package.read(buf),
+            ReadFileInner::Native(file) => file.read(buf),
+        }
+    }
 
-    //             }
+    fn read_exact(&mut self, buf: &mut [u8]) -> io::Result<()> {
+        match &mut self.0 {
+            ReadFileInner::Package(package) => package.read_exact(buf),
+            ReadFileInner::Native(file) => file.read_exact(buf),
+        }
+    }
 
-    //         }
-    //     }
+}
 
-    //     Ok(())
+impl Seek for ResReadFile {
 
-    // }
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+        match &mut self.0 {
+            ReadFileInner::Package(package) => package.seek(pos),
+            ReadFileInner::Native(file) => file.seek(pos),
+        }
+    }
+
+    fn stream_position(&mut self) -> io::Result<u64> {
+        match &mut self.0 {
+            ReadFileInner::Package(package) => package.stream_position(),
+            ReadFileInner::Native(file) => file.stream_position(),
+        }
+    }
 
 }
 
 
-// pub struct ResFileReader<'a> {
-//     inner: PackageFileReader<'a, File>,
-// }
+/// A directory read iterator that lazily open packages as iteration advance.
+/// 
+/// IMPL NOTE: This structure is quite heavy, it may be necessary to box its inner state.
+#[derive(Debug)]
+pub struct ResReadDir {
+    /// Directory path that we are listing.
+    dir_path: Arc<str>,
+    /// The native read dir result that maybe used for iteration before the package part.
+    native_read_dir: Option<ReadDir>,
+    /// The package read dir mode, yielded after the native read dir if present.
+    package_read_dir: Option<PackageReadDir>,
+}
 
+#[derive(Debug)]
+struct PackageReadDir {
+    /// Shared resource filesystem data.
+    shared: Arc<SharedFilesystem>,
+    /// Directory index in the node cache.
+    dir_index: usize,
+    /// A vector containing all names to return on next iterations.
+    remaining_names: Vec<Arc<str>>,
+    /// Total names count to return.
+    last_children_count: usize,
+    /// This keep the last (exclusive) node index used by children.
+    last_children_last_node_index: usize,
+}
 
-// /// A iterator-like (not implementor though) read dir for a resource filesystem.
-// pub struct ResReadDir<'a> {
-//     /// Back reference to the filesystem.
-//     fs: &'a mut ResFilesystem,
-// }
+impl Iterator for ResReadDir {
 
-// pub struct ResDirEntry {
-//     /// Full path of the entry.
-//     name: String,
-// }
+    type Item = io::Result<ResDirEntry>;
 
-// impl<'a> ResReadDir<'a> {
+    fn next(&mut self) -> Option<Self::Item> {
 
-//     pub fn next(&mut self) {
+        if let Some(native_read_dir) = &mut self.native_read_dir {
+            match native_read_dir.next() {
+                Some(Ok(entry)) => {
+                    // FIXME: Don't unwrap
+                    let file_name = entry.file_name();
+                    let file_type = entry.file_type().unwrap();
+                    let file_name = file_name.to_str().unwrap();
+                    return Some(Ok(ResDirEntry { 
+                        dir_path: Arc::clone(&self.dir_path), 
+                        file_name: Arc::from(file_name),
+                        is_dir: file_type.is_dir(),
+                    }))
+                },
+                Some(Err(e)) => return Some(Err(e)),
+                None => (),
+            }
+        }
 
-//     }
+        if let Some(package_read_dir) = &mut self.package_read_dir {
 
-// }
+            // Then we search the directory iteratively, and loop over if a pending package
+            // has been opened.
+            let mut mutable = package_read_dir.shared.mutable.lock().unwrap();
+            loop {
+                    
+                let dir_info = mutable.node_cache.get_dir(package_read_dir.dir_index).unwrap();
 
-// impl ResDirEntry {
+                // If the directory info has been updated since the last iteration, we need to 
+                // update remaining names. We need to do this kind of detection because we don't
+                // exclusively own the filesystem and other read/read_dir may have altered cache.
+                if dir_info.children.len() != package_read_dir.last_children_count {
 
-//     #[inline]
-//     pub fn path(&self) -> &str {
-//         &self.name
-//     }
+                    debug_assert!(dir_info.children.len() > package_read_dir.last_children_count);
 
-// }
+                    let mut max_child_index = 0;
+                    for (child_name, &child_index) in &dir_info.children {
+                        max_child_index = max_child_index.max(child_index);
+                        if child_index >= package_read_dir.last_children_last_node_index {
+                            package_read_dir.remaining_names.push(Arc::clone(child_name));
+                        }
+                    }
+
+                    package_read_dir.last_children_count = dir_info.children.len();
+                    package_read_dir.last_children_last_node_index = max_child_index + 1;
+
+                }
+
+                if let Some(file_name) = package_read_dir.remaining_names.pop() {
+                    return Some(Ok(ResDirEntry {
+                        dir_path: Arc::clone(&self.dir_path),
+                        file_name,
+                        is_dir: false, // TODO: !!!
+                    }));
+                }
+
+                // If there are no more file, we try opening more packages.
+                if !mutable.try_open_pending_package() {
+                    return None; // No more package to open, no more file to return.
+                }
+
+            }
+
+        }
+
+        None
+
+    }
+
+}
+
+pub struct ResDirEntry {
+    dir_path: Arc<str>,
+    file_name: Arc<str>,
+    is_dir: bool,
+}
+
+impl ResDirEntry {
+
+    #[inline]
+    pub fn file_name(&self) -> &str {
+        &self.file_name
+    }
+
+    #[inline]
+    pub fn is_dir(&self) -> bool {
+        self.is_dir
+    }
+
+    #[inline]
+    pub fn is_file(&self) -> bool {
+        !self.is_dir
+    }
+
+}
 
 
 /// The node cache structure.
 #[derive(Debug)]
 struct NodeCache {
     /// Inner file informations tree.
-    inner: Vec<NodeInfo>,
-}
-
-/// Cache information about a node.
-#[derive(Debug)]
-struct NodeInfo {
-    /// Index of the parent directory file information.
-    parent: usize,
-    /// Specific kind of information.
-    kind: NodeInfoKind,
+    nodes: Vec<NodeInfo>,
+    /// Number of directories in all nodes.
+    dir_count: usize,
+    dir_children_max_count: usize,
+    node_name_max_len: usize,
 }
 
 /// Kind of cached node information, absent, file or directory node.
 #[derive(Debug)]
-enum NodeInfoKind {
-    // The file is neither a file nor a directory and known to be absent.
-    Absent,
+enum NodeInfo {
     // Information about a file.
-    File {
-        // Index of the package that contains the file.
-        package_index: usize,
-        // Index of the file within the package.
-        file_index: usize,
-    },
+    File(FileInfo),
     // Information about a directory.
-    Directory {
-        /// Indices to packages that contains that directory, associated to true or false
-        /// depending on the known presence of the directory within that package.
-        packages: Vec<NodePackage>,
-        /// For each named children, there is an associated index in the information tree.
-        /// 
-        /// FIXME: This is not really optimal for size of the enum because it break size
-        /// equilibrium between File and Directory, it could be externalized into 
-        /// [`FileCache`] structure.
-        children: HashMap<String, usize>,
-    }
+    Dir(DirInfo)
 }
 
-/// This represent the known location of a node in opened packages.
-#[derive(Debug, Clone)]
-struct NodePackage {
-    /// Index of the package in the global package cache.
+#[derive(Debug)]
+struct FileInfo {
+    // Index of the package that contains the file.
     package_index: usize,
-    /// Index of the first file the 
+    // Index of the file within the package.
     file_index: usize,
-    /// True if the package contains the node, false if not.
-    present: bool,
 }
 
-/// This represent the known state of a package for a node, see the method 
-/// [`NodeCache::find_node_packages()`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum NodePackageState {
-    /// Returned packages set isn't exhaustive, it may be necessary to open more packages.
-    NonExhaustive,
-    /// Returned packages set is exhaustive, if the node is not found in the given 
-    /// packages then it should be considered not found.
-    Exhaustive,
+#[derive(Debug, Default)]
+struct DirInfo {
+    /// Children of the directory. Key is a shared string because we clone it when 
+    /// iterating directory entries. If this is altered because of a package indexing,
+    /// the added children are guaranteed to have a node index that is greater than
+    /// any previous one.
+    children: BTreeMap<Arc<str>, usize>,
 }
 
 impl NodeCache {
@@ -300,542 +473,179 @@ impl NodeCache {
     /// Create a new default file cache.
     fn new() -> Self {
         Self {
-            inner: vec![NodeInfo { // root directory is present everywhere
-                parent: 0,
-                kind: NodeInfoKind::Directory { 
-                    packages: vec![],
-                    children: HashMap::new(),
-                },
-            }],
+            nodes: vec![NodeInfo::Dir(DirInfo::default())],
+            dir_count: 0,
+            dir_children_max_count: 0,
+            node_name_max_len: 0,
         }
     }
 
-    /// Find a packages that may contain the given node pointed to by path, from the least
-    /// to the most preferred one, the vector cleared.
-    fn find_node_packages(&self, path: &str, ret_packages: &mut Vec<NodePackage>) -> NodePackageState {
-        
-        ret_packages.clear();
+    /// Index a package in this node cache, note that the caller should avoid calling 
+    /// this twice for the same packages.
+    fn index_package(&mut self, package_index: usize, package_reader: &PackageReader<File>) {
 
-        // FIXME: Not necessary to avoid duplicates because we can use 'excluded' from 'PackageInfo'
-        let mut returned_package_indices = HashMap::<usize, usize>::new();
+        let mut last_dir_index = 0;
+        let mut last_dir_path = ""; // This contains the end slash when relevant.
 
-        let mut current_index = 0;
-        for part in path.split('/') {
-            match self.inner[current_index].kind {
-                NodeInfoKind::Absent => {
-                    return NodePackageState::Exhaustive;
-                }
-                NodeInfoKind::File { package_index, file_index } => {
-                    ret_packages.push(NodePackage {
-                        package_index,
-                        file_index,
-                        present: true,
-                    });
-                    return NodePackageState::Exhaustive;
-                }
-                NodeInfoKind::Directory { ref packages, ref children } => {
+        for (file_index, file_path) in package_reader.names().enumerate() {
+            
+            // Always split the file name from the rest of the directory path.
+            // NOTE: It is valid to split at 'index == file_path.len()', in this
+            // case the 'file_name' will be empty, but this should not happen!
+            // Also, 'dir_path' should not start with a sep.
+            let (mut dir_path, file_name) = match file_path.rfind('/') {
+                Some(last_sep_index) => file_path.split_at(last_sep_index + 1),
+                None => ("", file_path),
+            };
 
-                    for node_package in packages {
-                        
-                        // If the index exists, we just re-add the node package at the
-                        // end, so we remove it here to re-add it afterward.
-                        if let Some(index) = returned_package_indices.remove(&node_package.package_index) {
-                            ret_packages.remove(index);
-                        }
+            debug_assert!(!file_name.is_empty(), "package names should only contains files");
 
-                        returned_package_indices.insert(node_package.package_index, ret_packages.len());
-                        ret_packages.push(node_package.clone());
+            self.node_name_max_len = self.node_name_max_len.max(file_name.len());
 
-                    }
+            // If the file don't start with the last dir path, then we can reset index
+            // to zero and try re-fetching all the path. If it starts with, then we just
+            // shorten the path.
+            let mut current_dir_index;
+            if dir_path.starts_with(last_dir_path) {
+                dir_path = &dir_path[last_dir_path.len()..];
+                current_dir_index = last_dir_index;
+            } else {
+                current_dir_index = 0;
+            }
 
-                    if let Some(&child_index) = children.get(part) {
-                        current_index = child_index;
+            // If dir path isn't empty, it must contain at least a slash at the end, and
+            // we discard it before splitting because we don't want to have a trailing
+            // empty 'dir_part'.
+            if !dir_path.is_empty() {
+                for dir_part in dir_path[..dir_path.len() - 1].split('/') {
+
+                    self.node_name_max_len = self.node_name_max_len.max(dir_part.len());
+
+                    // NOTE: Need to store the inner length here, we use it after to 
+                    // avoid borrowing issues.
+                    let inner_len = self.nodes.len();
+                    let dir = self.nodes[current_dir_index]
+                        .as_dir_mut()
+                        .expect("trying to make a directory where a file already exists");
+                    
+                    if let Some(&child_index) = dir.children.get(dir_part) {
+                        current_dir_index = child_index;
+                    } else {
+                        current_dir_index = inner_len;
+                        dir.children.insert(Arc::from(dir_part), inner_len);
+                        self.dir_children_max_count = self.dir_children_max_count.max(dir.children.len());
+                        self.nodes.push(NodeInfo::Dir(DirInfo::default()));
+                        self.dir_count += 1;
                     }
 
                 }
             }
-        }
 
-        NodePackageState::NonExhaustive
+            if last_dir_index != current_dir_index {
+                last_dir_index = current_dir_index;
+                last_dir_path = dir_path;
+            }
+
+            // NOTE: Same as above!
+            let inner_len = self.nodes.len();
+            let dir = self.nodes[current_dir_index]
+                .as_dir_mut()
+                .expect("current directory should effectively be a directory");
+
+            let prev_child = dir.children.insert(Arc::from(file_name), inner_len);
+            self.dir_children_max_count = self.dir_children_max_count.max(dir.children.len());
+            debug_assert!(prev_child.is_none(), "overwriting a file");
+            self.nodes.push(NodeInfo::File(FileInfo {
+                package_index,
+                file_index,
+            }));
+
+        }
 
     }
 
-    /// Register a file to be in the given package.
-    fn put_file(&mut self, path: &str, package_index: usize, file_index: usize) {
+    /// Find directory info in cache from the given file path, the directory path should
+    /// not contain trailing nor leading separator. The index of the node within internal
+    /// nodes array is also returned so that dir info can be retrieved faster a second
+    /// time, this index is guaranteed to be valid for the cache lifetime, cache is never
+    /// destroyed.
+    fn find_dir(&self, dir_path: &str) -> Option<(usize, &DirInfo)> {
 
-        let mut current_index = 0;
-        for part in path.split('/') {
-
-            
-
+        let mut current_dir_index = 0;
+        if !dir_path.is_empty() {
+            for dir_part in dir_path.split('/') {
+                current_dir_index = *self.nodes[current_dir_index]
+                    .as_dir()?
+                    .children
+                    .get(dir_part)?;
+            }
         }
 
+        self.nodes[current_dir_index]
+            .as_dir()
+            .map(|dir| (current_dir_index, dir))
+
     }
+
+    /// Find file info in cache from the given file path. The index of the node is also
+    /// returned like for [`Self::find_dir`].
+    fn find_file(&self, file_path: &str) -> Option<(usize, &FileInfo)> {
+
+        // No exactly same as when indexing because here we don't care of last dir sep.
+        let (dir_path, file_name) = file_path.rsplit_once('/').unwrap_or(("", file_path));
+
+        let (_, dir) = self.find_dir(dir_path)?;
+        let file_index = *dir.children.get(file_name)?;
+        self.nodes[file_index]
+            .as_file()
+            .map(|file| (file_index, file))
+
+    }
+
+    /// Get a directory information from its node index (see [`Self::find_dir`]).
+    fn get_dir(&self, index: usize) -> Option<&DirInfo> {
+        self.nodes.get(index)?.as_dir()
+    }
+
+    // /// Get a file information from its node index (see [`Self::find_file`]).
+    // fn get_file(&self, index: usize) -> Option<&FileInfo> {
+    //     self.nodes.get(index)?.as_file()
+    // }
 
 }
 
+impl NodeInfo {
 
+    #[inline]
+    fn as_file(&self) -> Option<&FileInfo> {
+        match self {
+            NodeInfo::File(file) => Some(file),
+            NodeInfo::Dir(_) => None,
+        }
+    }
 
+    #[inline]
+    fn as_dir(&self) -> Option<&DirInfo> {
+        match self {
+            NodeInfo::File(_) => None,
+            NodeInfo::Dir(dir) => Some(dir),
+        }
+    }
 
-
-    // /// Read a file from its path. The path should not start with the separator (`/`) and
-    // /// empty file name should not be empty.
-    // pub fn read(&mut self, file_path: &str) -> io::Result<PackageFileReader<'_, File>> {
-
-    //     // Iteratively find (and create if not existing) directories in the tree.
-    //     let mut dir_index = 0;
-    //     for dir_name in dir_path.split('/') {
-
-    //         let dir_info = &mut self.dir_cache[dir_index];
-
-    //         if let Some(&index) = dir_info.children.get(dir_name) {
-    //             // There is a subdirectory, just go in it.
-    //             dir_index = index;
-    //         } else {
-    //             // Then we add the new dir info, and add it to its parent.
-    //             let child_dir_index = self.dir_cache.len();
-    //             self.dir_cache.push(DirInfo {
-    //                 parent: dir_index,
-    //                 children: HashMap::new(),
-    //                 in_packages: Vec::new(),
-    //             });
-    //             self.dir_cache[dir_index].children.insert(dir_name.to_string(), child_dir_index);
-    //             dir_index = child_dir_index;
-    //         }
-
+    // #[inline]
+    // fn as_file_mut(&mut self) -> Option<&mut FileInfo> {
+    //     match self {
+    //         NodeInfo::File(file) => Some(file),
+    //         NodeInfo::Dir(_) => None,
     //     }
-
-    //     // Save the top directory index, to be restored later.
-    //     let top_dir_index = dir_index;
-
-    //     // Iteratively fetch the directory tree, from the top level dir down to root.
-    //     let mut index = None;
-    //     while index.is_none() {
-
-    //         let dir_info = &mut self.dir_cache[dir_index];
-    //         for &(package_index, package_in) in &dir_info.in_packages {
-    //             let package_info = &mut self.package_cache[package_index];
-    //             if !package_info.visited {
-    //                 package_info.visited = true;
-    //                 if package_in {
-    //                     index = package_info.reader.index_by_name(file_name).map(|file_index| (package_index, file_index));
-    //                 }
-    //             }
-    //         }
-
-    //         if dir_index == 0 {
-    //             break; // Because root dir has no parent.
-    //         }
-    //         dir_index = dir_info.parent;
-
-    //     }
-
-    //     // At this point, if the file is not found we want to check the remaining 
-    //     // packages that are not currently known to contains the directory. We also reset
-    //     // to false the visited flag, because we don't use it later.
-    //     for (package_index, package_info) in self.package_cache.values_mut().enumerate() {
-    //         if !package_info.visited {
-    //             index = package_info.reader.index_by_name(file_name).map(|file_index| (package_index, file_index));
-    //             if index.is_some() {
-                    
-    //                 // Here we need to add this package to the directory info.
-    //                 dir_index = top_dir_index;
-    //                 loop {
-    //                     let dir_info = &mut self.dir_cache[dir_index];
-    //                     dir_info.in_packages.push(package_index);
-    //                     if dir_index == 0 {
-    //                         break; // Root don't have parent directory.
-    //                     }
-    //                     dir_index = dir_info.parent;
-    //                 }
-
-    //                 break;
-    //             }
-    //         }
-    //         package_info.visited = false;
-    //     }
-
-    //     // // TODO: Iteratively check in_packages for all directories down to root while not
-    //     // // checking twice for the same package (using a hashset?). If the file has not 
-    //     // // been found in those, check remaining packages and only then open pending 
-    //     // // packages to check them.
-
-    //     // // For each known packages, check if the file can be found, when it has been
-    //     // // found, just take the package index and the file index in it.
-    //     // let mut index = self.dir_tree[dir_index].in_packages.iter()
-    //     //     .find_map(|&package_index| {
-    //     //         let package = &self.package_cache[package_index];
-    //     //         package.index_by_name(file_path).map(|file_index| (package_index, file_index))
-    //     //     });
-
-    //     // // If it has not been found, check in pending packages...
-    //     // while index.is_none() {
-
-    //     //     // If no index but the pending packages are empty, the file is not found.
-    //     //     let Some(package_path) = self.package_pending.pop() else {
-    //     //         return Err(io::Error::from(io::ErrorKind::NotFound));
-    //     //     };
-
-    //     //     // Try to open package and parse its header, then find the file index.
-    //     //     let package = PackageReader::new(File::open(&package_path)?)?;
-    //     //     let file_index = package.index_by_name(file_path);
-
-    //     //     // Then we insert it and retrieve its index within the index map.
-    //     //     let (
-    //     //         package_index, 
-    //     //         prev_package
-    //     //     ) = self.package_cache.insert_full(package_path, package);
-    //     //     debug_assert!(prev_package.is_none());
-
-    //     //     // Set the index to exit the loop.
-
-    //     //     // If file has been found in this package, set the index to exit the loop,
-    //     //     // and then update 'dir_info' and its parents, because they all contain.
-    //     //     if let Some(file_index) = file_index {
-
-    //     //         loop {
-    //     //             let dir_info = &mut self.dir_tree[dir_index];
-    //     //             dir_info.in_packages.push(package_index);
-    //     //             if dir_index == 0 {
-    //     //                 break; // Root don't have parent directory.
-    //     //             }
-    //     //             dir_index = dir_info.parent;
-    //     //         }
-
-    //     //         index = Some((package_index, file_index));
-
-    //     //     }
-
-    //     // }
-
-    //     // println!("self.dir_tree: {:?}", self.dir_tree);
-    //     // println!("self.package_cache: {:?}", self.package_cache);
-
-    //     // let (package_index, file_index) = index.unwrap();
-    //     // let package = &mut self.package_cache[package_index];
-
-    //     // match package.read_by_index(file_index) {
-    //     //     Ok(reader) => Ok(reader),
-    //     //     Err(e) if e.kind() == io::ErrorKind::NotFound => unreachable!(),
-    //     //     Err(e) => Err(e)
-    //     // }
-
     // }
 
-
-
-
-
-
-//     /// Read a directory given a path. This method will success if at least
-//     /// one of the packages (or root) actually contains the directory. If
-//     /// not, a [`ResError::DirectoryNotFound`].
-//     pub fn read_dir(&mut self, path: &str) -> ResResult<ResReadDir> {
-
-//         // The canonic path needs to end with a slash, this save
-//         // some computations and simplify further operations.
-//         let mut canon_path = path.trim_start_matches('/').to_string();
-//         if !canon_path.ends_with('/') { canon_path.push('/') }
-//         // Redefine dir_path as immutable.
-//         let canon_path = canon_path;
-
-//         // Note that the directory index don't store the last '/'.
-//         let mut index_path = &canon_path.as_str()[..canon_path.len() - 1];
-        
-//         loop {
-
-//             if let Some(locs) = self.dir_index.get(index_path) {
-
-//                 let mut root_read_dir = None;
-//                 if locs.in_root {
-//                     let file_path = self.dir_path.join(&canon_path);
-//                     if file_path.is_dir() {
-//                         root_read_dir = Some(fs::read_dir(file_path)?);
-//                     }
-//                 }
-
-//                 let mut packages = Vec::new();
-//                 for package in locs.in_packages.iter().rev() {
-//                     // Get the opened package and check if it contains the directory.
-//                     let pkg = self.package_cache.ensure(package, &self.dir_path)?;
-//                     if let Some(dir_index) = pkg.index_from_name(&canon_path) {
-//                         // The next file index is directly set to the file following the directory.
-//                         packages.push((Arc::clone(&pkg), dir_index + 1));
-//                     }
-//                 }
-
-//                 if root_read_dir.is_none() && packages.is_empty() {
-//                     return Err(ResError::DirectoryNotFound);
-//                 } else {
-//                     return Ok(ResReadDir {
-//                         dir_path: canon_path,
-//                         root_read_dir,
-//                         packages,
-//                     })
-//                 }
-
-//             }
-
-//             // If we are already on the root directory but it isn't indexed.
-//             if index_path.is_empty() {
-//                 return Err(ResError::DirectoryNotFound);
-//             }
-
-//             // If the current directory's path is not indexed,
-//             // check for its parent. Once we reached 
-//             if let Some(pos) = index_path.rfind('/') {
-//                 index_path = &index_path[..pos];
-//             } else {
-//                 index_path = "";
-//             }
-
-//         }
-
-//     }
-
-//     pub fn open(&mut self, path: &str) -> ResResult<ResFile> {
-
-//         let full_path = path.trim_matches('/');
-
-//         let mut path = full_path;
-//         loop {
-
-//             let slash_index = path.rfind("/").unwrap_or(0);
-//             let parent_path = &path[..slash_index];
-
-//             if let Some(locs) = self.dir_index.get(parent_path) {
-                
-//                 if locs.in_root {
-//                     let file_path = self.dir_path.join(full_path);
-//                     if file_path.is_file() {
-//                         let file = File::open(file_path)?;
-//                         return Ok(ResFile(ResFileKind::System(file)));
-//                     }
-//                 }
-
-//                 for package in &locs.in_packages {
-//                     let pkg = self.package_cache.ensure(package, &self.dir_path)?;
-//                     if let Some(pkg_file) = pkg.open_by_name(full_path)? {
-//                         return Ok(ResFile(ResFileKind::Package(pkg_file)));
-//                     }
-//                 }
-
-//                 break;
-
-//             } else {
-//                 // If the parent directory can't be found, check its parent.
-//                 path = parent_path;
-//                 if path.is_empty() {
-//                     break;
-//                 }
-//             }
-
-//         }
-
-//         Err(ResError::FileNotFound)
-
-//     }
-
-// }
-
-
-// impl PackageCache {
-
-//     /// Internal method to ensure that a zip archive is opened.
-//     fn ensure(&mut self, package: &String, dir_path: &PathBuf) -> pkg::ReadResult<&Arc<PackageReader<File>>> {
-//         Ok(match self.inner.entry(package.clone()) {
-//             Entry::Occupied(o) => o.into_mut(),
-//             Entry::Vacant(v) => {
-//                 let mut package_path = dir_path.join(PACKAGES_DIR_NAME);
-//                 package_path.push(package);
-//                 v.insert(Arc::new(PackageReader::new(File::open(package_path)?)?))
-//             }
-//         })
-//     }
-
-// }
-
-
-// /// A seakable reader for a resource file. 
-// pub struct ResFile(ResFileKind);
-
-// /// Internal kind of resource file reader.
-// enum ResFileKind {
-//     /// System file.
-//     System(File),
-//     /// Package file.
-//     Package(PackageFile<File>),
-// }
-
-
-// /// Iterator for a directory in resources.
-// pub struct ResReadDir {
-//     /// The full path to search for, in packages. 
-//     /// **End with a slash.**
-//     dir_path: String,
-//     /// When some, this std IO [`ReadDir`] should be consumed
-//     /// before fetching packages.
-//     root_read_dir: Option<ReadDir>,
-//     /// Packages to fetch, in reverse order, the last one is the
-//     /// current package being read. Packages are associated to
-//     /// the file index currently being read.
-//     /// 
-//     /// Because packages' files are ordered by directories, if 
-//     /// the file index no longer points to a file of the dir,
-//     /// this means that we finished reading the dir.
-//     packages: Vec<(Arc<PackageReader<File>>, usize)>,
-// }
-
-// /// A directory entry returned from the [`ResReadDir`] iterator.
-// #[derive(Debug)]
-// pub struct ResDirEntry {
-//     path: String,
-//     dir: bool,
-// }
-
-// impl Iterator for ResReadDir {
-
-//     type Item = ResResult<ResDirEntry>;
-
-//     fn next(&mut self) -> Option<Self::Item> {
-
-//         // FIXME: Remove duplicates from iteration.
-
-//         /// Internal function used to convert an std IO [`DirEntry`] result
-//         /// into a [`ResDirEntry`] result used by this iterator.
-//         fn convert_entry(entry: io::Result<DirEntry>, full_path: &str) -> ResResult<ResDirEntry> {
-
-//             let entry = entry?;
-//             let file_type = entry.file_type()?;
-//             let file_name_raw = entry.file_name();
-//             let file_name = file_name_raw.to_str()
-//                 .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "non-utf8 filename"))?;
-
-//             Ok(ResDirEntry { 
-//                 path: format!("{full_path}{file_name}"),
-//                 dir: file_type.is_dir()
-//             })
-
-//         }
-        
-//         // The iterator state machine starts with the root read directory,
-//         // if present. Once all root entries has been yielded, the 
-//         if let Some(read_dir) = &mut self.root_read_dir {
-//             if let Some(entry) = read_dir.next() {
-//                 return Some(convert_entry(entry, &self.dir_path));
-//             }
-//             // If no entry has been found, set the read dir to None to
-//             // prevent further iteration of it. Might also free so internal
-//             // buffers.
-//             self.root_read_dir = None;
-//         }
-
-//         // Try to get the next file meta to return.
-//         // If no package is found, go to the next available package, if
-//         // no more package is available, this is the end of the iterator.
-//         loop {
-
-//             if let Some((
-//                 current_package, 
-//                 file_index
-//             )) = self.packages.last_mut() {
-
-//                 while let Some(meta) = current_package.files().get(*file_index) {
-
-//                     *file_index += 1;
-
-//                     // We only take the file if it starts with our full path.
-//                     if meta.file_name.starts_with(&self.dir_path[..]) {
-
-//                         // Get the sub path after the common the directory path.
-//                         let sub_path = &meta.file_name[self.dir_path.len()..];
-//                         // Test if this is a file directly contained by the directory.
-//                         let sub_direct = match sub_path.find('/') {
-//                             Some(pos) => pos == sub_path.len() - 1, // Directory
-//                             None => true // File
-//                         };
-
-//                         // Do not include terminal slash in entry's path.
-//                         let no_slash_path = meta.file_name.strip_suffix('/');
-
-//                         if sub_direct {
-//                             return Some(Ok(ResDirEntry { 
-//                                 dir: no_slash_path.is_some(),
-//                                 path: no_slash_path.unwrap_or(&meta.file_name[..]).to_string(),
-//                             }))
-//                         }
-                        
-//                     } else {
-//                         // If the current file don't start with the directory path,
-//                         // we reached the end of the directory.
-//                         break;
-//                     }
-
-//                 }
-
-//                 // If we leave the previous loop without returning, this means that 
-//                 // the current package is exhausted, so we pop it.
-//                 if self.packages.pop().is_none() {
-//                     return None; // Iterator end!
-//                 }
-
-//             } else {
-//                 // No package remaining to read.
-//                 return None;
-//             }
-
-//         }
-
-//     }
-
-// }
-
-// impl ResDirEntry {
-
-//     /// Get the full path of the entry.
-//     #[inline]
-//     pub fn path(&self) -> &str {
-//         &self.path[..]
-//     }
-
-//     /// Get the file name of the entry.
-//     pub fn name(&self) -> &str {
-//         match self.path.rfind('/') {
-//             Some(pos) => &self.path[pos + 1..],
-//             None => &self.path[..]
-//         }
-//     }
-
-//     #[inline]
-//     pub fn is_dir(&self) -> bool {
-//         self.dir
-//     }
-
-//     #[inline]
-//     pub fn is_file(&self) -> bool {
-//         !self.is_dir()
-//     }
-
-// }
-
-
-// /// Result type aslias for [`ResError`].
-// pub type ResResult<T> = Result<T, ResError>;
-
-// /// Errors that can happen while interacting with the resources
-// /// filesystem.
-// #[derive(Debug, Error)]
-// pub enum ResError {
-//     /// The file was not found.
-//     #[error("file not found")]
-//     FileNotFound,
-//     /// The directory was not found.
-//     #[error("directory not found")]
-//     DirectoryNotFound,
-//     /// Package read error.
-//     #[error("package error: {0}")]
-//     Package(#[from] pkg::ReadError),
-//     /// IO error.
-//     #[error("io error: {0}")]
-//     Io(#[from] io::Error),
-// }
+    #[inline]
+    fn as_dir_mut(&mut self) -> Option<&mut DirInfo> {
+        match self {
+            NodeInfo::File(_) => None,
+            NodeInfo::Dir(dir) => Some(dir),
+        }
+    }
+
+}

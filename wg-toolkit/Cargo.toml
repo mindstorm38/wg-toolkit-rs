@@ -16,7 +16,7 @@ byteorder = "1.4"       # Used for codecs read/writing.
 smallvec = "1.10"       # Used by pxml codec.
 base64 = "0.13"         # Used by pxml codec.
 glam = "0.21"           # Used for math vec types.
-indexmap = "2.2"        # Used for resource filesystem.
+indexmap = "2.2"        # Used for res filesystem.
 
 # Used for codecs read/writing.
 serde = "1.0"
