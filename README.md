@@ -1,6 +1,6 @@
 # WG Toolkit
 Toolkit crate providing various implementations for codecs distributed by [Wargaming.net](https://wargaming.net/). 
-These codecs are part of the [Core](https://wotencore.net/) engine *(previously known as BigWorld)* notably used by 
+These codecs are part of the Core engine *(previously known as BigWorld)* notably used by 
 World of Tanks. This crate also provides an implementation of the network protocol.
 
 ## Library
@@ -20,18 +20,28 @@ World of Tanks. This crate also provides an implementation of the network protoc
     - BWSG (static geometry)
     - BWCS (compiled space settings)
     - BWAL (asset list)
-- Network protocol *(WIP, feature `network`)*
+- Resource virtual filesystem (read-only)
+  - Package indexing
+  - Reading file either from native filesystem or packages
+  - Reading directory entries from native filesystem and packages
+- Network protocol *(WIP)*
   - Packets encoding and decoding *(partial flags support)*
   - Appending elements to bundles
   - Assemble received packet in bundles
   - Iterate elements in a bundle
-- ***PLANNED*** Game's resource file system (automatic opening of packages)
 
 ## CLI
 - [Crate page](https://crates.io/crates/wg-toolkit-cli)
 - Packed XML
   - Deserialization and display
   - Value editing (string, integer, boolean, float)
+- Resource virtual filesystem
+  - Read file content and copy it to stdout
+  - Read directory content with possible configured recursion
+
+## WoT CLI
+Not yet published, not yet working, but present in the code base, might be integrated to
+CLI at some point.
 
 ## Contributing guidelines
 When contributing to the code base, some rules should be followed:
