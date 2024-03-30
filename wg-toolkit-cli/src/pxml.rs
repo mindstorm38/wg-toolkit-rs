@@ -9,7 +9,15 @@ use wgtk::pxml::{self, Element, Value};
 use super::CmdResult;
 
 
-pub fn cmd_pxml_show(matches: &ArgMatches) -> CmdResult<()> {
+pub fn cmd_pxml(matches: &ArgMatches) -> CmdResult<()> {
+    match matches.subcommand() {
+        Some(("show", matches)) => cmd_pxml_show(matches),
+        Some(("edit", matches)) => cmd_pxml_edit(matches),
+        _ => unreachable!()
+    }
+}
+
+fn cmd_pxml_show(matches: &ArgMatches) -> CmdResult<()> {
 
     let file_path = matches.get_one::<String>("file").unwrap();
     let xml = matches.get_flag("xml");
@@ -34,7 +42,7 @@ pub fn cmd_pxml_show(matches: &ArgMatches) -> CmdResult<()> {
     }
 
     // Print the whole root element.
-    print_element(&root_elt, &mut indent, xml);
+    print_element(&root_elt, &mut indent, false, xml);
 
     if xml {
         println!("</root>");
@@ -46,8 +54,7 @@ pub fn cmd_pxml_show(matches: &ArgMatches) -> CmdResult<()> {
 
 }
 
-
-pub fn cmd_pxml_edit(matches: &ArgMatches) -> CmdResult<()> {
+fn cmd_pxml_edit(matches: &ArgMatches) -> CmdResult<()> {
 
     let file_path = matches.get_one::<String>("file").unwrap();
     let backup_file_path = format!("{file_path}.{}", SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs());
@@ -94,13 +101,13 @@ pub fn cmd_pxml_edit(matches: &ArgMatches) -> CmdResult<()> {
 
     // Make a backup file.
     std::fs::copy(file_path, backup_file_path)
-        .map_err(|e| format!("Failed to backup Packed XML file, because of: {e}"))?;
+        .map_err(|e| format!("Failed to backup Packed XML file, reason: {e}"))?;
 
     let file = File::create(file_path)
-        .map_err(|e| format!("Failed to create file at {file_path:?}, because of: {e}"))?;
+        .map_err(|e| format!("Failed to create file at {file_path:?}, reason: {e}"))?;
 
     pxml::to_writer(file, &root_elt)
-        .map_err(|e| format!("Failed to write Packed XML file at {file_path:?}, because of: {e}"))?;
+        .map_err(|e| format!("Failed to write Packed XML file at {file_path:?}, reason: {e}"))?;
 
     Ok(())
 
@@ -112,13 +119,12 @@ fn cmd_read_pxml_file<P: AsRef<Path>>(path: P) -> CmdResult<Box<Element>> {
     let path = path.as_ref();
 
     let file = File::open(path)
-        .map_err(|e| format!("Failed to open file at {path:?}, because of: {e}"))?;
+        .map_err(|e| format!("Failed to open file at {path:?}, reason: {e}"))?;
 
     pxml::from_reader(file)
-        .map_err(|e| format!("Failed to read Packed XML file at {path:?}, because of: {e}"))
+        .map_err(|e| format!("Failed to read Packed XML file at {path:?}, reason: {e}"))
 
 }
-
 
 fn cmd_resolve_element_path<'a, 'b>(
     element: &'a mut Element, 
@@ -137,10 +143,9 @@ fn cmd_resolve_element_path<'a, 'b>(
         })
 }
 
-
 /// Print an element and its children, children are printed
 /// prefixed with the given indent. No terminal line feed.
-fn print_element(element: &Element, indent: &mut String, xml: bool) {
+fn print_element(element: &Element, indent: &mut String, new_line: bool, xml: bool) {
 
     match &element.value {
         // If the value is an empty string, just do not print the value
@@ -154,7 +159,9 @@ fn print_element(element: &Element, indent: &mut String, xml: bool) {
         }
     }
     
-    println!();
+    if new_line {
+        println!();
+    }
 
     let rollback_len = indent.len();
     for (i, (child_key, child_value)) in element.iter_children_all().enumerate() {
@@ -180,12 +187,11 @@ fn print_element(element: &Element, indent: &mut String, xml: bool) {
 
 }
 
-
 /// Print a Packed XML value inline -no terminal line feed-.
 fn print_value(value: &Value, indent: &mut String, xml: bool) {
     match value {
         Value::Element(element) => {
-            print_element(&element, indent, xml);
+            print_element(&element, indent, true, xml);
             if xml {
                 print!("{}", &indent[..indent.len() - 2]);
             }
@@ -224,7 +230,6 @@ fn print_value(value: &Value, indent: &mut String, xml: bool) {
     }
 }
 
-
 /// Possible errors while resolving path in an element.
 enum PathResolveError<'a> {
     ChildNotFound {
@@ -236,7 +241,6 @@ enum PathResolveError<'a> {
         parent: &'a str,
     },
 }
-
 
 /// Internal recursive function to traval the given element and path
 /// and return the pointed value if existing.

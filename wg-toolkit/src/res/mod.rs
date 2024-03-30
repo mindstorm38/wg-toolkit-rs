@@ -32,21 +32,21 @@ const PACKAGES_DIR_NAME: &'static str = "packages";
 pub struct ResFilesystem {
     /// Shared part of the filesystem, used when returning independent handles like
     /// read dir iterator.
-    shared: Arc<SharedFilesystem>,
+    shared: Arc<Shared>,
 }
 
 /// Immutable shared data 
 #[derive(Debug)]
-struct SharedFilesystem {
+struct Shared {
     /// Path to the "res/" directory.
     dir_path: PathBuf,
     /// Mutable part of the shared data, behind mutex.
-    mutable: Mutex<PackageFilesystem>,
+    mutable: Mutex<SharedMut>,
 }
 
 /// Mutex shared part of the resource filesystem.
 #[derive(Debug)]
-struct PackageFilesystem {
+struct SharedMut {
     /// Pending packages to be opened and cached.
     pending_package_path: Vec<PathBuf>,
     /// Cache for opened package files.
@@ -85,9 +85,9 @@ impl ResFilesystem {
         }
 
         Ok(Self { 
-            shared: Arc::new(SharedFilesystem {
+            shared: Arc::new(Shared {
                 dir_path,
-                mutable: Mutex::new(PackageFilesystem {
+                mutable: Mutex::new(SharedMut {
                     pending_package_path: pending_package_cache,
                     package_reader_cache: IndexMap::new(),
                     package_open_errors: Vec::new(),
@@ -99,8 +99,9 @@ impl ResFilesystem {
     }
 
     /// Read a file from its path in the resource filesystem.
-    pub fn read(&self, file_path: &str) -> io::Result<ResReadFile> {
+    pub fn read<P: AsRef<str>>(&self, file_path: P) -> io::Result<ResReadFile> {
 
+        let file_path = file_path.as_ref();
         let native_file_path = self.shared.dir_path.join(file_path);
         if native_file_path.is_file() {
             match File::open(native_file_path) {
@@ -120,7 +121,13 @@ impl ResFilesystem {
     /// 
     /// This function may return a file not found error if no package contains this 
     /// directory.
-    pub fn read_dir(&self, dir_path: &str) -> io::Result<ResReadDir> {
+    pub fn read_dir<P: AsRef<str>>(&self, dir_path: P) -> io::Result<ResReadDir> {
+
+        // Instant error if leading separator.
+        let dir_path = dir_path.as_ref();
+        if dir_path.starts_with('/') {
+            return Err(io::ErrorKind::NotFound.into());
+        }
 
         // Remove an possible trailing separator.
         let dir_path = dir_path.strip_suffix('/').unwrap_or(dir_path);
@@ -162,7 +169,7 @@ impl ResFilesystem {
 
 }
 
-impl PackageFilesystem {
+impl SharedMut {
 
     fn try_read(&mut self, file_path: &str) -> io::Result<Option<PackageFileReader<File>>> {
         
@@ -307,7 +314,7 @@ impl Seek for ResReadFile {
 /// IMPL NOTE: This structure is quite heavy, it may be necessary to box its inner state.
 #[derive(Debug)]
 pub struct ResReadDir {
-    /// Directory path that we are listing.
+    /// Directory path that we are listing. It has no trailing separator!
     dir_path: Arc<str>,
     /// The native read dir result that maybe used for iteration before the package part.
     native_read_dir: Option<ReadDir>,
@@ -318,11 +325,12 @@ pub struct ResReadDir {
 #[derive(Debug)]
 struct PackageReadDir {
     /// Shared resource filesystem data.
-    shared: Arc<SharedFilesystem>,
+    shared: Arc<Shared>,
     /// Directory index in the node cache.
     dir_index: usize,
-    /// A vector containing all names to return on next iterations.
-    remaining_names: Vec<Arc<str>>,
+    /// A vector containing all names to return on next iterations. Name is associated to
+    /// the node index in the cache, this
+    remaining_names: Vec<(Arc<str>, usize)>,
     /// Total names count to return.
     last_children_count: usize,
     /// This keep the last (exclusive) node index used by children.
@@ -344,7 +352,7 @@ impl Iterator for ResReadDir {
                     let file_name = file_name.to_str().unwrap();
                     return Some(Ok(ResDirEntry { 
                         dir_path: Arc::clone(&self.dir_path), 
-                        file_name: Arc::from(file_name),
+                        name: Arc::from(file_name),
                         is_dir: file_type.is_dir(),
                     }))
                 },
@@ -358,6 +366,7 @@ impl Iterator for ResReadDir {
             // Then we search the directory iteratively, and loop over if a pending package
             // has been opened.
             let mut mutable = package_read_dir.shared.mutable.lock().unwrap();
+
             loop {
                     
                 let dir_info = mutable.node_cache.get_dir(package_read_dir.dir_index).unwrap();
@@ -373,7 +382,7 @@ impl Iterator for ResReadDir {
                     for (child_name, &child_index) in &dir_info.children {
                         max_child_index = max_child_index.max(child_index);
                         if child_index >= package_read_dir.last_children_last_node_index {
-                            package_read_dir.remaining_names.push(Arc::clone(child_name));
+                            package_read_dir.remaining_names.push((Arc::clone(child_name), child_index));
                         }
                     }
 
@@ -382,11 +391,11 @@ impl Iterator for ResReadDir {
 
                 }
 
-                if let Some(file_name) = package_read_dir.remaining_names.pop() {
+                if let Some((node_name, node_index)) = package_read_dir.remaining_names.pop() {
                     return Some(Ok(ResDirEntry {
                         dir_path: Arc::clone(&self.dir_path),
-                        file_name,
-                        is_dir: false, // TODO: !!!
+                        name: node_name,
+                        is_dir: mutable.node_cache.get_dir(node_index).is_some(),
                     }));
                 }
 
@@ -405,24 +414,33 @@ impl Iterator for ResReadDir {
 
 }
 
+/// Represent an file or directory entry returned by [`ResReadDir`].
 pub struct ResDirEntry {
     dir_path: Arc<str>,
-    file_name: Arc<str>,
+    name: Arc<str>,
     is_dir: bool,
 }
 
 impl ResDirEntry {
 
+    /// Return the entry name.
     #[inline]
-    pub fn file_name(&self) -> &str {
-        &self.file_name
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
+    /// Reconstruct the full path of the entry for later [`ResFilesystem::read()`] call.
+    pub fn path(&self) -> String {
+        format!("{}/{}", self.dir_path, self.name)
+    }
+
+    /// Return true if this entry is a directory.
     #[inline]
     pub fn is_dir(&self) -> bool {
         self.is_dir
     }
 
+    /// Return true if this entry is a file.
     #[inline]
     pub fn is_file(&self) -> bool {
         !self.is_dir
