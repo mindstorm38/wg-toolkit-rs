@@ -102,6 +102,10 @@ impl ResFilesystem {
     pub fn read<P: AsRef<str>>(&self, file_path: P) -> io::Result<ResReadFile> {
 
         let file_path = file_path.as_ref();
+        if file_path.starts_with('/') {
+            return Err(io::ErrorKind::NotFound.into());
+        }
+
         let native_file_path = self.shared.dir_path.join(file_path);
         if native_file_path.is_file() {
             match File::open(native_file_path) {

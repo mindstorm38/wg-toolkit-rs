@@ -46,7 +46,7 @@ fn main() -> ExitCode {
                 .value_parser(value_parser!(PathBuf)))
             .subcommand(Command::new("ls")
                 .about("List directory contents")
-                .arg(arg!(path: <PATH> "Path to the directory to list, no leading separator!"))
+                .arg(arg!(path: <PATH> "Path to the directory to list, no leading separator (empty to list root)!"))
                 .arg(arg!(recurse: -r --recurse [RECURSION] "Enable recursion listing of directories.")
                     .value_parser(value_parser!(u16))
                     .default_missing_value("10000")))
