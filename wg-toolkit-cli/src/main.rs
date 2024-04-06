@@ -1,15 +1,9 @@
-//! The CLI for wg-toolkit
-//! 
-//! Use cases:
-//! $ wgtk pxml show <FILE> [-p <PATH>]
-//! $ wgtk pxml edit <FILE> <PATH> <VALUE>
-//! $ wgth res <PATH> ls
-//! $ wgth res <PATH> read
+//! The CLI for wg-toolkit library.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 
 mod pxml;
 mod res;
@@ -20,87 +14,116 @@ mod res;
 /// This command line tries to provide UNIX-oriented commands that can be piped together
 /// to make more complex operations.
 #[derive(Debug, Parser)]
-#[command(version, disable_help_subcommand = true)]
-struct Cli {
+#[command(version, author, disable_help_subcommand = true, max_term_width = 100)]
+pub struct Cli {
     #[command(subcommand)]
-    command: Command,
+    pub cmd: Command,
 }
 
 #[derive(Debug, Subcommand)]
-enum Command {
-    /// Packed XML read and write utilities.
-    Pxml,
-    /// Game resources virtual filesystem access.
-    /// 
-    /// The game resources are split in many directories under the game's resources (res)
-    /// directory, most of resources are actually stored inside huge package files (.pkg).
-    /// This command uses efficient indexing on these packages to efficiently fetch and
-    /// interact with the files, this works with not-packaged files and packaged files at
-    /// the same time.
-    Res {
-        /// Path to the game's resource (res/) directory.
-        res_dir: PathBuf,
-    },
+pub enum Command {
+    #[command(name = "pxml")]
+    PackedXml(PackedXmlArgs),
+    Res(ResArgs)
 }
 
+/// Packed XML read and write utilities.
+/// 
+/// This is a format that is commonly used in game resources, it provides a kind of 
+/// serialization for a XML, packed XML files use the same extension as regular XML 
+/// (.xml), a packed XML file can be replaced by a clear XML file and will work the
+/// same.
+#[derive(Debug, Args)]
+pub struct PackedXmlArgs {
+    /// If specified, the packed XML is read from a file instead of stdin (fd 0).
+    /// 
+    /// This is essentially the same as piping 'cat' of the packed XML file into it. 
+    #[arg(short, long)]
+    pub file: Option<PathBuf>,
+    /// Enable XML output style.
+    /// 
+    /// This can be used if you want to replace a packed XML file with a clear one, 
+    /// this flag will correctly format the packed XML as a regular clear XML file
+    /// that can be read by the game engine.
+    #[arg(short, long)]
+    pub xml: bool,
+    /// If needed, the packed XML can be modified before outputting it.
+    /// 
+    /// The filter is basically a sequence of statements, with an expression at the end
+    /// that dictates what value to output. Each statement must end with a semicolon ';'.
+    /// 
+    /// An expression is something that returns a packed XML value: Element, 
+    /// String ("hello world"), Integer (64-bit signed), Boolean (true, false),
+    /// Float (32-bit IEEE 754), Vec3, Affine3.
+    pub filter: Option<String>,
+}
 
+/// Game resources virtual filesystem access.
+/// 
+/// The game resources are split in many directories under the game's resources (res)
+/// directory, most of resources are actually stored inside huge package files (.pkg).
+/// This command uses efficient indexing on these packages to efficiently fetch and
+/// interact with the files, this works with not-packaged files and packaged files at
+/// the same time.
+#[derive(Debug, Args)]
+pub struct ResArgs {
+    /// Path to the game's resource (res/) directory.
+    pub dir: PathBuf,
+    #[command(subcommand)]
+    pub cmd: ResCommand
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ResCommand {
+    Read(ResReadArgs),
+    #[command(name = "ls")]
+    List(ResListArgs),
+}
+
+/// Read a file and write its content on the standard output.
+#[derive(Debug, Args)]
+pub struct ResReadArgs {
+    /// Path to the file to read, no leading separator!
+    pub path: String,
+}
+
+/// List directory contents.
+/// 
+/// Note that this function may take a really long time to proceed, because all packages
+/// needs to be opened to ensures that the given directory is present or not. This should
+/// be faster on subsequent calls because of your operating system filesystem cache.
+#[derive(Debug, Args)]
+pub struct ResListArgs {
+    /// Path to the directory to list, no leading separator (empty to list root)!
+    pub path: String,
+    /// Enable recursion listing of directories.
+    /// 
+    /// By default this will recurse indefinitely, but you can provide a limit to the 
+    /// recursion, for example '1' will show children of all root directories.
+    #[arg(short, long)]
+    pub recurse: Option<Option<u16>>,
+}
+
+/// Type alias for a result that simply returns a string on error, this will be output
+/// on stderr and process returns a failed exit code. This allows easier error handling
+/// by just mapping the error type to an explanatory text.
+pub type CliResult<T> = Result<T, String>;
+
+/// Entrypoint.
 fn main() -> ExitCode {
 
     let args = Cli::parse();
 
-    ExitCode::SUCCESS
+    let res = match args.cmd {
+        Command::PackedXml(args) => pxml::cmd_pxml0(args),
+        Command::Res(args) => res::cmd_res(args),
+    };
 
-    // let matches = Command::new("wgtk")
-    //     .version(crate_version!())
-    //     .author(crate_authors!())
-    //     .about(crate_description!())
-    //     .disable_help_subcommand(true)
-    //     .arg_required_else_help(true)
-    //     .subcommand_required(true)
-    //     .subcommand(Command::new("pxml")
-    //         .about("Packed XML read and write utilities")
-    //         .arg_required_else_help(true)
-    //         .subcommand_required(true)
-    //         .subcommand(Command::new("show")
-    //             .about("Show a deserialized view of a given Packed XML file")
-    //             .arg(arg!(path: -p --path <PATH> "Path to a specific value to show"))
-    //             .arg(arg!(xml: -x --xml "Enable XML output style"))
-    //             .arg(arg!(file: <FILE> "The Packed XML file to show")))
-    //         .subcommand(Command::new("edit")
-    //             .about("Edit a terminal value of a given Packed XML file")
-    //             .arg(arg!(file: <FILE> "The Packed XML file to edit"))
-    //             .arg(arg!(path: <PATH> "The path to the terminal value to edit"))
-    //             .arg(arg!(value: <VALUE> "The new value."))))
-    //     .subcommand(Command::new("res")
-    //         .about("Resources flatten filesystem utilities.")
-    //         .arg_required_else_help(true)
-    //         .subcommand_required(true)
-    //         .arg(arg!(res_dir: <PATH> "Path to the game's res/ directory.")
-    //             .value_parser(value_parser!(PathBuf)))
-    //         .subcommand(Command::new("ls")
-    //             .about("List directory contents")
-    //             .arg(arg!(path: <PATH> "Path to the directory to list, no leading separator (empty to list root)!"))
-    //             .arg(arg!(recurse: -r --recurse [RECURSION] "Enable recursion listing of directories.")
-    //                 .value_parser(value_parser!(u16))
-    //                 .default_missing_value("10000")))
-    //         .subcommand(Command::new("read")
-    //             .about("Read a file and write its content on the standard output.")
-    //             .arg(arg!(path: <PATH> "Path to the file to read, no leading separator!"))))
-    //     .get_matches();
-
-    // let res = match matches.subcommand() {
-    //     Some(("pxml", matches)) => pxml::cmd_pxml(matches),
-    //     Some(("res", matches)) => res::cmd_res(matches),
-    //     _ => unreachable!()
-    // };
-
-    // if let Err(message) = res {
-    //     eprintln!("{message}");
-    //     ExitCode::FAILURE
-    // } else {
-    //     ExitCode::SUCCESS
-    // }
+    if let Err(message) = res {
+        eprintln!("{message}");
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
+    }
     
 }
-
-type CmdResult<T> = Result<T, String>;

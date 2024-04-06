@@ -1,44 +1,39 @@
 use std::io;
-use std::path::PathBuf;
-
-use clap::ArgMatches;
 
 use wgtk::res::ResFilesystem;
 
-use super::CmdResult;
+use super::{CliResult, ResArgs, ResCommand, ResListArgs, ResReadArgs};
 
 
-pub fn cmd_res(matches: &ArgMatches) -> CmdResult<()> {
+/// Entrypoint.
+pub fn cmd_res(args: ResArgs) -> CliResult<()> {
 
-    let res_dir = matches.get_one::<PathBuf>("res_dir").unwrap();
-
-    let res_fs = ResFilesystem::new(res_dir)
+    let fs = ResFilesystem::new(args.dir)
         .map_err(|e| format!("Failed to open resource filesystem, reason: {e}"))?;
 
-    match matches.subcommand() {
-        Some(("ls", matches)) => cmd_res_ls(matches, &res_fs),
-        Some(("read", matches)) => cmd_res_read(matches, &res_fs),
-        _ => unreachable!()
+    match args.cmd {
+        ResCommand::List(args) => cmd_res_ls(args, &fs),
+        ResCommand::Read(args) => cmd_res_read(args, &fs),
     }
 
 }
 
-fn cmd_res_ls(matches: &ArgMatches, fs: &ResFilesystem) -> CmdResult<()> {
-
-    let path = matches.get_one::<String>("path").unwrap();
-    let recurse = matches.get_one::<u16>("recurse").copied().unwrap_or(0);
+fn cmd_res_ls(args: ResListArgs, fs: &ResFilesystem) -> CliResult<()> {
     
+    let path = args.path.as_str();
+    let recurse = args.recurse.unwrap_or(Some(0)).unwrap_or(u16::MAX);
+
     let mut indent = String::new();
-    print_dir(fs, &mut indent, &path, recurse)
+    print_dir(fs, &mut indent, path, recurse)
         .map_err(|e| format!("Can't find '{path}' resource directory, reason: {e}"))?;
 
     Ok(())
 
 }
 
-fn cmd_res_read(matches: &ArgMatches, fs: &ResFilesystem) -> CmdResult<()> {
+fn cmd_res_read(args: ResReadArgs, fs: &ResFilesystem) -> CliResult<()> {
 
-    let path = matches.get_one::<String>("path").unwrap();
+    let path = args.path.as_str();
 
     let mut read_file = fs.read(path)
         .map_err(|e| format!("Can't find '{path}' resource file, reason: {e}"))?;
@@ -53,18 +48,15 @@ fn cmd_res_read(matches: &ArgMatches, fs: &ResFilesystem) -> CmdResult<()> {
 /// Print directory content
 fn print_dir(fs: &ResFilesystem, indent: &mut String, dir_path: &str, recursion: u16) -> io::Result<()> {
 
-    for entry in fs.read_dir(dir_path)? {
+    let mut list = fs.read_dir(dir_path)?
+        .filter_map(Result::ok)
+        .collect::<Vec<_>>();
 
-        print!("{indent}");
+    list.sort_by(|e1, e2| Ord::cmp(e1.name(), e2.name()));
 
-        let entry = match entry {
-            Ok(entry) => entry,
-            Err(_) => {
-                continue;
-            }
-        };
+    for entry in list {
 
-        print!("{}", entry.name());
+        print!("{indent}{}", entry.name());
 
         if entry.is_dir() {
             print!("/");

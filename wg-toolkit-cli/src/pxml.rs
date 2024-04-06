@@ -1,3 +1,4 @@
+use std::io::{Cursor, Read};
 use std::time::SystemTime;
 use std::path::Path;
 use std::fs::File;
@@ -6,10 +7,59 @@ use clap::ArgMatches;
 
 use wgtk::pxml::{self, Element, Value};
 
-use super::CmdResult;
+use super::{CliResult, PackedXmlArgs};
 
 
-pub fn cmd_pxml(matches: &ArgMatches) -> CmdResult<()> {
+pub fn cmd_pxml0(args: PackedXmlArgs) -> CliResult<()> {
+
+    let root_elt = match args.file {
+        Some(path) => {
+
+            let file = File::open(&path)
+                .map_err(|e| format!("Failed to open file at {path:?}, reason: {e}"))?;
+
+            pxml::from_reader(file)
+                .map_err(|e| format!("Failed to read Packed XML file at {path:?}, reason: {e}"))?
+
+        }
+        None => {
+
+            let mut content = Vec::new();
+            std::io::stdin().read_to_end(&mut content)
+                .map_err(|e| format!("Failed to read content from stdin, reason: {e}"))?;
+
+            pxml::from_reader(Cursor::new(content))
+                .map_err(|e| format!("Failed to read Packed XML from stdin, reason: {e}"))?
+
+        }
+    };
+
+    if let Some(filter) = args.filter {
+
+    }
+    
+    let mut indent = String::new();
+
+    if args.xml {
+        println!("<root>");
+        indent.push_str("  ");
+    }
+
+    // Print the whole root element.
+    print_element(&root_elt, &mut indent, false, args.xml);
+
+    if args.xml {
+        println!("</root>");
+    } else {
+        println!(); // Because 'print_element' don't print a line feed.
+    }
+
+    Ok(())
+
+}
+
+
+pub fn cmd_pxml(matches: &ArgMatches) -> CliResult<()> {
     match matches.subcommand() {
         Some(("show", matches)) => cmd_pxml_show(matches),
         Some(("edit", matches)) => cmd_pxml_edit(matches),
@@ -17,7 +67,7 @@ pub fn cmd_pxml(matches: &ArgMatches) -> CmdResult<()> {
     }
 }
 
-fn cmd_pxml_show(matches: &ArgMatches) -> CmdResult<()> {
+fn cmd_pxml_show(matches: &ArgMatches) -> CliResult<()> {
 
     let file_path = matches.get_one::<String>("file").unwrap();
     let xml = matches.get_flag("xml");
@@ -54,7 +104,7 @@ fn cmd_pxml_show(matches: &ArgMatches) -> CmdResult<()> {
 
 }
 
-fn cmd_pxml_edit(matches: &ArgMatches) -> CmdResult<()> {
+fn cmd_pxml_edit(matches: &ArgMatches) -> CliResult<()> {
 
     let file_path = matches.get_one::<String>("file").unwrap();
     let backup_file_path = format!("{file_path}.{}", SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs());
@@ -114,7 +164,7 @@ fn cmd_pxml_edit(matches: &ArgMatches) -> CmdResult<()> {
 }
 
 
-fn cmd_read_pxml_file<P: AsRef<Path>>(path: P) -> CmdResult<Box<Element>> {
+fn cmd_read_pxml_file<P: AsRef<Path>>(path: P) -> CliResult<Box<Element>> {
 
     let path = path.as_ref();
 
@@ -129,7 +179,7 @@ fn cmd_read_pxml_file<P: AsRef<Path>>(path: P) -> CmdResult<Box<Element>> {
 fn cmd_resolve_element_path<'a, 'b>(
     element: &'a mut Element, 
     path: &'b str
-) -> CmdResult<&'a mut Value> {
+) -> CliResult<&'a mut Value> {
     resolve_element_path(element, path, 0)
         .map_err(|e| {
             match e {
