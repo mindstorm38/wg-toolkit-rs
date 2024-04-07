@@ -35,7 +35,7 @@ pub fn cmd_pxml0(args: PackedXmlArgs) -> CliResult<()> {
     };
 
     if let Some(filter) = args.filter {
-
+        
     }
     
     let mut indent = String::new();

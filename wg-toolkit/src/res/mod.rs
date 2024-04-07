@@ -102,7 +102,7 @@ impl ResFilesystem {
     pub fn read<P: AsRef<str>>(&self, file_path: P) -> io::Result<ResReadFile> {
 
         let file_path = file_path.as_ref();
-        if file_path.starts_with('/') {
+        if file_path.starts_with('/') || file_path.ends_with('/') {
             return Err(io::ErrorKind::NotFound.into());
         }
 
@@ -129,7 +129,7 @@ impl ResFilesystem {
 
         // Instant error if leading separator.
         let dir_path = dir_path.as_ref();
-        if dir_path.starts_with('/') {
+        if dir_path.starts_with('/') || dir_path.starts_with('.') {
             return Err(io::ErrorKind::NotFound.into());
         }
 
@@ -341,24 +341,45 @@ struct PackageReadDir {
     last_children_last_node_index: usize,
 }
 
+impl ResReadDir {
+
+    /// Get the path to the directory being read.
+    #[inline]
+    pub fn path(&self) -> &str {
+        &self.dir_path
+    }
+
+}
+
 impl Iterator for ResReadDir {
 
     type Item = io::Result<ResDirEntry>;
 
     fn next(&mut self) -> Option<Self::Item> {
 
+        // FIXME: Avoid duplicate directories between native and package read dirs...
+
         if let Some(native_read_dir) = &mut self.native_read_dir {
             match native_read_dir.next() {
                 Some(Ok(entry)) => {
-                    // FIXME: Don't unwrap
+
                     let file_name = entry.file_name();
-                    let file_type = entry.file_type().unwrap();
-                    let file_name = file_name.to_str().unwrap();
+                    let file_type = match entry.file_type() {
+                        Ok(res) => res,
+                        Err(e) => return Some(Err(e)),
+                    };
+
+                    let file_name = match file_name.to_str() {
+                        Some(res) => res,
+                        None => return Some(Err(io::ErrorKind::InvalidData.into())),
+                    };
+
                     return Some(Ok(ResDirEntry { 
                         dir_path: Arc::clone(&self.dir_path), 
                         name: Arc::from(file_name),
                         is_dir: file_type.is_dir(),
                     }))
+
                 },
                 Some(Err(e)) => return Some(Err(e)),
                 None => (),

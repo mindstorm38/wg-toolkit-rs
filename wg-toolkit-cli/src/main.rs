@@ -58,9 +58,9 @@ pub struct PackedXmlArgs {
     pub filter: Option<String>,
 }
 
-/// Game resources virtual filesystem access.
+/// Game resources virtual filesystem access (readonly).
 /// 
-/// The game resources are split in many directories under the game's resources (res)
+/// The game resources are split in many directories under the game's resources (res/)
 /// directory, most of resources are actually stored inside huge package files (.pkg).
 /// This command uses efficient indexing on these packages to efficiently fetch and
 /// interact with the files, this works with not-packaged files and packaged files at
@@ -78,16 +78,22 @@ pub enum ResCommand {
     Read(ResReadArgs),
     #[command(name = "ls")]
     List(ResListArgs),
+    #[command(name = "cp")]
+    Copy(ResCopyArgs),
 }
 
 /// Read a file and write its content on the standard output.
+/// 
+/// Like 'ls', this command may take some time to complete depending on where the file is
+/// located in packages, this command return as soon as possible so you may be lucky if
+/// the file is located in first opened packages.
 #[derive(Debug, Args)]
 pub struct ResReadArgs {
     /// Path to the file to read, no leading separator!
     pub path: String,
 }
 
-/// List directory contents.
+/// List directory contents with optional recursion.
 /// 
 /// Note that this function may take a really long time to proceed, because all packages
 /// needs to be opened to ensures that the given directory is present or not. This should
@@ -102,6 +108,23 @@ pub struct ResListArgs {
     /// recursion, for example '1' will show children of all root directories.
     #[arg(short, long)]
     pub recurse: Option<Option<u16>>,
+}
+
+/// Copy files and directories from resources.
+#[derive(Debug, Args)]
+pub struct ResCopyArgs {
+    /// Source path of the file or directory to copy from resources.
+    /// 
+    /// Trailing separator '/' for directories is not necessary, where the file or 
+    /// directory is copied is controlled by the destination path.
+    #[arg(required = true)]
+    pub source: Vec<String>,
+    /// Destination directory, in your native filesystem.
+    /// 
+    /// The destination directory must exists. In general, this will error out if a file 
+    /// is copied onto an existing directory, or if a directory is copied onto a existing 
+    /// file, or for many other I/O errors.
+    pub dest: PathBuf,
 }
 
 /// Type alias for a result that simply returns a string on error, this will be output
