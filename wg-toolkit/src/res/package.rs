@@ -40,18 +40,22 @@ pub struct PackageReader<R: Read + Seek> {
     name_buffer: Arc<str>,
     /// All informations about each file available to the reader. Behind ref counted for
     /// the same reason as [`Self::name_buffer`].
-    file_infos: Arc<[PackageFileInfo]>,
+    file_infos: Arc<[PackageFileInternalInfo]>,
 }
 
 /// Internal metadata about a file.
 #[derive(Debug)]
-struct PackageFileInfo {
+struct PackageFileInternalInfo {
     /// Offset of the package name into the global name buffer.
     name_offset: u32,
     /// Length of the file name in the global name buffer.
     name_len: u16,
     /// Offset within the file of the local header of this file.
     header_offset: u32,
+    /// Expected uncompressed size for this file, packages should not compress files
+    /// so the compressed size should be equal, but this will be checked later if the
+    /// file is actually opened.
+    size: u32,
 }
 
 impl<R: Read + Seek> PackageReader<R> {
@@ -134,7 +138,9 @@ impl<R: Read + Seek> PackageReader<R> {
             }
 
             // Skip most of the header that we don't care at this point.
-            reader.seek_relative(24)?;
+            reader.seek_relative(20)?;
+            // Uncompressed size is used as 
+            let uncompressed_size = reader.read_u32()?;
             // Then we read all variable lengths.
             let file_name_len = reader.read_u16()?;
             // Read both fields at once because we want ot check that it's zero.
@@ -164,10 +170,11 @@ impl<R: Read + Seek> PackageReader<R> {
             }
             
             // Push the metadata to the files array.
-            file_infos.push(PackageFileInfo {
+            file_infos.push(PackageFileInternalInfo {
                 name_offset,
                 name_len: file_name_len,
                 header_offset: relative_offset,
+                size: uncompressed_size,
             });
 
         }
@@ -200,20 +207,33 @@ impl<R: Read + Seek> PackageReader<R> {
     pub fn len(&self) -> usize {
         self.file_infos.len()
     }
-    
-    /// Return an iterator over all file names in the package. The position of file names
-    /// in this iterator is the same that can be used when reading from index, using
+
+    /// Return an iterator over all file info in the package. The position of files in 
+    /// this iterator is their index that can be used when reading from index, using
     /// the [`Self::read_by_index()`] method.
-    pub fn names(&self) -> impl Iterator<Item = &'_ str> + '_ {
-        self.file_infos.iter().map(|file| {
-            &self.name_buffer[file.name_offset as usize..][..file.name_len as usize]
+    pub fn infos(&self) -> impl Iterator<Item = PackageFileInfo<'_>> {
+        self.file_infos.iter().map(|info| {
+            PackageFileInfo {
+                name: &self.name_buffer[info.name_offset as usize..][..info.name_len as usize],
+                size: info.size,
+            }
+        })
+    }
+
+    /// Get file information from its index.
+    pub fn info_by_index(&self, file_index: usize) -> Option<PackageFileInfo<'_>> {
+        self.file_infos.get(file_index).map(|info| {
+            PackageFileInfo {
+                name: &self.name_buffer[info.name_offset as usize..][..info.name_len as usize],
+                size: info.size,
+            }
         })
     }
 
     // Find a file index from its name, this function check all names so it may take some
     // time, it is preferable to keep an index 
     pub fn index_by_name(&self, file_name: &str) -> Option<usize> {
-        self.names().position(|check| check == file_name)
+        self.infos().position(|info| info.name == file_name)
     }
 
     /// Open a package file by its name and return a borrowed reader if successful.
@@ -249,6 +269,11 @@ impl<R: Read + Seek> PackageReader<R> {
         // Skip file name len + extra field length because it has already been checked.
         self.inner.seek(SeekFrom::Current(4 + info.name_len as i64))?;
 
+        // Incoherent uncompressed size, different from central directory header!
+        if uncompressed_size != info.size {
+            return Err(io::Error::from(io::ErrorKind::InvalidData));
+        }
+
         // Packages has no flag, no delayed crc32/size, no compression, no encryption.
         if flags != 0 {
             return Err(io::Error::from(io::ErrorKind::InvalidData));
@@ -270,6 +295,15 @@ impl<R: Read + Seek> PackageReader<R> {
 
 }
 
+
+/// Information about a package file that can be read.
+#[derive(Debug, Clone)]
+pub struct PackageFileInfo<'a> {
+    /// The file name that should be used when reading.
+    pub name: &'a str,
+    /// The size of this file when read.
+    pub size: u32,
+}
 
 /// A handle for reading a file in a package.
 #[derive(Debug)]

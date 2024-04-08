@@ -27,14 +27,14 @@ pub fn cmd_pxml0(args: PackedXmlArgs) -> CliResult<()> {
             let mut content = Vec::new();
             std::io::stdin().read_to_end(&mut content)
                 .map_err(|e| format!("Failed to read content from stdin, reason: {e}"))?;
-
+            
             pxml::from_reader(Cursor::new(content))
                 .map_err(|e| format!("Failed to read Packed XML from stdin, reason: {e}"))?
 
         }
     };
 
-    if let Some(filter) = args.filter {
+    if let Some(_filter) = args.filter {
         
     }
     
@@ -59,6 +59,7 @@ pub fn cmd_pxml0(args: PackedXmlArgs) -> CliResult<()> {
 }
 
 
+#[allow(unused)]
 pub fn cmd_pxml(matches: &ArgMatches) -> CliResult<()> {
     match matches.subcommand() {
         Some(("show", matches)) => cmd_pxml_show(matches),

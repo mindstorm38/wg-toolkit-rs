@@ -98,6 +98,12 @@ impl ResFilesystem {
 
     }
 
+    /// Get various information about a given path, wether its a directory or file, its
+    /// size or the number of children the directory has.
+    pub fn stat<P: AsRef<str>>(&self, file_path: P) -> io::Result<()> {
+        todo!()
+    }
+
     /// Read a file from its path in the resource filesystem.
     pub fn read<P: AsRef<str>>(&self, file_path: P) -> io::Result<ResReadFile> {
 
@@ -362,9 +368,9 @@ impl Iterator for ResReadDir {
         if let Some(native_read_dir) = &mut self.native_read_dir {
             match native_read_dir.next() {
                 Some(Ok(entry)) => {
-
+                    
                     let file_name = entry.file_name();
-                    let file_type = match entry.file_type() {
+                    let metadata = match entry.metadata() {
                         Ok(res) => res,
                         Err(e) => return Some(Err(e)),
                     };
@@ -377,7 +383,10 @@ impl Iterator for ResReadDir {
                     return Some(Ok(ResDirEntry { 
                         dir_path: Arc::clone(&self.dir_path), 
                         name: Arc::from(file_name),
-                        is_dir: file_type.is_dir(),
+                        stat: ResStat {
+                            is_dir: metadata.is_dir(),
+                            size: if metadata.is_dir() { 0 } else { metadata.len() },
+                        },
                     }))
 
                 },
@@ -417,11 +426,26 @@ impl Iterator for ResReadDir {
                 }
 
                 if let Some((node_name, node_index)) = package_read_dir.remaining_names.pop() {
+
+                    let node_info = mutable.node_cache.get_node(node_index).unwrap();
+
                     return Some(Ok(ResDirEntry {
                         dir_path: Arc::clone(&self.dir_path),
                         name: node_name,
-                        is_dir: mutable.node_cache.get_dir(node_index).is_some(),
+                        stat: ResStat {
+                            is_dir: node_info.as_dir().is_some(),
+                            size: match node_info {
+                                NodeInfo::File(file) => {
+                                    mutable.package_reader_cache[file.package_index]
+                                        .info_by_index(file.file_index)
+                                        .unwrap()
+                                        .size as u64
+                                }
+                                NodeInfo::Dir(_) => 0,
+                            }
+                        },
                     }));
+
                 }
 
                 // If there are no more file, we try opening more packages.
@@ -440,10 +464,11 @@ impl Iterator for ResReadDir {
 }
 
 /// Represent an file or directory entry returned by [`ResReadDir`].
+#[derive(Debug)]
 pub struct ResDirEntry {
     dir_path: Arc<str>,
     name: Arc<str>,
-    is_dir: bool,
+    stat: ResStat,
 }
 
 impl ResDirEntry {
@@ -459,6 +484,24 @@ impl ResDirEntry {
         format!("{}/{}", self.dir_path, self.name)
     }
 
+    /// Get stat of this entry, embedded within this directory entry structure.
+    #[inline]
+    pub fn stat(&self) -> &ResStat {
+        &self.stat
+    }
+
+}
+
+/// Various informations about a file, wether it's a directory or a file and its size on
+/// disk (not compressed, package file are not compressed anyway...).
+#[derive(Debug)]
+pub struct ResStat {
+    is_dir: bool,
+    size: u64,
+}
+
+impl ResStat {
+
     /// Return true if this entry is a directory.
     #[inline]
     pub fn is_dir(&self) -> bool {
@@ -469,6 +512,12 @@ impl ResDirEntry {
     #[inline]
     pub fn is_file(&self) -> bool {
         !self.is_dir
+    }
+
+    /// Return the size of this file, this is zero for directories.
+    #[inline]
+    pub fn size(&self) -> u64 {
+        self.size
     }
 
 }
@@ -530,15 +579,17 @@ impl NodeCache {
         let mut last_dir_index = 0;
         let mut last_dir_path = ""; // This contains the end slash when relevant.
 
-        for (file_index, file_path) in package_reader.names().enumerate() {
+        for (file_index, file_info) in package_reader.infos().enumerate() {
             
+            let file_name = file_info.name;
+
             // Always split the file name from the rest of the directory path.
             // NOTE: It is valid to split at 'index == file_path.len()', in this
             // case the 'file_name' will be empty, but this should not happen!
             // Also, 'dir_path' should not start with a sep.
-            let (mut dir_path, file_name) = match file_path.rfind('/') {
-                Some(last_sep_index) => file_path.split_at(last_sep_index + 1),
-                None => ("", file_path),
+            let (mut dir_path, file_name) = match file_name.rfind('/') {
+                Some(last_sep_index) => file_name.split_at(last_sep_index + 1),
+                None => ("", file_name),
             };
 
             debug_assert!(!file_name.is_empty(), "package names should only contains files");
@@ -645,15 +696,21 @@ impl NodeCache {
 
     }
 
-    /// Get a directory information from its node index (see [`Self::find_dir`]).
-    fn get_dir(&self, index: usize) -> Option<&DirInfo> {
-        self.nodes.get(index)?.as_dir()
+    /// Get a node information from its index.
+    fn get_node(&self, index: usize) -> Option<&NodeInfo> {
+        self.nodes.get(index)
     }
 
-    // /// Get a file information from its node index (see [`Self::find_file`]).
-    // fn get_file(&self, index: usize) -> Option<&FileInfo> {
-    //     self.nodes.get(index)?.as_file()
-    // }
+    /// Get a directory information from its node index (see [`Self::find_dir`]).
+    fn get_dir(&self, index: usize) -> Option<&DirInfo> {
+        self.get_node(index)?.as_dir()
+    }
+
+    /// Get a file information from its node index (see [`Self::find_file`]).
+    #[allow(unused)]
+    fn get_file(&self, index: usize) -> Option<&FileInfo> {
+        self.get_node(index)?.as_file()
+    }
 
 }
 

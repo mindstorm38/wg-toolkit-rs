@@ -1,45 +1,56 @@
 use std::path::PathBuf;
 use std::fs::File;
-use std::io;
+use std::io::{self, Write};
 
 use wgtk::res::{ResFilesystem, ResReadDir, ResReadFile};
 
-use super::{CliResult, ResArgs, ResCommand, ResListArgs, ResReadArgs, ResCopyArgs};
+use crate::{CliResult, CliOptions, ResArgs, ResCommand, ResListArgs, ResReadArgs, ResCopyArgs};
 
 
 /// Entrypoint.
-pub fn cmd_res(args: ResArgs) -> CliResult<()> {
+pub fn cmd_res(opts: CliOptions, args: ResArgs) -> CliResult<()> {
 
     let fs = ResFilesystem::new(args.dir)
         .map_err(|e| format!("Failed to open resource filesystem, reason: {e}"))?;
 
     match args.cmd {
-        ResCommand::List(args) => cmd_res_list(args, &fs),
-        ResCommand::Read(args) => cmd_res_read(args, &fs),
-        ResCommand::Copy(args) => cmd_res_copy(args, &fs),
+        ResCommand::List(args) => cmd_res_list(opts, args, &fs),
+        ResCommand::Read(args) => cmd_res_read(opts, args, &fs),
+        ResCommand::Copy(args) => cmd_res_copy(opts, args, &fs),
     }
 
 }
 
-fn cmd_res_list(args: ResListArgs, fs: &ResFilesystem) -> CliResult<()> {
+fn cmd_res_list(opts: CliOptions, args: ResListArgs, fs: &ResFilesystem) -> CliResult<()> {
     
     let path = args.path.as_str();
     let recurse = args.recurse.unwrap_or(Some(0)).unwrap_or(u16::MAX);
 
     let mut indent = String::new();
-    print_dir(fs, &mut indent, path, recurse)
+    let mut output = io::stdout().lock();
+
+    print_dir(&mut output, fs, &mut indent, path, recurse, opts.human)
         .map_err(|e| format!("Can't find '{path}' resource directory, reason: {e}"))?;
 
     Ok(())
 
 }
 
-fn cmd_res_read(args: ResReadArgs, fs: &ResFilesystem) -> CliResult<()> {
+fn cmd_res_read(opts: CliOptions, args: ResReadArgs, fs: &ResFilesystem) -> CliResult<()> {
 
     let path = args.path.as_str();
 
+    if opts.human {
+        print!("Opening filesystem...\r");
+        let _ = io::stdout().flush();
+    }
+
     let mut read_file = fs.read(path)
         .map_err(|e| format!("Can't find '{path}' resource file, reason: {e}"))?;
+
+    if opts.human {
+        print!("                     \r");
+    }
 
     io::copy(&mut read_file, &mut io::stdout().lock())
         .map_err(|e| format!("Failed to print file content to stdout, reason: {e}"))?;
@@ -48,7 +59,7 @@ fn cmd_res_read(args: ResReadArgs, fs: &ResFilesystem) -> CliResult<()> {
 
 }
 
-fn cmd_res_copy(args: ResCopyArgs, fs: &ResFilesystem) -> CliResult<()> {
+fn cmd_res_copy(_opts: CliOptions, args: ResCopyArgs, fs: &ResFilesystem) -> CliResult<()> {
 
     if !args.dest.is_dir() {
         return Err(format!("Destination directory {:?} does not exists.", args.dest));
@@ -76,8 +87,11 @@ fn cmd_res_copy(args: ResCopyArgs, fs: &ResFilesystem) -> CliResult<()> {
 
         println!("{source}/...");
 
-        std::fs::create_dir(&dest_path)
-            .map_err(|e| format!("Failed to create directory to copy in {dest_path:?}, reason: {e}"))?;
+        match std::fs::create_dir(&dest_path) {
+            Ok(()) => {}
+            Err(_) if dest_path.is_dir() => {} // Ignore if directory already exists.
+            Err(e) => return Err(format!("Failed to create directory to copy in {dest_path:?}, reason: {e}")),
+        }
 
         for entry in read_dir {
 
@@ -88,7 +102,7 @@ fn cmd_res_copy(args: ResCopyArgs, fs: &ResFilesystem) -> CliResult<()> {
             source.push('/');
             source.push_str(entry.name());
 
-            if entry.is_dir() {
+            if entry.stat().is_dir() {
                 
                 let read_dir = fs.read_dir(&source)
                     .map_err(|e| format!("Failed to read directory entry '{source}', reason: {e}"))?;
@@ -130,7 +144,7 @@ fn cmd_res_copy(args: ResCopyArgs, fs: &ResFilesystem) -> CliResult<()> {
         
         // The error here is generic because we don't know the expected type of entry.
         let read_dir = fs.read_dir(&source)
-            .map_err(|e| format!("Can't find '{source}' resource file or directory, reason: {e}"))?;
+            .map_err(|e| format!("Can't find '{source}' resource file or directory to copy, reason: {e}"))?;
 
         // Make source mutable because we'll use it to print advancement and we want to
         // avoid string reallocation in loop...
@@ -148,27 +162,46 @@ fn cmd_res_copy(args: ResCopyArgs, fs: &ResFilesystem) -> CliResult<()> {
 }
 
 /// Print directory content
-fn print_dir(fs: &ResFilesystem, indent: &mut String, dir_path: &str, recursion: u16) -> io::Result<()> {
+fn print_dir(output: &mut impl Write, fs: &ResFilesystem, indent: &mut String, dir_path: &str, recursion: u16, human: bool) -> io::Result<()> {
+
+    if human && indent.is_empty() {
+        let _ = write!(output, "Opening filesystem...\r");
+        let _ = io::stdout().flush();
+    }
 
     let mut list = fs.read_dir(dir_path)?
         .filter_map(Result::ok)
         .collect::<Vec<_>>();
 
+    if human && indent.is_empty() {
+        let _ = write!(output, "                     \r");
+    }
+
     list.sort_by(|e1, e2| Ord::cmp(e1.name(), e2.name()));
+
+    let max_size;
+    if human {
+        max_size = list.iter()
+            .map(|entry| entry.name().len())
+            .max()
+            .unwrap_or(0);
+    } else {
+        max_size = 0;
+    }
 
     for entry in list {
 
-        print!("{indent}{}", entry.name());
-
-        if entry.is_dir() {
-            print!("/");
+        if entry.stat().is_dir() {
+            let _ = writeln!(output, "{indent}{}/", entry.name());
+        } else if human { 
+            let _ = writeln!(output, "{indent}{:<2$} {} K", entry.name(), entry.stat().size() / 1000, max_size);
+        } else {
+            let _ = writeln!(output, "{indent}{} {}", entry.name(), entry.stat().size());
         }
-
-        println!();
 
         if recursion > 0 {
             indent.push_str("  ");
-            let _ = print_dir(fs, indent, &entry.path(), recursion - 1);
+            let _ = print_dir(output, fs, indent, &entry.path(), recursion - 1, human);
             indent.truncate(indent.len() - 2);
         }
 

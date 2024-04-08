@@ -1,13 +1,21 @@
 //! The CLI for wg-toolkit library.
 
-use std::path::PathBuf;
+use std::io::{self, IsTerminal};
 use std::process::ExitCode;
+use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand};
 
 mod pxml;
 mod res;
 
+
+/// Global options for the command line interface.
+#[derive(Debug)]
+pub struct CliOptions {
+    /// Human readable mode enabled.
+    pub human: bool,
+}
 
 /// Command line utility for interacting with codecs distributed by Wargaming.net studio.
 /// 
@@ -18,6 +26,14 @@ mod res;
 pub struct Cli {
     #[command(subcommand)]
     pub cmd: Command,
+    /// Optionally force human readable mode or not.
+    /// 
+    /// This is automatically enabled if stdout is a terminal, so it's automatically
+    /// disabled when piping in your shell to a file or another program. This make 
+    /// interoperability with UNIX like programs easier. Human readable output cannot
+    /// be easily parsed!
+    #[arg(short = 'H', long)]
+    pub human: Option<bool>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -101,6 +117,7 @@ pub struct ResReadArgs {
 #[derive(Debug, Args)]
 pub struct ResListArgs {
     /// Path to the directory to list, no leading separator (empty to list root)!
+    #[arg(default_value = "")]
     pub path: String,
     /// Enable recursion listing of directories.
     /// 
@@ -136,10 +153,13 @@ pub type CliResult<T> = Result<T, String>;
 fn main() -> ExitCode {
 
     let args = Cli::parse();
+    let opts = CliOptions {
+        human: args.human.unwrap_or_else(|| io::stdout().is_terminal()),
+    };
 
     let res = match args.cmd {
         Command::PackedXml(args) => pxml::cmd_pxml0(args),
-        Command::Res(args) => res::cmd_res(args),
+        Command::Res(args) => res::cmd_res(opts, args),
     };
 
     if let Err(message) = res {
