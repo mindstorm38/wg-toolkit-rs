@@ -1,10 +1,9 @@
 //! Serialization module for Packed XML.
 
-use std::collections::HashMap;
-use std::collections::hash_map::Entry;
 use std::io::{self, Write, Seek, SeekFrom};
+use std::collections::hash_map::Entry;
+use std::collections::HashMap;
 
-use glam::Vec3A;
 use smallvec::SmallVec;
 
 use crate::util::io::WgWriteExt;
@@ -112,13 +111,6 @@ fn write_element<W: Write + Seek>(writer: &mut W, element: &Element, dict: &Hash
 /// The returned data type is used to compute the data descriptor.
 fn write_value<W: Write + Seek>(writer: &mut W, value: &Value, dict: &HashMap<&String, u16>) -> io::Result<(DataType, usize)> {
 
-    #[inline]
-    fn write_vec3<W: Write + Seek>(writer: &mut W, v: &Vec3A) -> io::Result<()> {
-        writer.write_f32(v.x)?;
-        writer.write_f32(v.y)?;
-        writer.write_f32(v.z)
-    }
-
     // Returned length should perfectly match written data.
 
     match value {
@@ -157,20 +149,11 @@ fn write_value<W: Write + Seek>(writer: &mut W, value: &Value, dict: &HashMap<&S
             }
             Ok((DataType::Boolean, if b { 1 } else { 0 }))
         }
-        &Value::Float(n) => {
-            writer.write_f32(n)?;
-            Ok((DataType::Float, 4))
-        }
-        Value::Vec3(v) => {
-            write_vec3(writer, v)?;
-            Ok((DataType::Float, 4 * 3))
-        }
-        Value::Affine3(a) => {
-            write_vec3(writer, &a.x_axis)?;
-            write_vec3(writer, &a.y_axis)?;
-            write_vec3(writer, &a.z_axis)?;
-            write_vec3(writer, &a.w_axis)?;
-            Ok((DataType::Float, 4 * 12))
+        Value::Vector(v) => {
+            for &comp in &v.0 {
+                writer.write_f32(comp)?;
+            }
+            Ok((DataType::Vector, 4 * v.len()))
         }
     }
 

@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::io::{Seek, Read};
 
-use glam::{Affine3A, Vec3A, Vec4};
+use glam::{Affine3A, Vec3, Vec4};
 use smallvec::SmallVec;
 use thiserror::Error;
 
@@ -74,7 +74,7 @@ fn read_node(element: &Element) -> Option<Node> {
     }
 
     Some(Node {
-        identifier: identifier.clone(),
+        identifier: identifier.to_string(),
         transform,
         children,
     })
@@ -110,36 +110,20 @@ fn read_render_set(element: &Element) -> Option<RenderSet> {
 
                     let prop_name = prop_elt.value.as_string()?;
                     let prop_value = if let Some(val) = prop_elt.get_child("Texture") {
-                        MaterialProperty::Texture(val.as_string()?.clone())
+                        MaterialProperty::Texture(val.as_string()?.to_string())
                     } else if let Some(val) = prop_elt.get_child("Bool") {
                         MaterialProperty::Boolean(val.as_boolean()?)
                     } else if let Some(val) = prop_elt.get_child("Int") {
                         MaterialProperty::Integer(val.as_integer()?)
                     } else if let Some(val) = prop_elt.get_child("Float") {
-                        // Float properties are weird, because they might be present
-                        // in many formats, integers or strings that needs to be parsed.
-                        let n = match val {
-                            &Value::Integer(n) => n as f32,
-                            &Value::Float(n) => n,
-                            Value::String(s) => s.parse().ok()?,
-                            _ => return None
-                        };
-                        MaterialProperty::Float(n)
+                        MaterialProperty::Float(val.as_float()?)
                     } else if let Some(val) = prop_elt.get_child("Vector4") {
-                        // A vector 4 property is a string that needs to be parsed.
-                        let mut raw = val.as_string()?
-                            .splitn(4, ' ')
-                            .filter_map(|s| s.parse::<f32>().ok());
-                        let x = raw.next()?;
-                        let y = raw.next()?;
-                        let z = raw.next()?;
-                        let w = raw.next()?;
-                        MaterialProperty::Vec4(Vec4::new(x, y, z, w))
+                        MaterialProperty::Vec4(val.as_vec4()?)
                     } else {
                         return None;
                     };
 
-                    mat_properties.insert(prop_name.clone(), prop_value);
+                    mat_properties.insert(prop_name.to_string(), prop_value);
                     
                 }
             }
@@ -148,11 +132,11 @@ fn read_render_set(element: &Element) -> Option<RenderSet> {
                 index: group_index,
                 origin: group_origin,
                 material: Material { 
-                    identifier: mat_identifier.clone(), 
+                    identifier: mat_identifier.to_string(), 
                     properties: mat_properties,
                     collision_flags: mat_collision_flags,
                     material_kind: mat_kind,
-                    fx: mat_fx.clone(),
+                    fx: mat_fx.to_string(),
                 },
             })
 
@@ -160,10 +144,10 @@ fn read_render_set(element: &Element) -> Option<RenderSet> {
     }
 
     Some(RenderSet { 
-        node: node.clone(), 
+        node: node.to_string(), 
         geometry: Geometry { 
-            vertices_section: geometry_vertices.clone(), 
-            indices_section: geometry_indices.clone(), 
+            vertices_section: geometry_vertices.to_string(), 
+            indices_section: geometry_indices.to_string(), 
             primitive_groups,
         }, 
         treat_as_world_space_object,
@@ -180,9 +164,9 @@ pub struct Visual {
     /// Render sets.
     pub render_sets: SmallVec<[RenderSet; 4]>,
     /// Bounding box minimum.
-    pub bb_min: Vec3A,
+    pub bb_min: Vec3,
     /// Bounding box maximum.
-    pub bb_max: Vec3A,
+    pub bb_max: Vec3,
     /// Geometry size.
     pub geometry_size: u32,
     /// Minimum U/V density.
@@ -228,7 +212,7 @@ pub struct PrimitiveGroup {
     /// Index of the primitive group.
     pub index: u32,
     /// Origin of the primitive group.
-    pub origin: Vec3A,
+    pub origin: Vec3,
     /// Material of the primitive group.
     pub material: Material,
 }

@@ -2,19 +2,17 @@
 
 use std::io::{self, Read, Seek, Cursor};
 
-use glam::{Affine3A, Vec3A};
 use smallvec::SmallVec;
 use thiserror::Error;
 
 use crate::util::io::WgReadExt;
 
-use super::{MAGIC, Element, Value, DataType};
+use super::{DataType, Element, Value, Vector, MAGIC};
 
 
-/// Read a packed XML data from an readable and seekable object.
+/// Read a packed XML data from an readable and seek-able object.
 /// 
-/// *The content will be read starting from the inital position
-/// of the reader.*
+/// *The content will be read starting from the initial position of the reader.*
 pub fn from_reader<R: Read + Seek>(mut reader: R) -> Result<Box<Element>, DeError> {
 
     // Validate file's magic
@@ -106,26 +104,18 @@ fn read_element<R: Read>(reader: &mut R, element: &mut Element, dict: &[String])
 /// Internal function to read a value.
 fn read_data<R: Read>(reader: &mut R, value: &mut Value, desc: &DataDescriptor, dict: &[String], offset: u32) -> Result<(), DeError> {
     let len = (desc.end_offset - offset) as usize;
-    match desc.ty {
+    *value = match desc.ty {
         DataType::Element => {
             let mut element = Box::new(Element::new());
             read_element(reader, &mut *element, dict)?;
-            *value = Value::Element(element);
+            Value::Element(element)
         },
-        DataType::String => *value = Value::String(read_string(reader, len)?),
-        DataType::Integer => *value = Value::Integer(read_integer(reader, len)?),
-        DataType::Boolean => *value = Value::Boolean(read_bool(reader, len)?),
-        DataType::CompressedString => *value = Value::String(read_compressed_string(reader, len)?),
-        DataType::Float => {
-            let floats = read_vector(reader, len)?;
-            match floats.len() {
-                12 => *value = Value::Affine3(Affine3A::from_cols_slice(&floats[..12])),
-                3 => *value = Value::Vec3(Vec3A::from_slice(&floats[..3])),
-                1 => *value = Value::Float(floats[0]),
-                len => return Err(DeError::InvalidVectorLen(len))
-            }
-        }
-    }
+        DataType::String => Value::String(read_string(reader, len)?),
+        DataType::Integer => Value::Integer(read_integer(reader, len)?),
+        DataType::Boolean => Value::Boolean(read_bool(reader, len)?),
+        DataType::CompressedString => Value::String(read_compressed_string(reader, len)?),
+        DataType::Vector => Value::Vector(Vector(read_vector(reader, len)?)),
+    };
     Ok(())
 }
 
@@ -171,7 +161,7 @@ fn read_bool<R: Read>(reader: &mut R, len: usize) -> Result<bool, DeError> {
 
 
 /// Internal function to read a 
-fn read_vector<R: Read>(reader: &mut R, len: usize) -> Result<SmallVec<[f32; 12]>, DeError> {
+fn read_vector<R: Read>(reader: &mut R, len: usize) -> Result<SmallVec<[f32; 3]>, DeError> {
     
     if len % 4 != 0 {
         return Err(DeError::InvalidVectorLen(len))

@@ -5,7 +5,10 @@
 //! structures are introduced in this module to handle this case, such as
 //! [`Value`] and [`Element`].
 
-use glam::{Vec3A, Affine3A};
+use std::ops::Index;
+use std::slice;
+
+use glam::{Affine3A, Vec2, Vec3, Vec4};
 use smallvec::SmallVec;
 
 mod de;
@@ -26,10 +29,12 @@ pub enum Value {
     String(String),
     Integer(i64),
     Boolean(bool),
-    Float(f32),
-    Vec3(Vec3A),
-    Affine3(Affine3A),
+    Vector(Vector),
 }
+
+/// A packed XML f32 vector of values, this may contains one value or more.
+#[derive(Debug, Clone)]
+pub struct Vector(SmallVec<[f32; 3]>);
 
 /// A packed element.
 #[derive(Debug, Clone)]
@@ -86,8 +91,8 @@ impl Value {
 
     /// Try to get this value as a string if possible.
     #[inline]
-    pub fn as_string(&self) -> Option<&String> {
-        if let Self::String(s) = self { Some(s) } else { None }
+    pub fn as_string(&self) -> Option<&str> {
+        if let Self::String(s) = self { Some(s.as_str()) } else { None }
     }
 
     /// Try to get this value as an integer if possible.
@@ -102,22 +107,148 @@ impl Value {
         if let Self::Boolean(b) = *self { Some(b) } else { None }
     }
 
-    /// Try to get this value as a float is possible.
+    /// Try to get this value as a boolean is possible.
+    #[inline]
+    pub fn as_vector(&self) -> Option<&Vector> {
+        if let Self::Vector(v) = self { Some(v) } else { None }
+    }
+
+    /// Try to get this value as a float if possible.
+    /// 
+    /// If the underlying value is not a float vector, then the value may be interpreted
+    /// from an integer, or a string that can be parsed.
     #[inline]
     pub fn as_float(&self) -> Option<f32> {
-        if let Self::Float(n) = *self { Some(n) } else { None }
+        match self {
+            Self::Vector(v) => v.as_float(),
+            &Self::Integer(n) => Some(n as f32),
+            Self::String(s) => s.parse::<f32>().ok(),
+            _ => None
+        }
     }
 
-    /// Try to get this value as a vec3 is possible.
+    /// Try to get this value as a vec2 if possible.
+    /// 
+    /// If the underlying value is not a float vector, then the vector may be interpreted
+    /// from a string formatted as space-separated decimal floats.
     #[inline]
-    pub fn as_vec3(&self) -> Option<Vec3A> {
-        if let Self::Vec3(n) = *self { Some(n) } else { None }
+    pub fn as_vec2(&self) -> Option<Vec2> {
+        match self {
+            Self::Vector(v) => v.as_vec2(),
+            Self::String(s) => Some(Vec2::from_array(parse_string_vector(&s)?)),
+            _ => None
+        }
     }
 
-    /// Try to get this value as an affine3 is possible.
+    /// Try to get this value as a vec3 if possible.
+    /// 
+    /// If the underlying value is not a float vector, then the vector may be interpreted
+    /// from a string formatted as space-separated decimal floats.
+    #[inline]
+    pub fn as_vec3(&self) -> Option<Vec3> {
+        match self {
+            Self::Vector(v) => v.as_vec3(),
+            Self::String(s) => Some(Vec3::from_array(parse_string_vector(&s)?)),
+            _ => None
+        }
+    }
+
+    /// Try to get this value as a vec4 if possible.
+    /// 
+    /// If the underlying value is not a float vector, then the vector may be interpreted
+    /// from a string formatted as space-separated decimal floats.
+    #[inline]
+    pub fn as_vec4(&self) -> Option<Vec4> {
+        match self {
+            Self::Vector(v) => v.as_vec4(),
+            Self::String(s) => Some(Vec4::from_array(parse_string_vector(&s)?)),
+            _ => None
+        }
+    }
+
+    /// Try to get this value as an affine3 if possible.
     #[inline]
     pub fn as_affine3(&self) -> Option<Affine3A> {
-        if let Self::Affine3(n) = *self { Some(n) } else { None }
+        self.as_vector()?.as_affine3()
+    }
+
+}
+
+impl Vector {
+
+    /// Get the size of this float vector.
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Return the vector component at given index.
+    #[inline]
+    pub fn get(&self, index: usize) -> Option<f32> {
+        self.0.get(index).copied()
+    }
+
+    /// Return an ordered iterator to the components of this vector.
+    #[inline]
+    pub fn iter(&self) -> slice::Iter<'_, f32> {
+        self.0.iter()
+    }
+
+    /// Return a 1-component vector (the scalar) if this vector is of size 1.
+    #[inline]
+    pub fn as_float(&self) -> Option<f32> {
+        match self.0[..] {
+            [x] => Some(x),
+            _ => None,
+        }
+    }
+
+    /// Return a 2-component vector if this vector is of size 2.
+    #[inline]
+    pub fn as_vec2(&self) -> Option<Vec2> {
+        match self.0[..] {
+            [x, y] => Some(Vec2::new(x, y)),
+            _ => None,
+        }
+    }
+
+    /// Return a 3-component vector if this vector is of size 3.
+    #[inline]
+    pub fn as_vec3(&self) -> Option<Vec3> {
+        match self.0[..] {
+            [x, y, z] => Some(Vec3::new(x, y, z)),
+            _ => None,
+        }
+    }
+
+    /// Return a 4-component vector if this vector is of size 4.
+    #[inline]
+    pub fn as_vec4(&self) -> Option<Vec4> {
+        match self.0[..] {
+            [x, y, z, w] => Some(Vec4::new(x, y, z, w)),
+            _ => None,
+        }
+    }
+
+    /// Return a 3D affine transform if this vector is of size 12.
+    #[inline]
+    pub fn as_affine3(&self) -> Option<Affine3A> {
+        if self.0.len() == 12 {
+            Some(Affine3A::from_cols_slice(&self.0[..]))
+        } else {
+            None
+        }
+    }
+
+}
+
+impl Index<usize> for Vector {
+
+    type Output = f32;
+
+    #[inline]
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.0[index]
     }
 
 }
@@ -129,7 +260,8 @@ enum DataType {
     Element = 0,
     String = 1,
     Integer = 2,
-    Float = 3,
+    /// A 32-bit float vector of any size.
+    Vector = 3,
     Boolean = 4,
     /// This special kind act like a compressed string.
     /// This type is only used when the string to compress has a length
@@ -148,7 +280,7 @@ impl DataType {
             0 => Self::Element,
             1 => Self::String,
             2 => Self::Integer,
-            3 => Self::Float,
+            3 => Self::Vector,
             4 => Self::Boolean,
             5 => Self::CompressedString,
             _ => return None
@@ -160,10 +292,18 @@ impl DataType {
             DataType::Element => 0,
             DataType::String => 1,
             DataType::Integer => 2,
-            DataType::Float => 3,
+            DataType::Vector => 3,
             DataType::Boolean => 4,
             DataType::CompressedString => 5
         }
     }
 
+}
+
+fn parse_string_vector<const LEN: usize>(s: &str) -> Option<[f32; LEN]> {
+    let mut ret = [0.0; LEN];
+    for (i, part) in s.splitn(LEN, ' ').enumerate() {
+        ret[i] = part.parse::<f32>().ok()?;
+    }
+    Some(ret)
 }

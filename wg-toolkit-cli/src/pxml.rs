@@ -134,10 +134,10 @@ fn cmd_pxml_edit(matches: &ArgMatches) -> CliResult<()> {
                 _ => return Err(format!("Invalid boolean."))
             }
         }
-        Value::Float(_) => {
-            Value::Float(value_raw.parse::<f32>()
-                .map_err(|_| format!("Invalid float."))?)
-        }
+        // Value::Float(_) => {
+        //     Value::Float(value_raw.parse::<f32>()
+        //         .map_err(|_| format!("Invalid float."))?)
+        // }
         _ => return Err(format!("It is not possible to edit such values."))
     };
 
@@ -256,27 +256,25 @@ fn print_value(value: &Value, indent: &mut String, xml: bool) {
         }
         &Value::Integer(n) => print!("{n}"),
         &Value::Boolean(b) => print!("{b}"),
-        &Value::Float(n) => {
-            if xml {
-                print!("{n}");
+        Value::Vector(v) => {
+            if v.len() == 12 && !xml {
+                // TODO: Support XML repr!
+                println!();
+                println!("{indent}| {:.02} | {:.02} | {:.02} | {:.02} |", v[0], v[3], v[6], v[9]);
+                println!("{indent}| {:.02} | {:.02} | {:.02} | {:.02} |", v[1], v[4], v[7], v[10]);
+                println!("{indent}| {:.02} | {:.02} | {:.02} | {:.02} |", v[2], v[5], v[8], v[11]);
             } else {
-                print!("{n}f");
+                for (i, &comp) in v.iter().enumerate() {
+                    if i != 0 {
+                        if xml {
+                            print!(" ");
+                        } else {
+                            print!("/");
+                        }
+                    }
+                    print!("{comp:.1}");
+                }
             }
-        }
-        Value::Vec3(v) => {
-            if xml {
-                print!("{} {} {}", v.x, v.y, v.z);
-            } else {
-                print!("{}/{}/{}", v.x, v.y, v.z);
-            }
-        }
-        Value::Affine3(v) => {
-            let mat = &v.matrix3;
-            let vec = &v.translation;
-            println!();
-            println!("{indent}| {:.02} | {:.02} | {:.02} | {:.02} |", mat.x_axis.x, mat.y_axis.x, mat.z_axis.x, vec.x);
-            println!("{indent}| {:.02} | {:.02} | {:.02} | {:.02} |", mat.x_axis.y, mat.y_axis.y, mat.z_axis.y, vec.y);
-            println!("{indent}| {:.02} | {:.02} | {:.02} | {:.02} |", mat.x_axis.z, mat.y_axis.z, mat.z_axis.z, vec.z);
         }
     }
 }
