@@ -3,7 +3,7 @@
 pub mod package;
 
 use std::io::{Read, Seek, SeekFrom};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::fs::{File, ReadDir};
 use std::sync::{Arc, Mutex};
 use std::path::PathBuf;
@@ -100,8 +100,24 @@ impl ResFilesystem {
 
     /// Get various information about a given path, wether its a directory or file, its
     /// size or the number of children the directory has.
-    pub fn stat<P: AsRef<str>>(&self, file_path: P) -> io::Result<()> {
-        todo!()
+    pub fn stat<P: AsRef<str>>(&self, node_path: P) -> io::Result<ResStat> {
+        
+        let node_path = node_path.as_ref();
+        if node_path.starts_with('/') || node_path.ends_with('/') {
+            return Err(io::ErrorKind::NotFound.into());
+        }
+
+        let native_file_path = self.shared.dir_path.join(node_path);
+        match native_file_path.metadata() {
+            Ok(metadata) => return Ok(ResStat {
+                is_dir: metadata.is_dir(),
+                size: if metadata.is_dir() { 0 } else { metadata.len() },
+            }),
+            Err(_) => (),
+        }
+
+        self.shared.mutable.lock().unwrap().stat(node_path)
+
     }
 
     /// Read a file from its path in the resource filesystem.
@@ -170,6 +186,7 @@ impl ResFilesystem {
             package_read_dir: dir_index.map(|dir_index| PackageReadDir {
                 shared: Arc::clone(&self.shared),
                 dir_index,
+                native_names: HashSet::new(),
                 remaining_names: Vec::new(),
                 last_children_count: 0,
                 last_children_last_node_index: 0,
@@ -252,19 +269,44 @@ impl SharedMut {
     /// See [`ResFilesystem::read()`].
     fn read(&mut self, file_path: &str) -> io::Result<PackageFileReader<File>> {
 
-        if let Some(file_reader) = self.try_read(file_path)? {
-            return Ok(file_reader);
-        }
+        loop {
 
-        // If not found in cache, try opening more packages until we find it.
-        while self.try_open_pending_package() {
             if let Some(file_reader) = self.try_read(file_path)? {
                 return Ok(file_reader);
             }
+
+            if !self.try_open_pending_package() {
+                return Err(io::ErrorKind::NotFound.into());
+            }
+
         }
 
-        Err(io::ErrorKind::NotFound.into())
+    }
 
+    /// See [`ResFilesystem::stat()`].
+    fn stat(&mut self, node_path: &str) -> io::Result<ResStat> {
+
+        loop {
+
+            if let Some((_, node_info)) = self.node_cache.find_node(node_path) {
+                return Ok(ResStat {
+                    is_dir: node_info.as_dir().is_some(),
+                    size: if let Some(file_info) = node_info.as_file() {
+                        self.package_reader_cache[file_info.package_index]
+                            .info_by_index(file_info.file_index)
+                            .unwrap()
+                            .size as u64
+                    } else { 0 },
+                })
+            }
+
+            if !self.try_open_pending_package() {
+                return Err(io::ErrorKind::NotFound.into());
+            }
+    
+        }
+
+        
     }
 
 }
@@ -338,6 +380,9 @@ struct PackageReadDir {
     shared: Arc<Shared>,
     /// Directory index in the node cache.
     dir_index: usize,
+    /// If a native read dir is being used, then this contains names that should not be
+    /// duplicated when returned.
+    native_names: HashSet<Arc<str>>,
     /// A vector containing all names to return on next iterations. Name is associated to
     /// the node index in the cache, this
     remaining_names: Vec<(Arc<str>, usize)>,
@@ -380,9 +425,14 @@ impl Iterator for ResReadDir {
                         None => return Some(Err(io::ErrorKind::InvalidData.into())),
                     };
 
+                    let name = Arc::<str>::from(file_name);
+                    if let Some(package_read_dir) = &mut self.package_read_dir {
+                        package_read_dir.native_names.insert(Arc::clone(&name));
+                    }
+
                     return Some(Ok(ResDirEntry { 
                         dir_path: Arc::clone(&self.dir_path), 
-                        name: Arc::from(file_name),
+                        name,
                         stat: ResStat {
                             is_dir: metadata.is_dir(),
                             size: if metadata.is_dir() { 0 } else { metadata.len() },
@@ -391,7 +441,7 @@ impl Iterator for ResReadDir {
 
                 },
                 Some(Err(e)) => return Some(Err(e)),
-                None => (),
+                None => self.native_read_dir = None,
             }
         }
 
@@ -416,7 +466,10 @@ impl Iterator for ResReadDir {
                     for (child_name, &child_index) in &dir_info.children {
                         max_child_index = max_child_index.max(child_index);
                         if child_index >= package_read_dir.last_children_last_node_index {
-                            package_read_dir.remaining_names.push((Arc::clone(child_name), child_index));
+                            // Don't return names that already have been by native iter.
+                            if !package_read_dir.native_names.contains(child_name) {
+                                package_read_dir.remaining_names.push((Arc::clone(child_name), child_index));
+                            }
                         }
                     }
 
@@ -481,7 +534,11 @@ impl ResDirEntry {
 
     /// Reconstruct the full path of the entry for later [`ResFilesystem::read()`] call.
     pub fn path(&self) -> String {
-        format!("{}/{}", self.dir_path, self.name)
+        if self.dir_path.is_empty() {
+            self.name.to_string()
+        } else {
+            format!("{}/{}", self.dir_path, self.name)
+        }
     }
 
     /// Get stat of this entry, embedded within this directory entry structure.
@@ -658,42 +715,35 @@ impl NodeCache {
 
     }
 
-    /// Find directory info in cache from the given file path, the directory path should
-    /// not contain trailing nor leading separator. The index of the node within internal
-    /// nodes array is also returned so that dir info can be retrieved faster a second
-    /// time, this index is guaranteed to be valid for the cache lifetime, cache is never
-    /// destroyed.
-    fn find_dir(&self, dir_path: &str) -> Option<(usize, &DirInfo)> {
+    /// Find a node info in cache from the given path. In general it should not have 
+    /// leading nor trailing directory separator. The index of the node within internal
+    /// nodes array is already returned.
+    fn find_node(&self, node_path: &str) -> Option<(usize, &NodeInfo)> {
 
-        let mut current_dir_index = 0;
-        if !dir_path.is_empty() {
-            for dir_part in dir_path.split('/') {
-                current_dir_index = *self.nodes[current_dir_index]
+        let mut current_node_index = 0;
+        if !node_path.is_empty() {
+            for node_part in node_path.split('/') {
+                current_node_index = *self.nodes[current_node_index]
                     .as_dir()?
                     .children
-                    .get(dir_part)?;
+                    .get(node_part)?;
             }
         }
 
-        self.nodes[current_dir_index]
-            .as_dir()
-            .map(|dir| (current_dir_index, dir))
-
+        Some((current_node_index, &self.nodes[current_node_index]))
+        
     }
 
-    /// Find file info in cache from the given file path. The index of the node is also
-    /// returned like for [`Self::find_dir`].
+    /// Same as [`Self::find_node()`] but returns some only if it's a directory.
+    fn find_dir(&self, dir_path: &str) -> Option<(usize, &DirInfo)> {
+        self.find_node(dir_path).and_then(|(index, info)| 
+            info.as_dir().map(|info| (index, info)))
+    }
+
+    /// Same as [`Self::find_node()`] but returns some only if it's a file.
     fn find_file(&self, file_path: &str) -> Option<(usize, &FileInfo)> {
-
-        // No exactly same as when indexing because here we don't care of last dir sep.
-        let (dir_path, file_name) = file_path.rsplit_once('/').unwrap_or(("", file_path));
-
-        let (_, dir) = self.find_dir(dir_path)?;
-        let file_index = *dir.children.get(file_name)?;
-        self.nodes[file_index]
-            .as_file()
-            .map(|file| (file_index, file))
-
+        self.find_node(file_path).and_then(|(index, info)| 
+            info.as_file().map(|info| (index, info)))
     }
 
     /// Get a node information from its index.

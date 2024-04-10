@@ -29,7 +29,8 @@ impl fmt::LowerHex for BytesFmt<'_> {
     }
 }
 
-
+/// A helper structure to truncate the output of some display implementor, adding 
+/// trailing '..' if necessary.
 pub struct TruncateFmt<F>(pub F, pub usize);
 
 impl<F: fmt::Display> fmt::Display for TruncateFmt<F> {
@@ -41,5 +42,24 @@ impl<F: fmt::Display> fmt::Display for TruncateFmt<F> {
             buf.push_str("..");
         }
         f.write_str(&buf)
+    }
+}
+
+pub struct SizeFmt(pub u64);
+
+impl fmt::Display for SizeFmt {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.0 {
+            n @ 0..=999 => 
+                write!(f, "{:>4} B", n),
+            n @ 1_000..=999_999 => 
+                write!(f, "{:>3} kB", n / 1_000),
+            n @ 1_000_000..=999_999_999 => 
+                write!(f, "{:>3} MB", n / 1_000_000),
+            n @ 1_000_000_000..=999_999_999_999 => 
+                write!(f, "{:>3} GB", n / 1_000_000_000),
+            n =>
+                write!(f, "{:>3} TB", n / 1_000_000_000_000),
+        }
     }
 }

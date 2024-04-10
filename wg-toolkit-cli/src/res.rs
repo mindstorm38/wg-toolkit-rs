@@ -3,6 +3,7 @@ use std::fs::File;
 use std::io::{self, Write};
 
 use wgtk::res::{ResFilesystem, ResReadDir, ResReadFile};
+use wgtk::util::SizeFmt;
 
 use crate::{CliResult, CliOptions, ResArgs, ResCommand, ResListArgs, ResReadArgs, ResCopyArgs};
 
@@ -191,17 +192,19 @@ fn print_dir(output: &mut impl Write, fs: &ResFilesystem, indent: &mut String, d
 
     for entry in list {
 
+        let entry_path = entry.path();
+
         if entry.stat().is_dir() {
             let _ = writeln!(output, "{indent}{}/", entry.name());
         } else if human { 
-            let _ = writeln!(output, "{indent}{:<2$} {} K", entry.name(), entry.stat().size() / 1000, max_size);
+            let _ = writeln!(output, "{indent}{:<2$}  {}", entry.name(), SizeFmt(entry.stat().size()), max_size);
         } else {
             let _ = writeln!(output, "{indent}{} {}", entry.name(), entry.stat().size());
         }
 
         if recursion > 0 {
             indent.push_str("  ");
-            let _ = print_dir(output, fs, indent, &entry.path(), recursion - 1, human);
+            let _ = print_dir(output, fs, indent, &entry_path, recursion - 1, human);
             indent.truncate(indent.len() - 2);
         }
 
