@@ -3,8 +3,6 @@
 use std::io::{self, Write, Cursor, Read};
 use std::fmt;
 
-use thiserror::Error;
-
 use super::packet::{Packet, PACKET_FLAGS_LEN, PACKET_MAX_BODY_LEN};
 use super::element::reply::{Reply, ReplyHeader, REPLY_ID};
 use super::element::{Element, TopElement};
@@ -493,7 +491,7 @@ impl<'a> BundleElementReader<'a> {
 
     /// Try to decode the current element using a given codec. You can choose to go
     /// to the next element using the `next` argument.
-    pub fn read_element<E>(&mut self, config: &E::Config, next: bool) -> BundleResult<BundleElement<E>>
+    pub fn read_element<E>(&mut self, config: &E::Config, next: bool) -> io::Result<BundleElement<E>>
     where
         E: TopElement
     {
@@ -502,7 +500,7 @@ impl<'a> BundleElementReader<'a> {
         let header_len = E::LEN.len() + 1 + if request { 6 } else { 0 };
 
         if self.bundle_reader.body.len() < header_len {
-            return Err(BundleError::TooShort)
+            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "not enough data to read the header"));
         }
 
         // We store a screenshot of the reader in order to be able to rollback in case of error.
@@ -518,7 +516,7 @@ impl<'a> BundleElementReader<'a> {
             Err(e) => {
                 // If any error happens, we cancel the operation.
                 self.bundle_reader.clone_from(&reader_save);
-                Err(BundleError::Io(e))
+                Err(e)
             }
         }
 
@@ -627,24 +625,24 @@ impl TopElementReader<'_, '_> {
 
     /// Same as `read` but never go to the next element *(this is why this method doesn't take
     /// self by value)*.
-    pub fn read_stable<E: TopElement>(&mut self, config: &E::Config) -> BundleResult<BundleElement<E>> {
+    pub fn read_stable<E: TopElement>(&mut self, config: &E::Config) -> io::Result<BundleElement<E>> {
         self.0.read_element(config, false)
     }
 
     #[inline]
-    pub fn read_simple_stable<E: TopElement<Config = ()>>(&mut self) -> BundleResult<BundleElement<E>> {
+    pub fn read_simple_stable<E: TopElement<Config = ()>>(&mut self) -> io::Result<BundleElement<E>> {
         self.read_stable::<E>(&())
     }
 
     /// Read the element using the given codec. This method take self by value and automatically
     /// go the next element if read is successful, if not successful you will need to call
     /// `Bundle::next_element` again.
-    pub fn read<E: TopElement>(self, config: &E::Config) -> BundleResult<BundleElement<E>> {
+    pub fn read<E: TopElement>(self, config: &E::Config) -> io::Result<BundleElement<E>> {
         self.0.read_element(config, true)
     }
 
     #[inline]
-    pub fn read_simple<E: TopElement<Config = ()>>(self) -> BundleResult<BundleElement<E>> {
+    pub fn read_simple<E: TopElement<Config = ()>>(self) -> io::Result<BundleElement<E>> {
         self.read::<E>(&())
     }
 
@@ -667,12 +665,12 @@ impl<'reader, 'bundle> ReplyElementReader<'reader, 'bundle> {
     /// self by value)*.
     ///
     /// This method doesn't returns the reply element but the final element.
-    pub fn read_stable<E: Element>(&mut self, config: &E::Config) -> BundleResult<BundleElement<E>> {
+    pub fn read_stable<E: Element>(&mut self, config: &E::Config) -> io::Result<BundleElement<E>> {
         self.0.read_element::<Reply<E>>(config, false).map(Into::into)
     }
 
     #[inline]
-    pub fn read_simple_stable<E: Element<Config = ()>>(&mut self) -> BundleResult<BundleElement<E>> {
+    pub fn read_simple_stable<E: Element<Config = ()>>(&mut self) -> io::Result<BundleElement<E>> {
         self.read_stable::<E>(&())
     }
 
@@ -681,27 +679,13 @@ impl<'reader, 'bundle> ReplyElementReader<'reader, 'bundle> {
     /// will need to call `Bundle::next_element` again.
     ///
     /// This method doesn't returns the reply element but the final element.
-    pub fn read<E: Element>(self, config: &E::Config) -> BundleResult<BundleElement<E>> {
+    pub fn read<E: Element>(self, config: &E::Config) -> io::Result<BundleElement<E>> {
         self.0.read_element::<Reply<E>>(config, true).map(Into::into)
     }
 
     #[inline]
-    pub fn read_simple<E: Element<Config = ()>>(self) -> BundleResult<BundleElement<E>> {
+    pub fn read_simple<E: Element<Config = ()>>(self) -> io::Result<BundleElement<E>> {
         self.read::<E>(&())
     }
 
 }
-
-
-/// Standard errors that can happen while interacting with bundles.
-#[derive(Debug, Error)]
-pub enum BundleError {
-    #[error("bundle is too short for reading element")]
-    TooShort,
-    /// IO error while interacting with the packet.
-    #[error("io error: {0}")]
-    Io(#[from] io::Error),
-}
-
-/// Common alias for standard bundle errors [`BundleError`].
-pub type BundleResult<T> = Result<T, BundleError>;

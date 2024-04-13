@@ -5,7 +5,7 @@
 
 use std::io::{self, Read, Write};
 
-use crate::net::bundle::{BundleElementWriter, TopElementReader, BundleElement, BundleResult};
+use crate::net::bundle::{BundleElementWriter, TopElementReader, BundleElement};
 use crate::util::io::*;
 
 use super::{SimpleElement, TopElement, NoopElement, ElementLength, ElementIdRange};
@@ -139,7 +139,7 @@ impl<M: MethodCall> CellEntityMethod<M> {
     }
 
     /// Read this cell entity method call from the given top element reader.
-    pub fn read(reader: TopElementReader) -> BundleResult<BundleElement<Self>> {
+    pub fn read(reader: TopElementReader) -> io::Result<BundleElement<Self>> {
         MethodCallWrapper::<M, CellEntityMethodExt>::read(reader).map(|res| {
             res.map(|wrapper| Self {
                 entity_id: wrapper.ext.entity_id,
@@ -190,7 +190,7 @@ impl<M: MethodCall> BaseEntityMethod<M> {
     }
 
     /// Read this base entity method call from the given top element reader.
-    pub fn read(reader: TopElementReader) -> BundleResult<BundleElement<Self>> {
+    pub fn read(reader: TopElementReader) -> io::Result<BundleElement<Self>> {
         MethodCallWrapper::<M, BaseEntityMethodExt>::read(reader).map(|res| {
             res.map(|wrapper| Self {
                 method: wrapper.method,

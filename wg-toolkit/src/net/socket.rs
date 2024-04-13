@@ -94,6 +94,16 @@ impl BundleSocket {
             .channels.insert(addr, Channel::new(blowfish));
     }
 
+    /// Set the send timeout for later [`Self::send()`].
+    pub fn set_send_timeout(&mut self, dur: Option<Duration>) -> io::Result<()> {
+        self.shared.socket.set_write_timeout(dur)
+    }
+
+    /// Set the receive timeout for later [`Self::recv()`].
+    pub fn set_recv_timeout(&mut self, dur: Option<Duration>) -> io::Result<()> {
+        self.shared.socket.set_read_timeout(dur)
+    }
+
     /// Send a bundle to a given address. Note that the bundle is finalized by
     /// this method with the internal sequence id.
     /// 
@@ -196,7 +206,7 @@ impl BundleSocket {
     /// in [`PacketRejectionError`], none is also returned but the packet is internally
     /// queued and can later be retrieve with the error using 
     /// [`Self::take_rejected_packets()`].
-    pub fn recv(&mut self) -> io::Result<Option<Bundle>> {
+    pub fn recv(&mut self) -> io::Result<Option<(SocketAddr, Bundle)>> {
 
         let mut packet = Packet::new_boxed();
         let (len, addr) = self.shared.socket.recv_from(packet.raw_mut().raw_data_mut())?;
@@ -282,7 +292,7 @@ impl BundleSocket {
 
                             // When all fragments are collected, remove entry and return.
                             if o.get().is_full() {
-                                return Ok(Some(o.remove().into_bundle()));
+                                return Ok(Some((addr, o.remove().into_bundle())));
                             }
 
                         },
@@ -296,7 +306,7 @@ impl BundleSocket {
                 }
                 // Not sequence range in the packet, create a bundle only with it.
                 _ => {
-                    return Ok(Some(Bundle::with_single(packet)));
+                    return Ok(Some((addr, Bundle::with_single(packet))));
                 }
             }
 

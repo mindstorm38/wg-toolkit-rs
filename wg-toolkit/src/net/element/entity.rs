@@ -2,7 +2,7 @@
 
 use std::io::{self, Write, Read};
 
-use crate::net::bundle::{BundleElementWriter, TopElementReader, BundleElement, BundleResult};
+use crate::net::bundle::{BundleElementWriter, TopElementReader, BundleElement};
 use crate::util::io::*;
 
 use super::{ElementLength, ElementIdRange, Element, TopElement};
@@ -89,7 +89,7 @@ where
 
     }
 
-    pub fn read(reader: TopElementReader) -> BundleResult<BundleElement<Self>> {
+    pub fn read(reader: TopElementReader) -> io::Result<BundleElement<Self>> {
         let element_id = reader.id();
         reader.read::<Self>(&(element_id, None))
     }

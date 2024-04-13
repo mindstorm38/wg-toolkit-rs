@@ -37,4 +37,4 @@ pub mod cuckoo;
 
 pub mod socket;
 
-// pub mod interface;
+pub mod interface;
