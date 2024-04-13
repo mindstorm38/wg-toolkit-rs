@@ -6,7 +6,7 @@ use std::fmt;
 
 use glam::{Vec3, Vec2};
 
-use crate::util::io::{WgReadExt};
+use crate::util::io::WgReadExt;
 
 
 /// Magic of a primitives processed files.
@@ -43,13 +43,12 @@ impl<R> PrimitiveReader<R> {
 
 impl<R: Read + Seek> PrimitiveReader<R> {
 
-    /// Open and decode a prititives file's header, the reader is
-    /// kept open and date can be read.
+    /// Open and decode a primitives file's header, the reader is kept open and date 
+    /// can be read.
     /// 
-    /// *The position of the reader is not important because it
-    /// will be forced to zero before reading. It works like that 
-    /// because the inner reader will be read in absolute
-    /// positionning.*
+    /// *The position of the reader is not important because it will be forced to zero 
+    /// before reading. It works like that because the inner reader will be read in 
+    /// absolute positioning.*
     pub fn open(mut inner: R) -> Result<Self, DeError> {
 
         let mut sections = HashMap::new();

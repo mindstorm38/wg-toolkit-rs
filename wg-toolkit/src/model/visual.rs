@@ -10,10 +10,9 @@ use thiserror::Error;
 use crate::pxml::{self, Value, Element};
 
 
-/// Try to read a visual processed file from a seekable reader.
+/// Try to read a visual processed file from a seek-able reader.
 /// 
-/// *The content will be read starting from the inital position
-/// of the writer.*
+/// *The content will be read starting from the initial position of the writer.*
 pub fn from_reader<R: Read + Seek>(reader: R) -> Result<Box<Visual>, DeError> {
 
     let root_elt = pxml::from_reader(reader)?;
@@ -206,7 +205,7 @@ pub struct Geometry {
     pub primitive_groups: SmallVec<[PrimitiveGroup; 1]>,
 }
 
-/// Prititive group of a geometry.
+/// Primitive group of a geometry.
 #[derive(Debug)]
 pub struct PrimitiveGroup {
     /// Index of the primitive group.
