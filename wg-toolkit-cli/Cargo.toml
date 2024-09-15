@@ -16,6 +16,9 @@ clap = { version = "4.5", features = ["derive", "wrap_help"] }
 
 thiserror = "1.0"
 
+crossbeam-channel = "0.5"
+
+blowfish = "0.9"
 rsa = "0.8"
 
 [[bin]]

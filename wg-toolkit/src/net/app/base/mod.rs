@@ -2,17 +2,18 @@
 
 pub mod element;
 
-use std::collections::{hash_map, HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::net::SocketAddr;
 use std::io;
-
-use rand::rngs::OsRng;
-use rand::RngCore;
 
 use crate::net::bundle::{Bundle, ElementReader, TopElementReader};
 // use crate::net::element::ElementIdRange;
 use crate::net::socket::BundleSocket;
 use super::io_invalid_data;
+
+use element::{
+    ClientAuth,
+};
 
 
 /// This modules defines numerical identifiers for base app elements.
@@ -37,8 +38,6 @@ pub struct App {
     events: VecDeque<Event>,
     /// A temporary bundle for sending.
     bundle: Bundle,
-    /// Clients pending to log into the application.
-    pending_clients: HashMap<u32, PendingClient>,
 }
 
 impl App {
@@ -48,7 +47,6 @@ impl App {
             socket: BundleSocket::new(addr)?,
             events: VecDeque::new(),
             bundle: Bundle::new(),
-            pending_clients: HashMap::new(),
         })
     }
 
@@ -106,30 +104,21 @@ impl App {
     }
 
     fn handle_client_auth(&mut self, addr: SocketAddr, reader: TopElementReader) -> io::Result<()> {
-        let _ = (addr, reader);
+        
+        let auth = reader.read_simple::<ClientAuth>()?;
+        self.events.push_back(Event::Login(LoginEvent {
+            addr,
+            login_key: auth.element.login_key,
+            attempt_num: auth.element.attempt_num,
+        }));
+
         Ok(())
+
     }
 
     fn handle_client_session_key(&mut self, addr: SocketAddr, reader: TopElementReader) -> io::Result<()> {
         let _ = (addr, reader);
         Ok(())
-    }
-
-    /// Use this function to reserve a unique login key (unique regarding this app 
-    /// instance only) for a client that will be authorized to connect by the login app.
-    pub fn reserve_pending_client(&mut self, addr: SocketAddr) -> u32 {
-        loop {
-            let key = OsRng.next_u32();
-            match self.pending_clients.entry(key) {
-                hash_map::Entry::Vacant(v) => {
-                    v.insert(PendingClient {
-                        addr,
-                    });
-                    break key
-                }
-                _ => continue
-            }
-        }
     }
 
 }
@@ -150,17 +139,13 @@ pub struct IoErrorEvent {
     pub addr: Option<SocketAddr>,
 }
 
-/// A client has been successfully connected to the base app using the session key given
-/// by the login app.
+/// A client is trying to connect.
 #[derive(Debug)]
 pub struct LoginEvent {
     /// The address of the client that pinged the login app.
     pub addr: SocketAddr,
-}
-
-/// Describe a client that is pending to 
-#[derive(Debug)]
-struct PendingClient {
-    /// The socket address we expect from this client, as a best effort to avoid spoofing.
-    addr: SocketAddr,
+    /// The given client from the given address
+    pub login_key: u32,
+    /// The attempt number.
+    pub attempt_num: u8,
 }

@@ -92,7 +92,7 @@ impl Element for LoginRequest {
                 write.write_u8(1)?;
                 encode_login_params(RsaWriter::new(write, &key), self)
             }
-            LoginRequestEncryption::Server(_) => panic!("cannot encode with server login codec"),
+            LoginRequestEncryption::Server(_) => panic!("missing client public encryption key to encode the login request"),
         }
     }
 
@@ -102,7 +102,7 @@ impl Element for LoginRequest {
             if let LoginRequestEncryption::Server(key) = config {
                 decode_login_params(RsaReader::new(read, &key), protocol)
             } else {
-                Err(io::Error::new(io::ErrorKind::InvalidData, "cannot decode without server login codec"))
+                Err(io::Error::new(io::ErrorKind::InvalidData, "missing server private encryption key to decode the login request"))
             }
         } else {
             decode_login_params(read, protocol)
@@ -155,7 +155,8 @@ pub enum LoginResponse {
     Success(LoginSuccess),
     /// A challenge must be completed in order to have a response.
     Challenge(LoginChallenge),
-    /// An error happened server-side and the login process cannot succeed.
+    /// An error happened server-side and the login process cannot succeed. This data
+    /// is expected to be a JSON string on modern version of the game.
     Error(LoginError, String),
     /// Unknown response code.
     Unknown(u8),
@@ -210,7 +211,12 @@ pub enum LoginError {
     BaseAppManagerTimeout = 80,
     DatabaseAppOverload = 81,
     LoginNotAllowed = 82,
+    /// This error is handled in a specific way, the client will put the client in a
+    /// waiting mode where it will automatically retry login.
     RateLimited = 83,
+    /// This error expect the message to be a JSON containing a single key 'bans' that
+    /// is itself a string representation of a JSON element containing 'expiryTime' 
+    /// and 'reason'.
     Banned = 84,
     ChallengeError = 85,
 }

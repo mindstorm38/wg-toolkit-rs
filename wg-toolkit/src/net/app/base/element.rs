@@ -22,7 +22,7 @@ pub struct ClientAuth {
     /// [`super::login::LoginSuccess`].
     pub login_key: u32,
     /// The current number of attempts.
-    pub attempts_count: u8,
+    pub attempt_num: u8,
     /// Unknown 16-bits value at the end.
     pub unk: u16,
 }
@@ -31,14 +31,14 @@ impl SimpleElement for ClientAuth {
 
     fn encode(&self, write: &mut impl Write) -> io::Result<()> {
         write.write_u32(self.login_key)?;
-        write.write_u8(self.attempts_count)?;
+        write.write_u8(self.attempt_num)?;
         write.write_u16(self.unk)
     }
 
     fn decode(read: &mut impl Read, _len: usize) -> io::Result<Self> {
         Ok(Self {
             login_key: read.read_u32()?, 
-            attempts_count: read.read_u8()?,
+            attempt_num: read.read_u8()?,
             unk: read.read_u16()?,
         })
     }

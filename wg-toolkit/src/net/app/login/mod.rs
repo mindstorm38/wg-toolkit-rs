@@ -7,7 +7,7 @@ use std::collections::{HashMap, VecDeque};
 use std::net::{SocketAddr, SocketAddrV4};
 use std::sync::Arc;
 use std::io;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use crypto_common::KeyInit;
 use blowfish::Blowfish;
@@ -25,7 +25,7 @@ use element::{
     Ping,
     LoginRequest, LoginRequestEncryption,
     LoginResponse, LoginResponseEncryption, LoginChallenge,
-    LoginSuccess, 
+    LoginSuccess, LoginError,
     ChallengeResponse, CuckooCycleResponse,
 };
 
@@ -89,6 +89,11 @@ impl App {
     /// As opposed to [`Self::set_private_key`], disable encryption on login app.
     pub fn unset_private_key(&mut self) {
         self.priv_key = None;
+    }
+
+    /// Return true if encryption is enabled on this login app.
+    pub fn has_private_key(&self) -> bool {
+        self.priv_key.is_some()
     }
 
     /// Poll for the next event of this login app, blocking.
@@ -157,16 +162,15 @@ impl App {
         let request_id = ping.request_id
             .ok_or_else(|| io_invalid_data(format_args!("ping should be a request")))?;
 
-        self.events.push_back(Event::Ping(PingEvent { addr }));
-
         self.bundle.clear();
         self.bundle.element_writer().write_simple_reply(ping.element, request_id);
         self.socket.send(&mut self.bundle, addr)?;
 
-        if let Some(received_instant) = self.received_instant {
-            let _ping_internal_duration = received_instant.elapsed();
-            // println!("ping_internal_duration: {ping_internal_duration:?}");
-        }
+        let latency = self.received_instant.unwrap().elapsed();
+        self.events.push_back(Event::Ping(PingEvent { 
+            addr,
+            latency,
+        }));
 
         Ok(())
 
@@ -180,8 +184,10 @@ impl App {
             .unwrap_or(LoginRequestEncryption::Clear);
 
         let login = elt.read::<LoginRequest>(&req_encryption)?;
+        
         let request_id = login.request_id
             .ok_or_else(|| io_invalid_data(format_args!("login should be a request")))?;
+        
         let blowfish = Arc::new(Blowfish::new_from_slice(&login.element.blowfish_key)
             .map_err(|_| io_invalid_data(format_args!("login has invalid blowfish key: {:?}", login.element.blowfish_key)))?);
 
@@ -229,12 +235,15 @@ impl App {
     /// In response to a [`LoginRequestEvent`], authorize a client to log into the base
     /// application, giving them its address and a login key that will be used to 
     /// register itself.
+    /// 
+    /// This returns the blowfish encryption instance if a client was effectively 
+    /// waiting for a response.
     pub fn answer_login_success(&mut self, 
         addr: SocketAddr, 
         app_addr: SocketAddrV4, 
         login_key: u32,
         server_message: String
-    ) -> bool {
+    ) -> Option<Arc<Blowfish>> {
         self.answer_login_response(addr, LoginResponse::Success(LoginSuccess {
             addr: app_addr,
             login_key,
@@ -242,8 +251,23 @@ impl App {
         }))
     }
 
+    /// In response to a [`LoginRequestEvent`], authorize a client to log into the base
+    /// application, giving them its address and a login key that will be used to 
+    /// register itself.
+    /// 
+    /// This returns true if a client was effectively waiting for a response.
+    pub fn answer_login_error(&mut self, 
+        addr: SocketAddr, 
+        error: LoginError,
+        message: String,
+    ) -> bool {
+        self.answer_login_response(addr, LoginResponse::Error(error, message)).is_some()
+    }
+
     /// In response to a [`LoginRequestEvent`], send a client the challenge it should
     /// complete. This implementation issue a Cuckoo Cycle challenge, but that's a detail.
+    /// 
+    /// This returns true if a client was effectively waiting for a response.
     pub fn answer_login_challenge(&mut self,
         addr: SocketAddr,
     ) -> bool {
@@ -254,24 +278,33 @@ impl App {
         let key_prefix = format!("{key_prefix_value:>02X}").into_bytes();
         let max_nonce = ((1 << 20) as f32 * easiness) as u32;
 
+        let success = self.answer_login_response(addr, LoginResponse::Challenge(LoginChallenge::CuckooCycle { 
+            key_prefix: key_prefix.clone(), 
+            max_nonce,
+        })).is_some();
+
+        if !success {
+            return false;
+        }
+
         self.pending_challenges.insert(addr, PendingChallenge {
             key_prefix: key_prefix.clone(),
             max_nonce,
         });
 
-        self.answer_login_response(addr, LoginResponse::Challenge(LoginChallenge::CuckooCycle { 
-            key_prefix, 
-            max_nonce,
-        }))
+        true
 
     }
 
     /// Internal wrapper for answering a login response.
-    fn answer_login_response(&mut self, addr: SocketAddr, response: LoginResponse) -> bool {
+    #[inline]
+    fn answer_login_response(&mut self, addr: SocketAddr, response: LoginResponse) -> Option<Arc<Blowfish>> {
 
         let Some(request) = self.pending_requests.remove(&addr) else {
-            return false
+            return None;
         };
+
+        let bf = Arc::clone(&request.blowfish);
 
         self.pending_responses.push_back(PendingResponse {
             request,
@@ -279,7 +312,7 @@ impl App {
             inner: response,
         });
 
-        true
+        Some(bf)
 
     }
 
@@ -320,6 +353,9 @@ pub struct IoErrorEvent {
 pub struct PingEvent {
     /// The address of the client that pinged the login app.
     pub addr: SocketAddr,
+    /// Duration between reception of the ping packet to it being fully sent, this is
+    /// the internal latency, not representing the real latency to the client.
+    pub latency: Duration,
 }
 
 /// A client has made a request to login, this request can be answered with the app.
