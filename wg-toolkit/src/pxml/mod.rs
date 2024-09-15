@@ -50,24 +50,32 @@ impl Element {
 
     pub fn new() -> Self {
         Self { 
-            value: Value::Boolean(false), 
+            value: Value::default(), 
             children: SmallVec::new(),
         }
     }
 
-    pub fn iter_children_all(&self) -> impl Iterator<Item = &'_ (String, Value)> {
+    pub fn len(&self) -> usize {
+        self.children.len()
+    }
+
+    pub fn iter_children_all(&self) -> impl Iterator<Item = &'_ (String, Value)> + DoubleEndedIterator {
         self.children.iter()
+    }
+
+    pub fn iter_children_all_mut(&mut self) -> impl Iterator<Item = &'_ mut (String, Value)> + DoubleEndedIterator {
+        self.children.iter_mut()
     }
 
     pub fn add_children<S: Into<String>>(&mut self, key: S, value: Value) {
         self.children.push((key.into(), value));
     }
 
-    pub fn iter_children<'a, 'b: 'a>(&'a self, key: &'b str) -> impl Iterator<Item = &'a Value> + 'a {
+    pub fn iter_children<'k, 's: 'k>(&'s self, key: &'k str) -> impl Iterator<Item = &'s Value> + DoubleEndedIterator + 'k {
         self.children.iter().filter_map(move |(k, v)| (k == key).then_some(v))
     }
 
-    pub fn iter_children_mut<'a, 'b: 'a>(&'a mut self, key: &'b str) -> impl Iterator<Item = &'a mut Value> + 'a {
+    pub fn iter_children_mut<'k, 's: 'k>(&'s mut self, key: &'k str) -> impl Iterator<Item = &'s mut Value> + DoubleEndedIterator + 'k {
         self.children.iter_mut().filter_map(move |(k, v)| (k == key).then_some(v))
     }
 
@@ -77,6 +85,15 @@ impl Element {
 
     pub fn get_child_mut<'a, 'b>(&'a mut self, key: &'b str) -> Option<&'a mut Value> {
         self.children.iter_mut().find_map(|(k, v)| (k == key).then_some(v))
+    }
+
+    pub fn insert_child(&mut self, index: usize, name: String, value: Value) -> &'_ mut Value {
+        self.children.insert(index, (name, value));
+        &mut self.children[index].1
+    }
+
+    pub fn push_child(&mut self, name: String, value: Value) -> &'_ mut Value {
+        self.insert_child(self.children.len(), name, value)
     }
 
 }
@@ -172,6 +189,13 @@ impl Value {
         self.as_vector()?.as_affine3()
     }
 
+}
+
+/// Default value is an empty string, which do no allocation.
+impl Default for Value {
+    fn default() -> Self {
+        Self::String(String::new())
+    }
 }
 
 impl Vector {

@@ -3,5 +3,5 @@ resolver = "2"
 members = [
     "wg-toolkit",
     "wg-toolkit-cli",
-    "wot-cli",
+    # "wot-cli",
 ]

@@ -1,6 +1,6 @@
+use std::io::{self, Write};
 use std::path::PathBuf;
 use std::fs::File;
-use std::io::{self, Write};
 
 use wgtk::res::{ResFilesystem, ResReadDir, ResReadFile};
 use wgtk::util::SizeFmt;
@@ -178,7 +178,7 @@ fn print_dir(output: &mut impl Write, fs: &ResFilesystem, indent: &mut String, d
         let _ = write!(output, "                     \r");
     }
 
-    list.sort_by(|e1, e2| Ord::cmp(e1.name(), e2.name()));
+    list.sort_by_cached_key(|e| e.name().to_lowercase());
 
     let max_size;
     if human {

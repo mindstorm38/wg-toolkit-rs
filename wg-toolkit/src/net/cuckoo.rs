@@ -1,4 +1,6 @@
 //! Cuckoo cycle challenge implementation.
+//! 
+//! Ref: https://eprint.iacr.org/2014/059.pdf
 
 use std::collections::HashSet;
 
@@ -92,28 +94,28 @@ impl SipHashContext {
 
 pub struct CuckooContext {
     sip_hash: SipHashContext,
-    easiness: u64,
+    max_nonce: u32,
     cuckoo: Box<[usize; CUCKOO_SIZE]>
 }
 
 impl CuckooContext {
 
-    pub fn new(easiness: u64, prefix: &[u8]) -> Self {
+    pub fn new(max_nonce: u32, prefix: &[u8]) -> Self {
         Self {
-            easiness,
+            max_nonce,
             sip_hash: SipHashContext::with_prefix(prefix),
             cuckoo: Box::new([0; CUCKOO_SIZE])
         }
     }
 
-    pub fn work(&mut self) -> Option<Vec<u64>> {
+    pub fn work(&mut self) -> Option<Vec<u32>> {
 
         let mut us = Box::new([0; MAX_PATH_LEN]);
         let mut vs = Box::new([0; MAX_PATH_LEN]);
 
-        for nonce in 0..self.easiness {
+        for nonce in 0..self.max_nonce {
 
-            let (mut u0, mut v0) = self.sip_hash.sip_edge(nonce);
+            let (mut u0, mut v0) = self.sip_hash.sip_edge(nonce as u64);
             u0 += 1;
             v0 += 1 + HALF_SIZE;
 
@@ -169,7 +171,7 @@ impl CuckooContext {
 
     }
 
-    pub fn solution(&self, us: &[usize; MAX_PATH_LEN], nu: usize, vs: &[usize; MAX_PATH_LEN], nv: usize) -> Vec<u64> {
+    pub fn solution(&self, us: &[usize; MAX_PATH_LEN], nu: usize, vs: &[usize; MAX_PATH_LEN], nv: usize) -> Vec<u32> {
 
         let mut cycle = HashSet::new();
         let mut solution = Vec::new();
@@ -184,9 +186,9 @@ impl CuckooContext {
             cycle.insert((vs[nv | 1], vs[(nv + 1) & !1]));
         }
 
-        for nonce in 0..self.easiness {
+        for nonce in 0..self.max_nonce {
             
-            let mut edge = self.sip_hash.sip_edge(nonce);
+            let mut edge = self.sip_hash.sip_edge(nonce as u64);
             edge.0 += 1;
             edge.1 += 1;
 
@@ -197,6 +199,74 @@ impl CuckooContext {
         }
 
         solution
+
+    }
+
+    pub fn verify(&self, solution: &[u32]) -> bool {
+
+        if solution.len() != PROOF_SIZE {
+            return false;
+        }
+
+        let mut us = Box::new([0; PROOF_SIZE]);
+        let mut vs = Box::new([0; PROOF_SIZE]);
+
+        for k in 0..PROOF_SIZE {
+            
+            if solution[k] >= self.max_nonce || (k > 0 && solution[k] <= solution[k - 1]) {
+                return false;
+            }
+
+            let (u0, v0) = self.sip_hash.sip_edge(solution[k] as u64);
+            us[k] = u0;
+            vs[k] = v0;
+
+        }
+
+        let mut i = 0usize;
+        let mut n = PROOF_SIZE;
+
+        loop {
+
+            let mut j = i;
+            
+            for k in 0..PROOF_SIZE {
+                if k != i && vs[k] == vs[i] {
+                    if j != i {
+                        return false;
+                    }
+                    j = k;
+                }
+            }
+
+            if j == i {
+                return false;
+            }
+
+            i = j;
+
+            for k in 0..PROOF_SIZE {
+                if k != j && us[k] == us[j] {
+                    if i != j {
+                        return false;
+                    }
+                    i = k;
+                }
+            }
+
+            if i == j {
+                return false;
+            }
+
+            n -= 2;
+
+            if i == 0 {
+                break
+            }
+
+        }
+
+        n == 0
 
     }
 

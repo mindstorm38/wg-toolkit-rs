@@ -1,10 +1,9 @@
 //! Definition of elements related to login application.
 //! 
-//! When a client send a login request to the login app, it might be
-//! encrypted with RSA, the server then decide which response to return
-//! depending on the input, it might send a challenge that is required.
-//! When the login succeed, the server sends a login key that is used
-//! by the client when first connecting to the base app.
+//! When a client send a login request to the login app, it might be encrypted with RSA, 
+//! the server then decide which response to return depending on the input, it might 
+//! send a challenge that is required. When the login succeed, the server sends a login 
+//! key that is used by the client when first connecting to the base app.
 //! 
 //! This app also provides a way to ping test the server.
 
@@ -17,18 +16,8 @@ use rsa::{RsaPrivateKey, RsaPublicKey};
 use blowfish::Blowfish;
 
 use crate::net::filter::{RsaWriter, RsaReader, BlowfishWriter, BlowfishReader};
+use crate::net::element::{Element, SimpleElement, TopElement, ElementLength};
 use crate::util::io::*;
-
-use super::{Element, SimpleElement, TopElement, ElementLength};
-
-
-/// This modules defines in constants the numerical identifiers for
-/// login app elements.
-pub mod id {
-    pub const LOGIN_REQUEST: u8         = 0x00;
-    pub const PING: u8                  = 0x02;
-    pub const CHALLENGE_RESPONSE: u8    = 0x03;
-}
 
 
 /// A ping sent from the client to the login app or replied from the
@@ -57,103 +46,23 @@ impl TopElement for Ping {
 }
 
 
-/// A login request to be sent with [`LoginCodec`], send from client to 
+/// A login request to be sent with [`LoginCodec`], sent from client to 
 /// server when it wants to log into and gain access to a base app.
 #[derive(Debug, Default, Clone)]
 pub struct LoginRequest {
+    /// The protocol used, currently undocumented.
     pub protocol: u32,
+    /// The username used to login.
     pub username: String,
+    /// The password used to login, only used when using password to login.
     pub password: String,
+    /// The blowfish key to initialize the blowfish cipher, its size can be between 
+    /// 4 and 56, both included, the full key is 56 bytes long.
     pub blowfish_key: Vec<u8>,
     pub context: String,
     pub digest: Option<[u8; 16]>,
     pub nonce: u32,
 }
-
-
-/// Describe all kinds of responses returned from server to client when
-/// the client attempt to login. This includes challenge or error codes.
-#[derive(Debug, Clone)]
-pub enum LoginResponse {
-    /// The login is successful.
-    Success(LoginSuccess),
-    /// An error happened server-side and the login process cannot succeed.
-    Error(LoginError, String),
-    /// A challenge must be completed in order to have a response.
-    Challenge(LoginChallenge),
-    /// Unknown response code.
-    Unknown(u8),
-}
-
-/// Describe a login success response. It provides the client with the
-/// address of the base app to connect, session key and an optional
-/// server message.
-#[derive(Debug, Clone)]
-pub struct LoginSuccess {
-    /// The socket address of the base app server to connect after successful
-    /// login.
-    pub addr: SocketAddrV4,
-    /// Session key, it's used to authenticate to the base app.
-    pub login_key: u32,
-    /// Server message for successful login.
-    pub server_message: String,
-}
-
-/// Describe an issued challenge as a response to a login request.
-#[derive(Debug, Clone)]
-pub enum LoginChallenge {
-    /// Cuckoo cycle challenge.
-    CuckooCycle {
-        prefix: String,
-        max_nonce: u64,
-    },
-}
-
-/// Describe a login error as a response to a login request.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u8)]
-pub enum LoginError {
-    MalformedRequest = 64,
-    BadProtocolVersion = 65,
-    // ChallengeIssued = 66, handled by a specific variant of LoginResponse.
-    InvalidUser = 67,
-    InvalidPassword = 68,
-    AlreadyLoggedIn = 69,
-    BadDigest = 70,
-    DatabaseGeneralFailure = 71,
-    DatabaseNotReady = 72,
-    IllegalCharacters = 73,
-    ServerNotReady = 74,
-    UpdaterNotReady = 75, // No longer used
-    NoBaseApp = 76,
-    BaseAppOverload = 77,
-    CellAppOverload = 78,
-    BaseAppTimeout = 79,
-    BaseAppManagerTimeout = 80,
-    DatabaseAppOverload = 81,
-    LoginNotAllowed = 82,
-    RateLimited = 83,
-    Banned = 84,
-    ChallengeError = 85,
-}
-
-
-/// Describe a generic challenge response of a given generic type.
-#[derive(Debug, Clone)]
-pub struct ChallengeResponse<T> {
-    /// Resolve duration of the challenge.
-    pub duration: Duration,
-    /// Inner data of the challenge response.
-    pub data: T,
-}
-
-/// Describe a challenge response for cuckoo cycle challenge type.
-#[derive(Debug, Clone)]
-pub struct CuckooCycleResponse {
-    pub key: String,
-    pub solution: Vec<u32>,
-}
-
 
 /// Describe the type of encryption to use for encoding/decoding
 /// a login request. This must be provided as configuration when
@@ -238,6 +147,74 @@ fn decode_login_params(mut input: impl Read, protocol: u32) -> io::Result<LoginR
 }
 
 
+/// Describe all kinds of responses returned from server to client when
+/// the client attempt to login. This includes challenge or error codes.
+#[derive(Debug, Clone)]
+pub enum LoginResponse {
+    /// The login is successful.
+    Success(LoginSuccess),
+    /// A challenge must be completed in order to have a response.
+    Challenge(LoginChallenge),
+    /// An error happened server-side and the login process cannot succeed.
+    Error(LoginError, String),
+    /// Unknown response code.
+    Unknown(u8),
+}
+
+/// Describe a login success response. It provides the client with the
+/// address of the base app to connect, session key and an optional
+/// server message.
+#[derive(Debug, Clone)]
+pub struct LoginSuccess {
+    /// The socket address of the base app server to connect after successful
+    /// login.
+    pub addr: SocketAddrV4,
+    /// Session key, it's used to authenticate to the base app.
+    pub login_key: u32,
+    /// Server message for successful login.
+    pub server_message: String,
+}
+
+/// Describe an issued challenge as a response to a login request.
+#[derive(Debug, Clone)]
+pub enum LoginChallenge {
+    /// Cuckoo cycle challenge.
+    CuckooCycle {
+        /// This prefix string to the key used to initialize the Cuckoo Cycle context,
+        /// it's given to a SHA-256 before being used, so it can be any size.
+        key_prefix: Vec<u8>,
+        max_nonce: u32,
+    },
+}
+
+/// Describe a login error as a response to a login request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum LoginError {
+    MalformedRequest = 64,
+    BadProtocolVersion = 65,
+    // ChallengeIssued = 66, handled by a specific variant of LoginResponse.
+    InvalidUser = 67,
+    InvalidPassword = 68,
+    AlreadyLoggedIn = 69,
+    BadDigest = 70,
+    DatabaseGeneralFailure = 71,
+    DatabaseNotReady = 72,
+    IllegalCharacters = 73,
+    ServerNotReady = 74,
+    UpdaterNotReady = 75, // No longer used
+    NoBaseApp = 76,
+    BaseAppOverload = 77,
+    CellAppOverload = 78,
+    BaseAppTimeout = 79,
+    BaseAppManagerTimeout = 80,
+    DatabaseAppOverload = 81,
+    LoginNotAllowed = 82,
+    RateLimited = 83,
+    Banned = 84,
+    ChallengeError = 85,
+}
+
 /// Describe if the login response has to be encrypted or not. This must be 
 /// provided as configuration when writing or reading the element.
 #[derive(Debug)]
@@ -275,22 +252,22 @@ impl Element for LoginResponse {
                 }
 
             }
-            Self::Error(err, message) => {
-                write.write_u8(*err as _)?;
-                write.write_string_variable(&message)?;
-            }
             Self::Challenge(challenge) => {
 
                 write.write_u8(66)?;
                 
                 match challenge {
-                    LoginChallenge::CuckooCycle { prefix, max_nonce } => {
+                    LoginChallenge::CuckooCycle { key_prefix: prefix, max_nonce } => {
                         write.write_string_variable(CHALLENGE_CUCKOO_CYCLE)?;
-                        write.write_string_variable(&prefix)?;
-                        write.write_u64(*max_nonce)?;
+                        write.write_blob_variable(&prefix)?;
+                        write.write_u64(*max_nonce as u64)?;
                     }
                 }
                 
+            }
+            Self::Error(err, message) => {
+                write.write_u8(*err as _)?;
+                write.write_string_variable(&message)?;
             }
             Self::Unknown(code) => write.write_u8(*code)?
         }
@@ -319,11 +296,14 @@ impl Element for LoginResponse {
                 let challenge_name = read.read_string_variable()?;
                 let challenge = match &challenge_name[..] {
                     CHALLENGE_CUCKOO_CYCLE => {
-                        let prefix = read.read_string_variable()?;
-                        let max_nonce = read.read_u64()?;
-                        LoginChallenge::CuckooCycle { prefix, max_nonce }
+                        let prefix = read.read_blob_variable()?;
+                        let max_nonce = read.read_u64()? as u32;
+                        LoginChallenge::CuckooCycle { 
+                            key_prefix: prefix, 
+                            max_nonce,
+                        }
                     }
-                    _ => return Err(io::Error::new(io::ErrorKind::InvalidData, "invalid challenge name"))
+                    name => return Err(io::Error::new(io::ErrorKind::InvalidData, format!("invalid challenge name: {name}")))
                 };
 
                 return Ok(LoginResponse::Challenge(challenge));
@@ -375,6 +355,27 @@ fn decode_login_success<R: Read>(mut read: R) -> io::Result<LoginSuccess> {
 }
 
 
+/// Describe a generic challenge response of a given generic type. This is a top element
+/// that's not expecting any reply, because the client sends a new login request just
+/// after.
+#[derive(Debug, Clone)]
+pub struct ChallengeResponse<T> {
+    /// Resolve duration of the challenge.
+    pub duration: Duration,
+    /// Inner data of the challenge response.
+    pub data: T,
+}
+
+/// Describe a challenge response for cuckoo cycle challenge type.
+#[derive(Debug, Clone)]
+pub struct CuckooCycleResponse {
+    /// The full key used to initialize the Cuckoo Cycle context, this should start with
+    /// the issued [`LoginChallenge::CuckooCycle::key_prefix`].
+    pub key: Vec<u8>,
+    /// Contains each solution found for the problem.
+    pub solution: Vec<u32>,
+}
+
 impl<E: Element> Element for ChallengeResponse<E> {
 
     type Config = E::Config;
@@ -400,7 +401,7 @@ impl<E: Element> TopElement for ChallengeResponse<E> {
 impl SimpleElement for CuckooCycleResponse {
 
     fn encode(&self, write: &mut impl Write) -> io::Result<()> {
-        write.write_string_variable(&self.key)?;
+        write.write_blob_variable(&self.key)?;
         for &nonce in &self.solution {
             write.write_u32(nonce)?;
         }
@@ -409,7 +410,7 @@ impl SimpleElement for CuckooCycleResponse {
 
     fn decode(read: &mut impl Read, _len: usize) -> io::Result<Self> {
 
-        let key = read.read_string_variable()?;
+        let key = read.read_blob_variable()?;
         let mut solution = Vec::with_capacity(42);
 
         loop {

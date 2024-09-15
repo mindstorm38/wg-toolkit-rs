@@ -4,8 +4,7 @@ use std::io::{self, Write, Cursor, Read};
 use std::fmt;
 
 use super::packet::{Packet, PACKET_FLAGS_LEN, PACKET_MAX_BODY_LEN};
-use super::element::reply::{Reply, ReplyHeader, REPLY_ID};
-use super::element::{Element, TopElement};
+use super::element::{REPLY_ID, Element, TopElement, Reply};
 
 use crate::util::io::*;
 use crate::util::BytesFmt;
@@ -285,7 +284,6 @@ pub struct BundleElement<E> {
     /// Numeric identifier of the element.
     pub id: u8,
     /// The actual element.
-    /// TODO: Rename to "payload"
     pub element: E,
     /// The request ID if the element is a request. Not to be confused 
     /// with the reply ID if the element is a `Reply`.
@@ -474,9 +472,9 @@ impl<'a> BundleElementReader<'a> {
     pub fn next_element(&mut self) -> Option<ElementReader<'_, 'a>> {
         match self.next_id() {
             Some(REPLY_ID) => {
-                match self.read_element::<ReplyHeader>(&(), false) {
+                match self.read_element::<Reply<()>>(&(), false) {
                     Ok(elt) => {
-                        debug_assert!(elt.request_id.is_none(), "Replies should not be request at the same time.");
+                        debug_assert!(elt.request_id.is_none(), "replies should not be request at the same time");
                         Some(ElementReader::Reply(ReplyElementReader(self, elt.element.request_id)))
                     }
                     Err(_) => None
@@ -546,6 +544,11 @@ impl<'a> BundleElementReader<'a> {
 
         let mut elt_reader = Read::take(&mut self.bundle_reader, elt_len as u64);
         let element = E::decode(&mut elt_reader, elt_len as usize, config)?;
+
+        // Just a warning because the decoding process didn't read all the data.
+        if elt_reader.limit() != 0 {
+            // TODO:
+        }
 
         // We seek to the end only if we want to go next.
         if next {
@@ -653,7 +656,7 @@ impl TopElementReader<'_, '_> {
 #[derive(Debug)]
 pub struct ReplyElementReader<'reader, 'bundle>(&'reader mut BundleElementReader<'bundle>, u32);
 
-impl<'reader, 'bundle> ReplyElementReader<'reader, 'bundle> {
+impl ReplyElementReader<'_, '_> {
 
     /// Get the request id this reply is for.
     #[inline]

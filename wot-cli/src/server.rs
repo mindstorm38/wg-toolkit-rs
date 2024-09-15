@@ -3,7 +3,7 @@
 //! It provides different tools for launching a server, containing login, base and cell
 //! applications.
 
-use std::net::SocketAddrV4;
+use std::net::{SocketAddr, SocketAddrV4};
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::fs;
@@ -14,13 +14,15 @@ use clap::{Command, ArgMatches, arg, crate_version, crate_authors};
 use rsa::pkcs8::DecodePrivateKey;
 use rsa::RsaPrivateKey;
 
-mod common;
-mod login;
-mod base;
+use wgtk::net::app::{login, base};
 
-use login::LoginApp;
-use base::BaseApp;
-use common::server_settings::ServerSettings;
+// mod common;
+// mod login;
+// mod base;
+
+// use login::LoginApp;
+// use base::BaseApp;
+// use common::server_settings::ServerSettings;
 
 
 /// The game version this server support by default.
@@ -38,9 +40,9 @@ fn main() -> ExitCode {
         .subcommand_required(true)
         .subcommand(Command::new("simple")
             .about("Start a simple World of Tanks server, composed of a single login and base applications")
-            .arg(arg!(login_app_bind: --loginapp <BIND> "The address to bind the loginapp server.").default_value("127.0.0.1:20016"))
-            .arg(arg!(base_app_bind: --baseapp <BIND> "The address to bind the loginapp server.").default_value("127.0.0.1:20017"))
-            .arg(arg!(priv_key_path: --privkey <PATH> "The path to the private key, used for loginapp encryption. Encryption is disabled if not provided."))
+            .arg(arg!(login_app_bind: --loginapp <BIND> "The address to bind the login app.").default_value("127.0.0.1:20016"))
+            .arg(arg!(base_app_bind: --baseapp <BIND> "The address to bind the base app.").default_value("127.0.0.1:20017"))
+            .arg(arg!(priv_key_path: --privkey <PATH> "The path to the private key, used for login app encryption. Encryption is disabled if not provided."))
             .arg(arg!(game_version: --version <ID> "The version identifier sent to the client and checked by it.").default_value(GAME_VERSION)))
         .get_matches();
 
@@ -58,7 +60,6 @@ fn main() -> ExitCode {
     
 }
  
-
 fn cmd_simple(matches: &ArgMatches) -> CmdResult<()> {
 
     let login_app_bind = matches.get_one::<String>("login_app_bind")
@@ -88,37 +89,39 @@ fn cmd_simple(matches: &ArgMatches) -> CmdResult<()> {
 
     let required_version = matches.get_one::<String>("game_version").unwrap();
 
-    // let server_settings_bytes = &include_bytes!("../../test.txt")[..41363];
-    // let server_settings: Box<ServerSettings> = serde_pickle::from_slice(server_settings_bytes, serde_pickle::DeOptions::new().decode_strings()).unwrap();
-    let server_settings = Box::new(ServerSettings::default());
+    // // let server_settings_bytes = &include_bytes!("../../test.txt")[..41363];
+    // // let server_settings: Box<ServerSettings> = serde_pickle::from_slice(server_settings_bytes, serde_pickle::DeOptions::new().decode_strings()).unwrap();
+    // let server_settings = Box::new(ServerSettings::default());
 
-    let mut login_app = LoginApp::new(login_app_bind, priv_key)
-        .map_err(|e| format!("Failed to bind the loginapp: {e}"))?;
+    let mut login_app = login::App::new(SocketAddr::V4(login_app_bind))
+        .map_err(|e| format!("Failed to create the login app: {e}"))?;
 
-    let mut base_app = BaseApp::new(base_app_bind, server_settings)
-        .map_err(|e| format!("Failed to bind the baseapp: {e}"))?;
+    let mut base_app = base::App::new(SocketAddr::V4(base_app_bind))
+        .map_err(|e| format!("Failed to create the base app: {e}"))?;
 
-    base_app.set_required_version(required_version);
-    println!("[ALL] Game version: {required_version}");
+    // base_app.set_required_version(required_version);
+    // println!("[ALL] Game version: {required_version}");
 
-    println!("[LOGIN] Running on {:?}", login_app.app.addr());
-    println!("[BASE] Running on {:?}", base_app.app.addr());
+    println!("[LOGIN] Running on {:?}", login_app.addr());
+    println!("[BASE] Running on {:?}", base_app.addr());
 
-    let mut events = Vec::new();
+    // let mut events = Vec::new();
 
-    loop {
+    // loop {
         
-        login_app.app.poll(&mut events, Some(Duration::from_millis(10))).unwrap();
-        for event in &events {
-            login_app.handle(&event, &mut base_app);
-        }
+    //     login_app.app.poll(&mut events, Some(Duration::from_millis(10))).unwrap();
+    //     for event in &events {
+    //         login_app.handle(&event, &mut base_app);
+    //     }
 
-        base_app.app.poll(&mut events, Some(Duration::from_millis(10))).unwrap();
-        for event in &events {
-            base_app.handle(event);
-        }
+    //     base_app.app.poll(&mut events, Some(Duration::from_millis(10))).unwrap();
+    //     for event in &events {
+    //         base_app.handle(event);
+    //     }
 
-    }
+    // }
+
+    Ok(())
 
 }
 

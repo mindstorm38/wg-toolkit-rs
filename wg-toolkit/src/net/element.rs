@@ -5,13 +5,8 @@ use std::io::{self, Read, Write};
 use crate::util::io::*;
 
 
-pub mod login;
-pub mod reply;
-pub mod base;
-pub mod client;
-
-pub mod entity;
-
+/// The element id for reply.
+pub const REPLY_ID: u8 = 0xFF;
 
 /// A trait to be implemented on a structure that can be interpreted as
 /// bundle's elements. Elements are slices of data in a bundle of packets. 
@@ -88,7 +83,6 @@ impl<E: SimpleElement> Element for E {
 
 }
 
-
 /// An alternative trait to both [`Element`] that automatically implements 
 /// nothing for encode and provides the default value on decoding without 
 /// actually reading.
@@ -106,14 +100,12 @@ impl<E: NoopElement> SimpleElement for E {
     
 }
 
-
 /// The empty tuple is considered an empty element. This can sometime
 /// be useful for default generic types.
 impl NoopElement for () { }
 impl TopElement for () {
     const LEN: ElementLength = ElementLength::Fixed(0);
 }
-
 
 /// Type of length used by a specific message codec.
 /// This describes how the length of an element should be encoded in the packet.
@@ -185,7 +177,6 @@ impl ElementLength {
     }
 
 }
-
 
 /// An utility structure for storing ranges of element's ids. It provides way
 /// of converting between **element id** (with optional **sub-id**) and 
@@ -286,4 +277,45 @@ impl ElementIdRange {
         
     }
 
+}
+
+/// A wrapper for a reply element, with the request ID and the underlying element, use
+/// the empty element `()` as element in order to just read the request id.
+#[derive(Debug)]
+pub struct Reply<E> {
+    /// The request ID this reply is for.
+    pub request_id: u32,
+    /// The inner reply element.
+    pub element: E
+}
+
+impl<E> Reply<E> {
+
+    #[inline]
+    pub fn new(request_id: u32, element: E) -> Self {
+        Self { request_id, element }
+    }
+    
+}
+
+impl<E: Element> Element for Reply<E> {
+
+    type Config = E::Config;
+
+    fn encode(&self, write: &mut impl Write, config: &Self::Config) -> io::Result<()> {
+        write.write_u32(self.request_id)?;
+        self.element.encode(write, config)
+    }
+
+    fn decode(read: &mut impl Read, len: usize, config: &Self::Config) -> io::Result<Self> {
+        Ok(Self {
+            request_id: read.read_u32()?,
+            element: E::decode(read, len - 4, config)?,
+        })
+    }
+
+}
+
+impl<E: Element> TopElement for Reply<E> {
+    const LEN: ElementLength = ElementLength::Variable32;
 }

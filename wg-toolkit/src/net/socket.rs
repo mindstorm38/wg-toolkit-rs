@@ -1,7 +1,7 @@
 //! Providing an bundle-oriented socket, backed by an UDP socket.
 
-use std::net::{SocketAddr, SocketAddrV4, UdpSocket};
 use std::collections::{HashMap, hash_map};
+use std::net::{SocketAddr, UdpSocket};
 use std::time::{Duration, Instant};
 use std::sync::{Arc, Mutex};
 use std::io::{self, Cursor};
@@ -26,16 +26,17 @@ const FRAGMENT_TIMEOUT: Duration = Duration::from_secs(10);
 /// 
 /// This socket handle is actually just a shared pointer to shared data, it can be cloned
 /// as needed and used in multiple threads at the same time.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct BundleSocket {
     /// Shared data.
     shared: Arc<Shared>,
 }
 
 /// A reference counted shared underlying socket data.
+#[derive(Debug)]
 struct Shared {
     /// Bound address for UDP server.
-    addr: SocketAddrV4,
+    addr: SocketAddr,
     /// The socket used for sending and receiving UDP packets.
     socket: UdpSocket,
     /// The mutable part of the shared data, behind a mutex lock.
@@ -43,6 +44,7 @@ struct Shared {
 }
 
 /// Mutable shared socket data.
+#[derive(Debug)]
 struct SharedMutable {
     /// Bundle fragments tracking.
     fragments: HashMap<(SocketAddr, u32), BundleFragments>,
@@ -60,9 +62,9 @@ struct SharedMutable {
 impl BundleSocket {
 
     /// Create a new socket bound to the given address.
-    pub fn new(addr: SocketAddrV4) -> io::Result<Self> {
+    pub fn new(addr: SocketAddr) -> io::Result<Self> {
 
-        let socket = UdpSocket::bind(SocketAddr::V4(addr))?;
+        let socket = UdpSocket::bind(addr)?;
         
         Ok(Self {
             shared: Arc::new(Shared { 
@@ -82,13 +84,13 @@ impl BundleSocket {
 
     /// Get the bind address of this socket.
     #[inline]
-    pub fn addr(&self) -> SocketAddrV4 {
+    pub fn addr(&self) -> SocketAddr {
         self.shared.addr
     }
 
-    /// Associate a new channel to the given address with the given blowfish
-    /// encryption. This blowfish encryption will be used for all 
-    /// transaction to come with this given socket address.
+    /// Associate a new channel to the given address with the given blowfish encryption.
+    /// This blowfish encryption will be used for all transaction to come with this given
+    /// socket address.
     pub fn set_channel(&mut self, addr: SocketAddr, blowfish: Arc<Blowfish>) {
         self.shared.mutable.lock().unwrap()
             .channels.insert(addr, Channel::new(blowfish));
@@ -110,6 +112,8 @@ impl BundleSocket {
     /// Note that the net data is guaranteed to be untouched by this function,
     /// this includes prefix, flags up to the footer. Bytes beyond this limit
     /// might be modified in case of channel encryption.
+    /// 
+    /// This function forwards the IO error from the UDP socket's `send_to` call.
     pub fn send(&mut self, bundle: &mut Bundle, to: SocketAddr) -> io::Result<usize> {
 
         // Do nothing if bundle is empty.
@@ -204,8 +208,10 @@ impl BundleSocket {
     /// Blocking receive of a packet, if a bundle can be constructed it is returned, if
     /// not, none is returned instead. If the packet is rejected for any reason listed
     /// in [`PacketRejectionError`], none is also returned but the packet is internally
-    /// queued and can later be retrieve with the error using 
+    /// queued and can later be retrieved with the error using 
     /// [`Self::take_rejected_packets()`].
+    /// 
+    /// This function forwards the IO error from the UDP socket's `recv_from` call.
     pub fn recv(&mut self) -> io::Result<Option<(SocketAddr, Bundle)>> {
 
         let mut packet = Packet::new_boxed();
@@ -585,6 +591,7 @@ impl Channel {
 }
 
 /// Internal structure to keep fragments from a given sequence.
+#[derive(Debug)]
 struct BundleFragments {
     fragments: Vec<Option<Box<Packet>>>,  // Using boxes to avoid moving huge structures.
     seq_count: u32,

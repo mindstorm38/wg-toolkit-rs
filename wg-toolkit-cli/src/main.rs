@@ -1,6 +1,7 @@
 //! The CLI for wg-toolkit library.
 
 use std::io::{self, IsTerminal};
+use std::net::SocketAddrV4;
 use std::process::ExitCode;
 use std::path::PathBuf;
 
@@ -8,6 +9,9 @@ use clap::{Args, Parser, Subcommand};
 
 mod pxml;
 mod res;
+
+mod wot;
+mod bootstrap;
 
 
 /// Global options for the command line interface.
@@ -40,7 +44,9 @@ pub struct Cli {
 pub enum Command {
     #[command(name = "pxml")]
     PackedXml(PackedXmlArgs),
-    Res(ResArgs)
+    Res(ResArgs),
+    Wot(WotArgs),
+    Bootstrap(BootstrapArgs),
 }
 
 /// Packed XML read and write utilities.
@@ -61,8 +67,11 @@ pub struct PackedXmlArgs {
     /// This can be used if you want to replace a packed XML file with a clear one, 
     /// this flag will correctly format the packed XML as a regular clear XML file
     /// that can be read by the game engine.
-    #[arg(short, long)]
+    #[arg(short, long, conflicts_with = "raw")]
     pub xml: bool,
+    /// Enable raw output style, outputting the binary encoded element.
+    #[arg(short, long, conflicts_with = "xml")]
+    pub raw: bool,
     /// If needed, the packed XML can be modified before outputting it.
     /// 
     /// The filter is basically a sequence of statements, with an expression at the end
@@ -144,6 +153,42 @@ pub struct ResCopyArgs {
     pub dest: PathBuf,
 }
 
+/// Run a simple WoT server.
+/// 
+/// This command starts a simple WoT server, composed of one login application and one
+/// base application, this is used as a proof of concept server implementation. 
+/// The client should be modified to register this server into `res/scripts_config.xml`
+/// with this server's public key, the private key should be specified to point to
+/// the private key file.
+/// 
+/// Use the following Packed XML filter to register the server into the file:
+/// 
+///   $ cargo run -- pxml -f D:\Games\WoT\res\scripts_config.xml.bak0000 --raw '$tmp=login/host;$n=str(WGTK);$u=str(localhost:20016);$tmp/name=$n;$tmp/short_name=$n;$tmp/url=$u;$tmp/url_token=$u;$tmp/public_key_path=str(loginapp_wgtk.pubkey);$tmp/periphery_id=int(205);login/host[^]=$tmp' > D:\Games\WoT\res\scripts_config.xml
+/// 
+#[derive(Debug, Args)]
+pub struct WotArgs {
+    /// The address where the login app should be bound.
+    #[arg(long, default_value = "127.0.0.1:20016")]
+    pub login_app: SocketAddrV4,
+    /// The address where the base app should be bound.
+    #[arg(long, default_value = "127.0.0.1:20017")]
+    pub base_app: SocketAddrV4,
+    /// The path to the private key, used for login app encryption. 
+    /// Encryption is disabled if not provided.
+    #[arg(long)]
+    pub priv_key_path: Option<PathBuf>,
+}
+
+/// Internal developer command used for updating the code of wg-toolkit automatically
+/// depending on internal resources and scripts.
+#[derive(Debug, Args)]
+pub struct BootstrapArgs {
+    /// Path to the game's resource (res/) directory.
+    pub dir: PathBuf,
+    /// Destination source code directory where all files will be generated.
+    pub dest: PathBuf,
+}
+
 /// Type alias for a result that simply returns a string on error, this will be output
 /// on stderr and process returns a failed exit code. This allows easier error handling
 /// by just mapping the error type to an explanatory text.
@@ -158,8 +203,10 @@ fn main() -> ExitCode {
     };
 
     let res = match args.cmd {
-        Command::PackedXml(args) => pxml::cmd_pxml0(args),
+        Command::PackedXml(args) => pxml::cmd_pxml(args),
         Command::Res(args) => res::cmd_res(opts, args),
+        Command::Wot(args) => wot::cmd_wot(args),
+        Command::Bootstrap(args) => bootstrap::cmd_bootstrap(args),
     };
 
     if let Err(message) = res {

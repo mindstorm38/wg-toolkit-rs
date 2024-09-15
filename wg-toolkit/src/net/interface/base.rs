@@ -173,11 +173,11 @@ impl<S: BaseAppShared> BaseApp<S> {
                 peer.element_writer().write_simple(client_id::SELECT_PLAYER_ENTITY, SelectPlayerEntity);
 
 
-                peer.element_writer().write_simple(client_id::ENTITY_METHOD.  EntityMethod::index_to_id(2), UnknownElement(vec![
-                    21, 7, 100, 101, 102, 97, 117, 108, 116, 12, 128, 2, 93, 113, 1, 40, 75, 201, 75, 202, 101, 46
-                ]));
-                self.timer.timestamp_element(peer.element_writer());
-                peer.flush();
+                // peer.element_writer().write_simple(client_id::ENTITY_METHOD.  EntityMethod::index_to_id(2), UnknownElement(vec![
+                //     21, 7, 100, 101, 102, 97, 117, 108, 116, 12, 128, 2, 93, 113, 1, 40, 75, 201, 75, 202, 101, 46
+                // ]));
+                // self.timer.timestamp_element(peer.element_writer());
+                // peer.flush();
 
                 peer.element_writer().write_simple(client_id::RESET_ENTITIES, ResetEntities { 
                     keep_player_on_base: false

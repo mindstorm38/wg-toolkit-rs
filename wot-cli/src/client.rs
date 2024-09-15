@@ -7,7 +7,7 @@ use std::process::ExitCode;
 
 use clap::{Command, crate_version, crate_authors};
 
-mod common;
+// mod common;
 
 
 fn main() -> ExitCode {

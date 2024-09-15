@@ -1,47 +1,64 @@
-use std::io::{Cursor, Read};
-use std::time::SystemTime;
-use std::path::Path;
+use std::collections::{hash_map, HashMap};
+use std::io::{self, Cursor, Read, Write};
 use std::fs::File;
-
-use clap::ArgMatches;
 
 use wgtk::pxml::{self, Element, Value};
 
 use super::{CliResult, PackedXmlArgs};
 
 
-pub fn cmd_pxml0(args: PackedXmlArgs) -> CliResult<()> {
+pub fn cmd_pxml(args: PackedXmlArgs) -> CliResult<()> {
 
-    let root_elt = match args.file {
+    let mut root_xml_tag = "root".to_string();
+    let mut root_elt = match args.file {
         Some(path) => {
 
+            if let Some(file_name) = path.file_name() {
+                if let Some(file_name) = file_name.to_str() {
+                    root_xml_tag = file_name.to_string();
+                }
+            }
+
             let file = File::open(&path)
-                .map_err(|e| format!("Failed to open file at {path:?}, reason: {e}"))?;
+                .map_err(|e| format!("Failed to open file at {path:?}: {e}"))?;
 
             pxml::from_reader(file)
-                .map_err(|e| format!("Failed to read Packed XML file at {path:?}, reason: {e}"))?
+                .map_err(|e| format!("Failed to read Packed XML file at {path:?}: {e}"))?
 
         }
         None => {
 
             let mut content = Vec::new();
             std::io::stdin().read_to_end(&mut content)
-                .map_err(|e| format!("Failed to read content from stdin, reason: {e}"))?;
+                .map_err(|e| format!("Failed to read content from stdin: {e}"))?;
             
             pxml::from_reader(Cursor::new(content))
-                .map_err(|e| format!("Failed to read Packed XML from stdin, reason: {e}"))?
+                .map_err(|e| format!("Failed to read Packed XML from stdin: {e}"))?
 
         }
     };
 
-    if let Some(_filter) = args.filter {
+    if let Some(filter) = args.filter {
+        apply_filter(&mut *root_elt, &filter)?;
+    }
+
+    if args.raw {
         
+        let mut buf = Vec::new();
+        pxml::to_writer(Cursor::new(&mut buf), &root_elt)
+            .map_err(|e| format!("Failed to write Packed XML to buffer: {e}"))?;
+
+        io::stdout().write_all(&buf)
+            .map_err(|e| format!("Failed to write Packed XML buffer to stdout: {e}"))?;
+
+        return Ok(());
+
     }
     
     let mut indent = String::new();
 
     if args.xml {
-        println!("<root>");
+        println!("<{root_xml_tag}>");
         indent.push_str("  ");
     }
 
@@ -49,7 +66,7 @@ pub fn cmd_pxml0(args: PackedXmlArgs) -> CliResult<()> {
     print_element(&root_elt, &mut indent, false, args.xml);
 
     if args.xml {
-        println!("</root>");
+        println!("</{root_xml_tag}>");
     } else {
         println!(); // Because 'print_element' don't print a line feed.
     }
@@ -58,140 +75,66 @@ pub fn cmd_pxml0(args: PackedXmlArgs) -> CliResult<()> {
 
 }
 
+fn apply_filter(element: &mut Element, filter: &str) -> CliResult<()> {
 
-#[allow(unused)]
-pub fn cmd_pxml(matches: &ArgMatches) -> CliResult<()> {
-    match matches.subcommand() {
-        Some(("show", matches)) => cmd_pxml_show(matches),
-        Some(("edit", matches)) => cmd_pxml_edit(matches),
-        _ => unreachable!()
-    }
-}
+    let mut context = FilterContext::new(element);
 
-fn cmd_pxml_show(matches: &ArgMatches) -> CliResult<()> {
+    for assign in filter.split(";") {
 
-    let file_path = matches.get_one::<String>("file").unwrap();
-    let xml = matches.get_flag("xml");
+        let Some((dst, src)) = assign.split_once('=') else {
+            return Err(format!("Invalid assignment: {assign}"));
+        };
 
-    let mut root_elt = cmd_read_pxml_file(file_path)?;
-
-    if let Some(value_path) = matches.get_one::<String>("path") {
-        if !value_path.is_empty() {
-            let value = cmd_resolve_element_path(&mut root_elt, &value_path)?;
-            print!("{value_path}: ");
-            print_value(value, &mut "  ".to_string(), xml);
-            println!(); // Because 'print_value' don't print a line feed.
-            return Ok(())
+        if dst.is_empty() || src.is_empty() {
+            return Err(format!("Invalid assignment: {assign}"));
         }
-    }
 
-    let mut indent = String::new();
+        let val;
 
-    if xml {
-        print!("<root>");
-        indent.push_str("  ");
-    }
+        // If using a method to construct builtin values.
+        if let Some((method_name, after)) = src.split_once('(') {
+            if let Some((method_arg, after)) = after.split_once(')') {
+                
+                if !after.is_empty() {
+                    return Err(format!("Invalid method call: {src} (following closing paren)"));
+                }
 
-    // Print the whole root element.
-    print_element(&root_elt, &mut indent, false, xml);
+                val = match method_name {
+                    "false" => Value::Boolean(false),
+                    "true" => Value::Boolean(true),
+                    "int" => {
 
-    if xml {
-        println!("</root>");
-    } else {
-        println!(); // Because 'print_element' don't print a line feed.
+                        let i = method_arg.parse()
+                            .map_err(|e| format!("Invalid integer: {e}"))?;
+
+                        Value::Integer(i)
+
+                    }
+                    "str" => {
+                        Value::String(method_arg.to_string())
+                    }
+                    _ => return Err(format!("Invalid method name: {method_name}")),
+                }
+
+            } else {
+                return Err(format!("Invalid method call: {src} (no closing paren)"))
+            }
+        } else if let Some(src_val) = context.find(src, false) {
+            val = src_val.clone();
+        } else {
+            return Err(format!("Failed to find source: {src}"));
+        }
+
+        let Some(dst) = context.find(dst, true) else {
+            return Err(format!("Failed to create destination: {dst}"));
+        };
+
+        dst.clone_from(&val);
+        
     }
 
     Ok(())
 
-}
-
-fn cmd_pxml_edit(matches: &ArgMatches) -> CliResult<()> {
-
-    let file_path = matches.get_one::<String>("file").unwrap();
-    let backup_file_path = format!("{file_path}.{}", SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs());
-
-    let value_path = matches.get_one::<String>("path").unwrap();
-    let value_raw = matches.get_one::<String>("value").unwrap();
-
-    let mut root_elt = cmd_read_pxml_file(file_path)?;
-    let value = cmd_resolve_element_path(&mut root_elt, &value_path)?;
-    
-    // print!("{value_path} (current):");
-    // print_value(value, &mut "  ".to_string());
-
-    let new_value = match value {
-        Value::String(_) => {
-            Value::String(value_raw.clone())
-        },
-        Value::Integer(_) => {
-            Value::Integer(value_raw.parse::<i64>()
-                .map_err(|_| format!("Invalid integer."))?)
-        }
-        Value::Boolean(_) => {
-            match &value_raw[..] {
-                "true" => Value::Boolean(true),
-                "false" => Value::Boolean(false),
-                _ => return Err(format!("Invalid boolean."))
-            }
-        }
-        // Value::Float(_) => {
-        //     Value::Float(value_raw.parse::<f32>()
-        //         .map_err(|_| format!("Invalid float."))?)
-        // }
-        _ => return Err(format!("It is not possible to edit such values."))
-    };
-
-    print!("{value_path}: ");
-    print_value(value, &mut "  ".to_string(), false);
-    print!(" -> ");
-    print_value(&new_value, &mut "  ".to_string(), false);
-    println!();
-
-    // Finally set the new value.
-    *value = new_value;
-
-    // Make a backup file.
-    std::fs::copy(file_path, backup_file_path)
-        .map_err(|e| format!("Failed to backup Packed XML file, reason: {e}"))?;
-
-    let file = File::create(file_path)
-        .map_err(|e| format!("Failed to create file at {file_path:?}, reason: {e}"))?;
-
-    pxml::to_writer(file, &root_elt)
-        .map_err(|e| format!("Failed to write Packed XML file at {file_path:?}, reason: {e}"))?;
-
-    Ok(())
-
-}
-
-
-fn cmd_read_pxml_file<P: AsRef<Path>>(path: P) -> CliResult<Box<Element>> {
-
-    let path = path.as_ref();
-
-    let file = File::open(path)
-        .map_err(|e| format!("Failed to open file at {path:?}, reason: {e}"))?;
-
-    pxml::from_reader(file)
-        .map_err(|e| format!("Failed to read Packed XML file at {path:?}, reason: {e}"))
-
-}
-
-fn cmd_resolve_element_path<'a, 'b>(
-    element: &'a mut Element, 
-    path: &'b str
-) -> CliResult<&'a mut Value> {
-    resolve_element_path(element, path, 0)
-        .map_err(|e| {
-            match e {
-                PathResolveError::ChildNotFound { child, parent } => {
-                    format!("Can't find '{child}' in '/{parent}'")
-                }
-                PathResolveError::TerminalValue { child, parent } => {
-                    format!("Can't find '{child}' in '/{parent}' because the latter is a terminal value")
-                }
-            }
-        })
 }
 
 /// Print an element and its children, children are printed
@@ -240,6 +183,13 @@ fn print_element(element: &Element, indent: &mut String, new_line: bool, xml: bo
 
 /// Print a Packed XML value inline -no terminal line feed-.
 fn print_value(value: &Value, indent: &mut String, xml: bool) {
+
+    let element = matches!(value, Value::Element(_));
+
+    if xml && !element {
+        print!("\t");
+    }
+
     match value {
         Value::Element(element) => {
             print_element(&element, indent, true, xml);
@@ -277,50 +227,170 @@ fn print_value(value: &Value, indent: &mut String, xml: bool) {
             }
         }
     }
+
+    if xml && !element {
+        print!("\t");
+    }
+
 }
 
-/// Possible errors while resolving path in an element.
-enum PathResolveError<'a> {
-    ChildNotFound {
-        child: &'a str,
-        parent: &'a str,
-    },
-    TerminalValue {
-        child: &'a str,
-        parent: &'a str,
-    },
-}
+/// This function resolves a path and get a mutable reference to the value.
+fn resolve_path<'xml>(elt: &'xml mut Element, path: &str, create: bool) -> Option<&'xml mut Value> {
 
-/// Internal recursive function to traval the given element and path
-/// and return the pointed value if existing.
-fn resolve_element_path<'a, 'b>(
-    element: &'a mut Element, 
-    path: &'b str,
-    path_index: usize
-) -> Result<&'a mut Value, PathResolveError<'b>> {
+    let (mut child_key, rest) = path.split_once('/').unwrap_or((path, ""));
 
-    let child_path = &path[path_index..];
+    let mut index_specified = false;
+    let mut index_create = false;
+    let mut index = 0isize;
     
-    // foo/bar/baz => first = "foo", sec = "bar/baz"
-    // foo/        => first = "foo", sec = ""
-    // foo         => first = "foo", sec = ""
-    let (first, sec) = child_path.split_once('/').unwrap_or((child_path, ""));
-    
-    let value = element.get_child_mut(first)
-        .ok_or_else(|| PathResolveError::ChildNotFound {
-            child: first,
-            parent: &path[..path_index],
-        })?;
+    // We also get the index of that value.
+    if let Some((before, after)) = child_key.split_once('[') {
+        child_key = before;
+        if let Some((mut before, after)) = after.split_once(']') {
+            
+            // We don't want anything after the closing bracket.
+            if !after.is_empty() {
+                return None;
+            }
 
-    if sec.is_empty() {
-        Ok(value)
-    } else if let Value::Element(elt) = value {
-        resolve_element_path(&mut **elt, path, path_index + first.len() + 1)
+            // If the index starts with a ^ then it means that we want to create a new
+            // element in the element.
+            if before.starts_with('^') {
+
+                // We create mode is disabled...
+                if !create {
+                    return None;
+                }
+
+                before = &before[1..];
+                index_create = true;
+
+                // By default we push at the end, we don't use '-1' because that would
+                // mean to insert just before the last child.
+                index = elt.len() as isize;
+
+            }
+
+            // An empty index is equal to 0.
+            if !before.is_empty() {
+                index = before.parse().ok()?;
+            }
+
+            index_specified = true;
+
+        } else {
+            // No closing bracket.
+            return None;
+        }
+    }
+
+    let value;
+
+    // Special key '^' used to target the value itself.
+    if child_key == "^" {
+
+        // We can't specify an index when targeting element's value, because there is one.
+        if index_specified {
+            return None;
+        }
+
+        value = Some(&mut elt.value);
+
+    } else if index_create {
+
+        let actual_index = if index >= 0 {
+            index as usize
+        } else {
+            
+            let offset = -index as usize;
+            if offset > elt.len() {
+                return None;
+            }
+
+            elt.len() - offset
+
+        };
+
+        value = Some(elt.insert_child(actual_index, child_key.to_string(), Value::default()))
+
     } else {
-        Err(PathResolveError::TerminalValue {
-            child: sec,
-            parent: &path[..(path_index + first.len())],
-        })
+
+        let mut children = elt.iter_children_mut(child_key);
+        if index >= 0 {
+            value = children.nth(index as usize);
+        } else {
+            value = children.rev().nth(-index as usize - 1);
+        }
+
+    }
+
+    let Some(value) = value else {
+        return None;
+    };
+
+    if !rest.is_empty() {
+        if let Value::Element(elt) = value {
+            return resolve_path(&mut *elt, rest, create);
+        } else {
+            return None;
+        }
+    }
+
+    Some(value)
+
+}
+
+#[derive(Debug)]
+struct FilterContext<'xml> {
+    /// The element to be filtered.
+    element: &'xml mut Element,
+    /// Temporary variables for filtering.
+    variables: HashMap<String, Value>,
+}
+
+impl<'xml> FilterContext<'xml> {
+
+    fn new(element: &'xml mut Element) -> Self {
+        Self {
+            element,
+            variables: HashMap::new(),
+        }
+    }
+
+    fn find(&mut self, mut path: &str, create: bool) -> Option<&mut Value> {
+
+        let mut element = &mut *self.element;
+
+        // Depending on this being temp variable or not.
+        if path.starts_with('$') {
+
+            path = &path[1..];
+
+            let (var, rest) = path.split_once('/').unwrap_or((path, ""));
+            let val = match self.variables.entry(var.to_string()) {
+                hash_map::Entry::Occupied(o) => o.into_mut(),
+                hash_map::Entry::Vacant(v) if create => {
+                    v.insert(Value::default())
+                }
+                hash_map::Entry::Vacant(_) => return None,
+            };
+
+            if !rest.is_empty() {
+                if let Value::Element(elt) = val {
+                    element = &mut **elt;
+                    path = rest;
+                } else {
+                    return None;  // Could not go into an non-element value
+                }
+            } else {
+                // No further path, we return the value itself.
+                return Some(val);
+            }
+
+        }
+
+        resolve_path(element, path, create)
+
     }
 
 }
