@@ -5,9 +5,9 @@ pub mod element;
 
 use std::collections::{HashMap, VecDeque};
 use std::net::{SocketAddr, SocketAddrV4};
+use std::time::{Duration, Instant};
 use std::sync::Arc;
 use std::io;
-use std::time::{Duration, Instant};
 
 use crypto_common::KeyInit;
 use blowfish::Blowfish;
@@ -31,7 +31,7 @@ use element::{
 
 
 /// This modules defines numerical identifiers for login app elements.
-mod id {
+pub mod id {
     pub const LOGIN_REQUEST: u8         = 0x00;
     pub const PING: u8                  = 0x02;
     pub const CHALLENGE_RESPONSE: u8    = 0x03;
@@ -358,7 +358,10 @@ pub struct PingEvent {
     pub latency: Duration,
 }
 
-/// A client has made a request to login, this request can be answered with the app.
+/// A client has made a request to login, this request can be answered with the app using:
+/// - [`App::answer_login_success`]
+/// - [`App::answer_login_error`]
+/// - [`App::answer_login_challenge`]
 #[derive(Debug)]
 pub struct LoginEvent {
     /// The address of the client that request a login.
@@ -367,7 +370,8 @@ pub struct LoginEvent {
     pub request: LoginRequest,
 }
 
-/// A challenge has been answered by the client.
+/// A challenge has been answered by the client, this will usually followed by another
+/// [`LoginEvent`] to request again.
 #[derive(Debug)]
 pub struct ChallengeEvent {
     /// The address of the client that request a login.
@@ -401,36 +405,4 @@ struct PendingChallenge {
     key_prefix: Vec<u8>,
     /// The configured max nonce.
     max_nonce: u32,
-}
-
-#[cfg(test)]
-mod tests {
-
-    use std::net::{Ipv4Addr, SocketAddr};
-
-    use super::{App, Event};
-
-    fn test() {
-    
-        let mut app = App::new(SocketAddr::new(Ipv4Addr::UNSPECIFIED, 4123)).unwrap();
-
-        loop {
-            match app.poll() {
-                Event::IoError(_) => todo!(),
-                Event::Ping(ping) => {
-                    println!("[{}] Ping...", ping.addr);
-                }
-                Event::Login(login) => {
-                    println!("[{}] Login...", login.addr);
-                    app.answer_login_challenge(login.addr);
-                }
-                Event::Challenge(challenge) => {
-                    println!("[{}] Challenge...", challenge.addr);
-                    // app.answer_login_success(challenge.addr, app_addr, login_key, server_message)
-                }
-            }
-        }
-    
-    }
-
 }

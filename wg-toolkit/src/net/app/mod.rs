@@ -16,6 +16,7 @@
 //!   is receiving requests from client when in-game.
 
 pub mod login;
+pub mod client;
 pub mod base;
 
 use std::{fmt, io};

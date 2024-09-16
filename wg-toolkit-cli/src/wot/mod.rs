@@ -177,6 +177,7 @@ impl BaseThread {
                     }
                     
                     println!("[B] [{}] Login #{}... Success", login.addr, login.attempt_num);
+                    self.app.answer_login_success(login.addr, client.blowfish);
 
                 }
             }

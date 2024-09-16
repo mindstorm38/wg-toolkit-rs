@@ -2,8 +2,9 @@
 
 pub mod element;
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::net::SocketAddr;
+use std::sync::Arc;
 use std::io;
 
 use crate::net::bundle::{Bundle, ElementReader, TopElementReader};
@@ -11,13 +12,14 @@ use crate::net::bundle::{Bundle, ElementReader, TopElementReader};
 use crate::net::socket::BundleSocket;
 use super::io_invalid_data;
 
+use blowfish::Blowfish;
 use element::{
     ClientAuth,
 };
 
 
 /// This modules defines numerical identifiers for base app elements.
-mod id {
+pub mod id {
 
     // use super::ElementIdRange;
 
@@ -38,6 +40,10 @@ pub struct App {
     events: VecDeque<Event>,
     /// A temporary bundle for sending.
     bundle: Bundle,
+    /// Clients that have made an initial client connection, associated to the request id.
+    pending_clients: HashMap<SocketAddr, u32>,
+    /// Map of clients.
+    clients: HashMap<SocketAddr, Client>,
 }
 
 impl App {
@@ -47,6 +53,8 @@ impl App {
             socket: BundleSocket::new(addr)?,
             events: VecDeque::new(),
             bundle: Bundle::new(),
+            pending_clients: HashMap::new(),
+            clients: HashMap::new(),
         })
     }
 
@@ -106,13 +114,33 @@ impl App {
     fn handle_client_auth(&mut self, addr: SocketAddr, reader: TopElementReader) -> io::Result<()> {
         
         let auth = reader.read_simple::<ClientAuth>()?;
+        let request_id = auth.request_id
+            .ok_or_else(|| io_invalid_data(format_args!("auth should be a request")))?;
+
         self.events.push_back(Event::Login(LoginEvent {
             addr,
             login_key: auth.element.login_key,
             attempt_num: auth.element.attempt_num,
         }));
 
+        self.pending_clients.insert(addr, request_id);
+
         Ok(())
+
+    }
+
+    /// Accept the login of the given user, in response to [`Event::Login`], giving the
+    /// blowfish key that will be used for encryption.
+    /// 
+    /// This returns true if the client hasn't been answered yet.
+    pub fn answer_login_success(&mut self, addr: SocketAddr, blowfish: Arc<Blowfish>) -> bool {
+        
+        let Some(request_id) = self.pending_clients.remove(&addr) else {
+            return false;
+        };
+
+
+        true
 
     }
 
@@ -148,4 +176,13 @@ pub struct LoginEvent {
     pub login_key: u32,
     /// The attempt number.
     pub attempt_num: u8,
+}
+
+/// An active logged in client in the base application.
+#[derive(Debug)]
+struct Client {
+    /// The session key for this client.
+    session_key: u32,
+    /// The blowfish key for encryption of this client's packets.
+    blowfish: Arc<Blowfish>,
 }
