@@ -191,6 +191,7 @@ pub struct ElementIdRange {
 
 impl ElementIdRange {
 
+    /// Create a new id range, with first and last ids, both included.
     pub const fn new(first: u8, last: u8) -> Self {
         Self { first, last }
     }
@@ -206,12 +207,12 @@ impl ElementIdRange {
     /// returns 1, this means that the last slot (`.last`), if used, will be
     /// followed by a sub-id.
     /// 
-    /// You must given the total number of exposed ids, because the presence
+    /// You must give the total number of exposed ids, because the presence
     /// of sub-id depends on how exposed ids can fit in the id range.
     #[inline]
     pub const fn sub_slots_count(self, exposed_count: u16) -> u8 {
         // Calculate the number of excess exposed ids, compared to slots count.
-        let excess_count = exposed_count as i32 - self.slots_count() as i32;
+        let excess_count = exposed_count.saturating_sub(self.slots_count() as u16);
         // If the are excess slots, calculate how much additional bytes are 
         // required to represent such number.
         if excess_count > 0 {

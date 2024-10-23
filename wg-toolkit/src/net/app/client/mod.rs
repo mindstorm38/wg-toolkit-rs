@@ -8,6 +8,8 @@ pub mod id {
 
     // use super::ElementIdRange;
 
+    use crate::net::element::ElementIdRange;
+
     pub const UPDATE_FREQUENCY_NOTIFICATION: u8 = 0x02;
     pub const SET_GAME_TIME: u8                 = 0x03;
     pub const RESET_ENTITIES: u8                = 0x04;
@@ -23,6 +25,6 @@ pub mod id {
     pub const SELECT_PLAYER_ENTITY: u8          = 0x1A;
     pub const FORCED_POSITION: u8               = 0x1B;
 
-    // pub const ENTITY_METHOD: ElementIdRange     = ElementIdRange::new(0xA7, 0xFE);
+    pub const ENTITY_METHOD: ElementIdRange     = ElementIdRange::new(0xA7, 0xFE);
 
 }

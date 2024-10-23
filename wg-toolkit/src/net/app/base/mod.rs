@@ -2,20 +2,22 @@
 
 pub mod element;
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, VecDeque};
+use std::marker::PhantomData;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::io;
 
+use blowfish::Blowfish;
+
 use crate::net::bundle::{Bundle, ElementReader, TopElementReader};
 // use crate::net::element::ElementIdRange;
 use crate::net::socket::BundleSocket;
+
+use super::common::element::{Entity, Method};
 use super::io_invalid_data;
 
-use blowfish::Blowfish;
-use element::{
-    ClientAuth,
-};
+use element::ClientAuth;
 
 
 /// This modules defines numerical identifiers for base app elements.
@@ -129,6 +131,11 @@ impl App {
 
     }
 
+    fn handle_client_session_key(&mut self, addr: SocketAddr, reader: TopElementReader) -> io::Result<()> {
+        let _ = (addr, reader);
+        Ok(())
+    }
+
     /// Accept the login of the given user, in response to [`Event::Login`], giving the
     /// blowfish key that will be used for encryption.
     /// 
@@ -144,9 +151,12 @@ impl App {
 
     }
 
-    fn handle_client_session_key(&mut self, addr: SocketAddr, reader: TopElementReader) -> io::Result<()> {
-        let _ = (addr, reader);
-        Ok(())
+    pub fn create_entity<E: Entity>(&mut self, addr: SocketAddr, entity: E) -> Handle<E> {
+        todo!()
+    }
+
+    pub fn call_method<E: Entity>(&mut self, addr: SocketAddr, handle: Handle<E>, method: E::ClientMethod) {
+        todo!()
     }
 
 }
@@ -176,6 +186,12 @@ pub struct LoginEvent {
     pub login_key: u32,
     /// The attempt number.
     pub attempt_num: u8,
+}
+
+/// A typed handle to an arbitrary entity in the base app.
+pub struct Handle<E> {
+    entity_id: u32,
+    _phantom: PhantomData<*const E>,
 }
 
 /// An active logged in client in the base application.

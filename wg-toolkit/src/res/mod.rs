@@ -408,8 +408,6 @@ impl Iterator for ResReadDir {
 
     fn next(&mut self) -> Option<Self::Item> {
 
-        // FIXME: Avoid duplicate directories between native and package read dirs...
-
         if let Some(native_read_dir) = &mut self.native_read_dir {
             match native_read_dir.next() {
                 Some(Ok(entry)) => {
@@ -587,7 +585,9 @@ struct NodeCache {
     nodes: Vec<NodeInfo>,
     /// Number of directories in all nodes.
     dir_count: usize,
+    /// Just for stats.
     dir_children_max_count: usize,
+    /// Just for stats.
     node_name_max_len: usize,
 }
 

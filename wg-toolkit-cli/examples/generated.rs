@@ -1,5 +1,0 @@
-mod aliases;
-
-fn main() {
-
-}

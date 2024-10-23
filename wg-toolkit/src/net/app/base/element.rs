@@ -50,37 +50,18 @@ impl TopElement for ClientAuth {
 }
 
 
-/// Replied by the server to the client when receiving a [`ClientAuth`] request 
-/// element. The key must be a new session 
+/// This element can be used in two cases:
+/// - As a reply to [`ClientAuth`] from the server to the client in order to give it
+///   the initial session key.
+/// - Sent by the client on login (and apparently randomly after login) to return 
+///   the session key that was sent by the server in the initial reply (first case).
 #[derive(Debug, Clone)]
-pub struct ServerSessionKey {
-    /// The server session key, should not be the same as the login session key.
-    pub session_key: u32,
-}
-
-impl SimpleElement for ServerSessionKey {
-
-    fn encode(&self, write: &mut impl Write) -> io::Result<()> {
-        write.write_u32(self.session_key)
-    }
-
-    fn decode(read: &mut impl Read, _len: usize) -> io::Result<Self> {
-        Ok(Self { session_key: read.read_u32()? })
-    }
-    
-}
-
-
-/// Sent by the client on login (and apparently randomly after login) to return 
-/// the session key that was sent by the server in the [`ServerSessionKey`] 
-/// reply.
-#[derive(Debug, Clone)]
-pub struct ClientSessionKey {
+pub struct SessionKey {
     /// The server session key
     pub session_key: u32,
 }
 
-impl SimpleElement for ClientSessionKey {
+impl SimpleElement for SessionKey {
 
     fn encode(&self, write: &mut impl Write) -> io::Result<()> {
         write.write_u32(self.session_key)
@@ -92,7 +73,7 @@ impl SimpleElement for ClientSessionKey {
 
 }
 
-impl TopElement for ClientSessionKey {
+impl TopElement for SessionKey {
     const LEN: ElementLength = ElementLength::Fixed(4);
 }
 

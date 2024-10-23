@@ -18,8 +18,16 @@ thiserror = "1.0"
 
 crossbeam-channel = "0.5"
 
+indexmap = "2.6"
+glam = "0.29"
+
 blowfish = "0.9"
 rsa = "0.8"
+
+[features]
+default = ["cli-bootstrap", "cli-wot"]
+cli-bootstrap = []
+cli-wot = []
 
 [[bin]]
 name = "wgtk"

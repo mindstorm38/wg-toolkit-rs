@@ -2,57 +2,24 @@
 
 use wgtk::pxml::{Element, Value};
 
-use crate::bootstrap::model::TyDef;
-
 use super::model::{
-    Interface, Entity,
-    Property, PropertyFlags, Method, Arg,
-    TyDictProp, Ty, TyDict, TySeq, TySeqKind, TySystem
+    Arg, Entity, Interface, Method, Property, PropertyFlags, Ty, TyDict, TyDictProp, TyKind, TySeq, TySystem, VariableHeaderSize
 };
 
 
 pub fn parse_aliases(elt: &Element, tys: &mut TySystem) {
-
     for (name, val) in elt.iter_children_all() {
-        let ty = parse_ty(val, &mut *tys);
-        tys.register(Some(name.clone()), TyDef::Alias(ty));
+        parse_ty(val, &mut *tys, Some(name.clone()));
     }
-
 }
 
 pub fn parse_interface(elt: &Element, tys: &mut TySystem, name: String) -> Interface {
 
     let mut interface = Interface {
         name,
-        base_methods: Vec::new(),
-        client_methods: Vec::new(),
-        cell_methods: Vec::new(),
-    };
-
-    // TODO: TempProperties (teambase_vehicle.def)
-
-    if let Some(Value::Element(elt)) = elt.get_child("ClientMethods") {
-        parse_methods(&elt, &mut *tys, &mut interface.client_methods);
-    }
-
-    if let Some(Value::Element(elt)) = elt.get_child("BaseMethods") {
-        parse_methods(&elt, &mut *tys, &mut interface.base_methods);
-    }
-
-    if let Some(Value::Element(elt)) = elt.get_child("CellMethods") {
-        parse_methods(&elt, &mut *tys, &mut interface.cell_methods);
-    }
-
-    interface
-
-}
-
-pub fn parse_entity(elt: &Element, tys: &mut TySystem, name: String) -> Entity {
-
-    let mut entity = Entity {
-        name,
-        interfaces: Vec::new(),
+        implements: Vec::new(),
         properties: Vec::new(),
+        temp_properties: Vec::new(),
         client_methods: Vec::new(),
         base_methods: Vec::new(),
         cell_methods: Vec::new(),
@@ -61,26 +28,46 @@ pub fn parse_entity(elt: &Element, tys: &mut TySystem, name: String) -> Entity {
     if let Some(Value::Element(elt)) = elt.get_child("Implements") {
         for interface_elt in elt.iter_children("Interface") {
             if let Some(interface_name) = interface_elt.as_string() {
-                entity.interfaces.push(interface_name.to_string());
+                interface.implements.push(interface_name.to_string());
             }
         }
     }
 
+    if let Some(Value::Element(elt)) = elt.get_child("TempProperties") {
+        for (temp_name, _) in elt.iter_children_all() {
+            interface.temp_properties.push(temp_name.clone());
+        }
+    }
+
     if let Some(Value::Element(elt)) = elt.get_child("Properties") {
-        parse_properties(&elt, &mut *tys, &mut entity.properties);
+        parse_properties(&elt, &mut *tys, &mut interface.properties);
     }
 
     if let Some(Value::Element(elt)) = elt.get_child("ClientMethods") {
-        parse_methods(&elt, &mut *tys, &mut entity.client_methods);
+        parse_methods(&elt, &mut *tys, &mut interface.client_methods, true);
     }
 
     if let Some(Value::Element(elt)) = elt.get_child("BaseMethods") {
-        parse_methods(&elt, &mut *tys, &mut entity.base_methods);
+        parse_methods(&elt, &mut *tys, &mut interface.base_methods, false);
     }
 
     if let Some(Value::Element(elt)) = elt.get_child("CellMethods") {
-        parse_methods(&elt, &mut *tys, &mut entity.cell_methods);
+        parse_methods(&elt, &mut *tys, &mut interface.cell_methods, false);
     }
+
+    interface
+
+}
+
+pub fn parse_entity(elt: &Element, tys: &mut TySystem, id: usize, name: String) -> Entity {
+
+    let interface = parse_interface(elt, tys, name);
+
+    let entity = Entity {
+        interface,
+        id,
+        parent: elt.get_child("Parent").and_then(Value::as_string).map(str::to_string),
+    };
 
     entity
 
@@ -97,7 +84,7 @@ pub fn parse_properties(elt: &Element, tys: &mut TySystem, properties: &mut Vec<
 pub fn parse_property(elt: &Element, tys: &mut TySystem, name: String) -> Property {
 
     let ty_val = elt.get_child("Type").expect("property should contain a type");
-    let ty = parse_ty(ty_val, &mut *tys);
+    let ty = parse_ty(ty_val, &mut *tys, None);
 
     let flags = elt.get_child("Flags")
         .and_then(Value::as_string)
@@ -131,36 +118,68 @@ pub fn parse_property(elt: &Element, tys: &mut TySystem, name: String) -> Proper
             "CELL_PRIVATE" => PropertyFlags::CellPrivate,
             "CELL_PUBLIC" => PropertyFlags::CellPublic,
             "ALL_CLIENTS" => PropertyFlags::AllClients,
-            raw => PropertyFlags::Unknown(raw.to_string()),
+            raw => panic!("unknown property flags: {raw}"),
         },
     }
 
 }
 
-pub fn parse_methods(elt: &Element, tys: &mut TySystem, methods: &mut Vec<Method>) {
+pub fn parse_methods(elt: &Element, tys: &mut TySystem, methods: &mut Vec<Method>, client: bool) {
     for (name, val) in elt.iter_children_all() {
         if let Value::Element(method_elt) = val {
-            methods.push(parse_method(&method_elt, &mut *tys, name.clone()));
+            methods.push(parse_method(&method_elt, &mut *tys, name.clone(), client));
         }
     }
 }
 
-pub fn parse_method(elt: &Element, tys: &mut TySystem, name: String) -> Method {
+pub fn parse_method(elt: &Element, tys: &mut TySystem, name: String, client: bool) -> Method {
     
     let mut method = Method {
         name,
-        exposed: elt.get_child("Exposed")
-            .and_then(Value::as_boolean)
-            .unwrap_or_default(),
+        exposed_to_all_clients: client,
+        exposed_to_own_client: false,
+        variable_header_size: VariableHeaderSize::Variable8,
         args: Vec::new(),
     };
+
+    if let Some(exposed) = elt.get_child("Exposed") {
+
+        assert!(!client, "exposed flags are not supported on client method");
+
+        match exposed.as_string().unwrap_or_default() {
+            "ALL_CLIENTS" => {
+                // Only supported on cell.
+                method.exposed_to_all_clients = true;
+            }
+            "OWN_CLIENT" => {
+                method.exposed_to_own_client = true;
+            }
+            "" => {
+                method.exposed_to_all_clients = true;
+                method.exposed_to_own_client = true;
+            }
+            raw => panic!("unknown method exposed flag: {raw}")
+        }
+
+    }
+
+    if let Some(size) = elt.get_child("VariableLengthHeaderSize").and_then(Value::as_integer) {
+        method.variable_header_size = match size {
+            1 => VariableHeaderSize::Variable8,
+            2 => VariableHeaderSize::Variable16,
+            3 => VariableHeaderSize::Variable24,
+            4 => VariableHeaderSize::Variable32,
+            _ => panic!("invalid variable length header size: {size}")
+        };
+    }
 
     // TODO: VariableLengthHeaderSize
     // TODO: AllowUnsafeData
     // TODO: IgnoreIfNoClient
+    // TODO: ReplayExposureLevel
 
     for arg_val in elt.iter_children("Arg") {
-        let ty = parse_ty(arg_val, &mut *tys);
+        let ty = parse_ty(arg_val, &mut *tys, None);
         method.args.push(Arg {
             ty,
         });
@@ -170,10 +189,24 @@ pub fn parse_method(elt: &Element, tys: &mut TySystem, name: String) -> Method {
     
 }
 
-pub fn parse_ty(val: &Value, tys: &mut TySystem) -> Ty {
+/// Parse the type from the given value, the type may be created and registered in the
+/// type system if not previously existing. The given alias name is used when defining
+/// aliases, it allows giving a non-anonymous name to a type, it also allows creating
+/// an `Alias` type kind for simple type references.
+pub fn parse_ty(val: &Value, tys: &mut TySystem, alias_name: Option<String>) -> Ty {
     match val {
         Value::String(name) => {
-            parse_ty_name(&name, tys)
+
+            let Some(ty) = tys.find(&name) else {
+                panic!("unknown type: {name}");
+            };
+
+            if let Some(alias_name) = alias_name {
+                tys.register(Some(alias_name), TyKind::Alias(ty))
+            } else {
+                ty
+            }
+
         }
         Value::Element(elt)
         if elt.value.as_string() == Some("FIXED_DICT") => {
@@ -182,56 +215,55 @@ pub fn parse_ty(val: &Value, tys: &mut TySystem) -> Ty {
                 .and_then(Value::as_element)
                 .expect("fixed dict should have properties");
 
-            let mut dict = TyDict::new();
+            let mut dict = TyDict::default();
             for (field_name, field_val) in properties_elt.iter_children_all() {
 
                 let field_elt = field_val.as_element().expect("field should be an element");
                 let type_val = field_elt.get_child("Type").expect("field should contain a type");
-                let ty = parse_ty(type_val, tys);
+                let ty = parse_ty(type_val, tys, None);
 
-                dict.properties.insert(field_name.clone(), TyDictProp {
+                dict.properties.push(TyDictProp {
+                    name: field_name.clone(),
                     ty,
                     default: None,
                 });
 
             }
-            
-            tys.register(None, TyDef::Dict(dict))
+
+            tys.register(alias_name, TyKind::Dict(dict))
 
         }
         Value::Element(elt) => {
 
             let kind = match elt.value.as_string() {
                 None => panic!("missing type element value: {val:?}"),
-                Some("ARRAY") => TySeqKind::Array,
-                Some("TUPLE") => TySeqKind::Tuple,
+                Some("ARRAY") => TyKind::Array,
+                Some("TUPLE") => TyKind::Tuple,
                 Some(name) => {
                     // TODO: Support for default value.
-                    return parse_ty_name(&name, tys);
+                    match tys.find(&name) {
+                        Some(ty) => return ty,
+                        None => panic!("unknown type: {name}")
+                    }
                 }
             };
 
             let ty = elt.get_child("of")
-                .map(|val| parse_ty(val, &mut *tys))
+                .map(|val| parse_ty(val, &mut *tys, None))
                 .expect("missing array type: {val:?}");
 
             let size = elt.get_child("size")
-                .map(|val| val.as_integer().unwrap());
+                .map(|val| val.as_integer().unwrap())
+                .and_then(|v| u32::try_from(v).ok());
 
-            tys.register(None, TyDef::Seq(TySeq {
+            let kind = (kind)(TySeq {
                 ty,
-                kind,
-                size: size.and_then(|v| u32::try_from(v).ok()),
-            }))
+                size,
+            });
+
+            tys.register(alias_name, kind)
 
         }
         _ => panic!("unsupported type: {val:?}")
-    }
-}
-
-pub fn parse_ty_name(name: &str, tys: &mut TySystem) -> Ty {
-    match tys.find(name) {
-        Some(ty) => ty,
-        None => panic!("unknown type: {name}"),
     }
 }

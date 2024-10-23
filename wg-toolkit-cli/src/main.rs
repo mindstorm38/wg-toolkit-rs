@@ -10,8 +10,11 @@ use clap::{Args, Parser, Subcommand};
 mod pxml;
 mod res;
 
-mod wot;
+#[cfg(feature = "cli-bootstrap")]
 mod bootstrap;
+
+#[cfg(feature = "cli-wot")]
+mod wot;
 
 
 /// Global options for the command line interface.
@@ -45,7 +48,9 @@ pub enum Command {
     #[command(name = "pxml")]
     PackedXml(PackedXmlArgs),
     Res(ResArgs),
+    #[cfg(feature = "cli-wot")]
     Wot(WotArgs),
+    #[cfg(feature = "cli-bootstrap")]
     Bootstrap(BootstrapArgs),
 }
 
@@ -181,6 +186,11 @@ pub struct WotArgs {
 
 /// Internal developer command used for updating the code of wg-toolkit automatically
 /// depending on internal resources and scripts.
+/// 
+/// Use the following command to bootstrap the generated code without compiling the 
+/// generated code that may have compile errors:
+/// 
+///   $ cargo run --no-default-features --features cli-bootstrap -- bootstrap D:/Games/WoT/res ./wg-toolkit-cli/src/wot/gen/
 #[derive(Debug, Args)]
 pub struct BootstrapArgs {
     /// Path to the game's resource (res/) directory.
@@ -205,7 +215,9 @@ fn main() -> ExitCode {
     let res = match args.cmd {
         Command::PackedXml(args) => pxml::cmd_pxml(args),
         Command::Res(args) => res::cmd_res(opts, args),
+        #[cfg(feature = "cli-wot")]
         Command::Wot(args) => wot::cmd_wot(args),
+        #[cfg(feature = "cli-bootstrap")]
         Command::Bootstrap(args) => bootstrap::cmd_bootstrap(args),
     };
 

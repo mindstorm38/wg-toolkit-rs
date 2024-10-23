@@ -1,5 +1,7 @@
 //! Implementation of a simple demonstration WoT server.
 
+pub mod gen;
+
 use std::collections::{hash_map, HashMap};
 use std::net::{SocketAddr, SocketAddrV4};
 use std::{fs, thread};
@@ -181,7 +183,21 @@ impl BaseThread {
 
                 }
             }
-            
+
+            // // Proof of concept:
+            // let entity: Handle<entity::Login> = self.app.create_base_player(addr, entity::Login {
+            //     accountDBID_s: "09518858105".to_string(),
+            //     loginPriority: 0,
+            // });
+
+            // self.app.call_method(addr, entity, entity::Login_Client::setPeripheryRoutingGroup());
+            // self.app.reset_entities(addr);
+
+            // let entity: Handle<entity::Account> = self.app.create_base_player(addr, entity::Account {
+            //     name: "Mindstorm38_".to_string(),
+
+            // });
+
         }
 
     }
