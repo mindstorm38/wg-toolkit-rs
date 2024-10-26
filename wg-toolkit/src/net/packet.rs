@@ -3,6 +3,7 @@
 use std::io::{Cursor, Read, Write, Seek};
 use std::collections::VecDeque;
 use std::fmt;
+use std::num::NonZero;
 
 use byteorder::{ReadBytesExt, WriteBytesExt, LE};
 
@@ -68,6 +69,13 @@ impl RawPacket {
             data: [0; PACKET_MAX_LEN], 
             len: PACKET_MIN_LEN,
         }
+    }
+
+    /// Reset this packet's length, flags and prefix.
+    #[inline]
+    pub fn reset(&mut self) {
+        self.len = PACKET_MIN_LEN;
+        self.data[..PACKET_MIN_LEN].fill(0);
     }
 
     /// Get a slice to the full raw data, this means that this isn't 
@@ -149,13 +157,6 @@ impl RawPacket {
     #[inline]
     pub fn body_mut(&mut self) -> &mut [u8] {
         &mut self.data[PACKET_PREFIX_LEN..self.len]
-    }
-
-    /// Reset this packet's length, flags and prefix.
-    #[inline]
-    pub fn reset(&mut self) {
-        self.len = PACKET_MIN_LEN;
-        self.data[..PACKET_MIN_LEN].fill(0);
     }
 
     /// Grow the packet's data by a given amount of bytes, and return a
@@ -282,6 +283,14 @@ impl Packet {
     /// Create a new packet instance on the heap and returns the box containing it.
     pub fn new_boxed() -> Box<Self> {
         Box::new(Self::new())
+    }
+
+    /// Reset this packet's length, flags and prefix.
+    #[inline]
+    pub fn reset(&mut self) {
+        self.raw.reset();
+        self.footer_offset = PACKET_MIN_LEN;
+        self.first_request_offset = 0;
     }
 
     /// Return a shared reference to the internal raw packet.
@@ -412,6 +421,7 @@ impl Packet {
 
         if config.reliable() { flags |= flags::IS_RELIABLE; }
         if config.on_channel() { flags |= flags::ON_CHANNEL; }
+        if config.create_channel() { flags |= flags::CREATE_CHANNEL; }
         
         if let Some((first_num, last_num)) = config.sequence_range() {
             flags |= flags::IS_FRAGMENT;
@@ -437,8 +447,6 @@ impl Packet {
 
         if !config.single_acks().is_empty() {
 
-            flags |= flags::HAS_ACKS;
-
             // Compute the remaining footer length for acks.
             let available_len = self.footer_available_len()
                 - if config.cumulative_ack().is_some() { 4 } else { 0 }
@@ -446,18 +454,23 @@ impl Packet {
                 - if config.has_checksum() { 4 } else { 0 }
                 - 1; // Acks count
 
-            let mut count = 0;
-            while let Some(ack) = config.single_acks_mut().pop_front() {
-                if available_len < 4 {
-                    break
-                } else {
+            if available_len >= 4 {
+
+                flags |= flags::HAS_ACKS;
+
+                let mut count = 0;
+                while let Some(ack) = config.single_acks_mut().pop_front() {
                     self.raw.grow_write(4).write_u32::<LE>(ack).unwrap();
                     count += 1;
+                    if available_len < 4 {
+                        break;
+                    }
                 }
-            }
+    
+                debug_assert!(count != 0);
+                self.raw.grow(1)[0] = count as _;
 
-            debug_assert!(count != 0);
-            self.raw.grow(1)[0] = count as _;
+            }
 
         }
 
@@ -469,8 +482,8 @@ impl Packet {
         if let Some((id, version)) = config.indexed_channel() {
             flags |= flags::INDEXED_CHANNEL;
             let mut cursor = self.raw.grow_write(8);
-            cursor.write_u32::<LE>(version).unwrap();
-            cursor.write_u32::<LE>(id).unwrap();
+            cursor.write_u32::<LE>(version.get()).unwrap();
+            cursor.write_u32::<LE>(id.get()).unwrap();
         }
 
         if config.has_checksum() {
@@ -516,7 +529,8 @@ impl Packet {
             flags::HAS_REQUESTS |
             flags::IS_FRAGMENT |
             flags::ON_CHANNEL |
-            flags::IS_RELIABLE;
+            flags::IS_RELIABLE |
+            flags::CREATE_CHANNEL;
 
         if flags & !KNOWN_FLAGS != 0 {
             return Err(PacketConfigError::UnknownFlags(flags & !KNOWN_FLAGS));
@@ -539,7 +553,11 @@ impl Packet {
             let mut cursor = self.raw.shrink_read(8);
             let version = cursor.read_u32::<LE>().unwrap();
             let id = cursor.read_u32::<LE>().unwrap();
-            config.set_indexed_channel(id, version);
+            if version != 0 && id != 0 {
+                config.set_indexed_channel(NonZero::new(id).unwrap(), NonZero::new(version).unwrap());
+            } else {
+                config.clear_indexed_channel();
+            }
         } else {
             config.clear_indexed_channel();
         }
@@ -575,6 +593,8 @@ impl Packet {
         } else {
             config.clear_unk_1000();
         }
+
+        config.set_create_channel(flags & flags::CREATE_CHANNEL != 0);
 
         if flags & flags::HAS_REQUESTS != 0 {
             let offset = self.raw.shrink_read(2).read_u16::<LE>().unwrap() as usize;
@@ -648,6 +668,8 @@ pub struct PacketConfig {
     /// Set to true if the sender of this packet requires an acknowledgment from
     /// the receiver upon successful receipt of this packet.
     reliable: bool,
+    /// Set to true when sending the first packet on a newly created channel.
+    create_channel: bool,
     /// The cumulative ack number. This number is sent for acknowledging that
     /// all sequence numbers up to (but excluding) this ack have been received.
     /// 
@@ -658,7 +680,7 @@ pub struct PacketConfig {
     /// Set to true when this packet is being transferred on a channel.
     on_channel: bool,
     /// Indexed channel is a combination of the channel id and version.
-    indexed_channel: Option<(u32, u32)>,
+    indexed_channel: Option<(NonZero<u32>, NonZero<u32>)>,
     /// Enable or disable checksum.
     has_checksum: bool,
     /// The usage of this value and flag 0x1000 is unknown. It will be
@@ -676,6 +698,7 @@ impl PacketConfig {
             sequence_first_num: 0,
             sequence_last_num: 0,
             reliable: false,
+            create_channel: false,
             cumulative_ack: None,
             single_acks: VecDeque::new(),
             on_channel: false,
@@ -747,6 +770,18 @@ impl PacketConfig {
         self.reliable = reliable
     }
 
+    /// Returns true if the create channel flag should be enabled.
+    #[inline]
+    pub fn create_channel(&self) -> bool {
+        self.create_channel
+    }
+
+    /// Read `create_channel` doc for explanation of this value.
+    #[inline]
+    pub fn set_create_channel(&mut self, create_channel: bool) {
+        self.create_channel = create_channel
+    }
+
     /// This number is sent for acknowledging that all sequence numbers up to (but 
     /// excluding) this ack have been received.
     #[inline]
@@ -759,7 +794,6 @@ impl PacketConfig {
     /// ack, use `clear_cumulative_ack` instead.
     #[inline]
     pub fn set_cumulative_ack(&mut self, num: u32) {
-        assert_ne!(num, 0, "cumulative ack is exclusive so it cannot be zero");
         self.cumulative_ack = Some(num);
     }
 
@@ -769,11 +803,15 @@ impl PacketConfig {
         self.cumulative_ack = None;
     }
 
+    /// Return a reference to the internal dequeue containing single acks to add. We use
+    /// a queue here because not all acks may be successfully moved into the packet if
+    /// space is missing.
     #[inline]
     pub fn single_acks(&self) -> &VecDeque<u32> {
         &self.single_acks
     }
 
+    /// See [`Self::single_acks`].
     #[inline]
     pub fn single_acks_mut(&mut self) -> &mut VecDeque<u32> {
         &mut self.single_acks
@@ -784,25 +822,25 @@ impl PacketConfig {
         self.on_channel
     }
 
+    #[inline]
+    pub fn set_on_channel(&mut self, on_channel: bool) {
+        self.on_channel = on_channel;
+    }
+
     /// Return the indexed channel, if existing, using tuple `(id, version)`.
     #[inline]
-    pub fn indexed_channel(&self) -> Option<(u32, u32)> {
+    pub fn indexed_channel(&self) -> Option<(NonZero<u32>, NonZero<u32>)> {
         self.indexed_channel
     }
 
     #[inline]
-    pub fn set_indexed_channel(&mut self, id: u32, version: u32) {
-        self.indexed_channel = Some((id, version))
+    pub fn set_indexed_channel(&mut self, index: NonZero<u32>, version: NonZero<u32>) {
+        self.indexed_channel = Some((index, version))
     }
 
     #[inline]
     pub fn clear_indexed_channel(&mut self) {
         self.indexed_channel = None;
-    }
-
-    #[inline]
-    pub fn set_on_channel(&mut self, on_channel: bool) {
-        self.on_channel = on_channel;
     }
 
     #[inline]

@@ -27,9 +27,8 @@ pub mod packet;
 pub mod bundle;
 
 pub mod filter;
-pub mod cuckoo;
 
+pub mod channel;
 pub mod socket;
 
-// pub mod interface;
 pub mod app;

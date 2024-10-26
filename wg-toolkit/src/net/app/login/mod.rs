@@ -17,8 +17,9 @@ use rand::rngs::OsRng;
 use rand::RngCore;
 
 use crate::net::bundle::{Bundle, ElementReader, TopElementReader};
-use crate::net::cuckoo::CuckooContext;
-use crate::net::socket::BundleSocket;
+use crate::net::channel::ChannelTracker;
+use crate::util::cuckoo::CuckooContext;
+use crate::net::socket::PacketSocket;
 use super::io_invalid_data;
 
 use element::{
@@ -41,7 +42,9 @@ pub mod id {
 #[derive(Debug)]
 pub struct App {
     /// Internal socket for this application.
-    socket: BundleSocket,
+    socket: PacketSocket,
+    /// The packet tracker used to build bundles.
+    channel: ChannelTracker,
     /// Queue of events that are waiting to be returned.
     events: VecDeque<Event>,
     /// A temporary bundle for sending.
@@ -64,7 +67,8 @@ impl App {
 
     pub fn new(addr: SocketAddr) -> io::Result<Self> {
         Ok(Self {
-            socket: BundleSocket::new(addr)?,
+            socket: PacketSocket::bind(addr)?,
+            channel: ChannelTracker::new(),
             events: VecDeque::new(),
             bundle: Bundle::new(),
             priv_key: None,
@@ -76,7 +80,7 @@ impl App {
     }
 
     /// Get the address this app is bound to.
-    pub fn addr(&self) -> SocketAddr {
+    pub fn addr(&self) -> io::Result<SocketAddr> {
         self.socket.addr()
     }
 
@@ -113,13 +117,13 @@ impl App {
                 }
             }
 
-            // Wait for a bundle to be fully received.
-            let (addr, bundle) = loop {
-                match self.socket.recv() {
-                    Ok(Some(ret)) => break ret,
-                    Ok(None) => continue,
-                    Err(error) => return Event::IoError(IoErrorEvent { error, addr: None }),
-                }
+            let (packet, addr) = match self.socket.recv() {
+                Ok(ret) => ret,
+                Err(error) => return Event::IoError(IoErrorEvent { error, addr: None }),
+            };
+
+            let Some((bundle, _)) = self.channel.accept(packet, addr) else {
+                continue;
             };
 
             self.received_instant = Some(Instant::now());
@@ -164,7 +168,8 @@ impl App {
 
         self.bundle.clear();
         self.bundle.element_writer().write_simple_reply(ping.element, request_id);
-        self.socket.send(&mut self.bundle, addr)?;
+        self.channel.off_channel(addr).prepare(&mut self.bundle, false);
+        self.socket.send_bundle(&self.bundle, addr)?;
 
         let latency = self.received_instant.unwrap().elapsed();
         self.events.push_back(Event::Ping(PingEvent { 
@@ -322,7 +327,9 @@ impl App {
         let res_encryption = LoginResponseEncryption::Encrypted(response.request.blowfish);
         self.bundle.clear();
         self.bundle.element_writer().write_reply(response.inner, &res_encryption, response.request.request_id);
-        self.socket.send(&mut self.bundle, response.addr)?;
+
+        self.channel.off_channel(response.addr).prepare(&mut self.bundle, false);
+        self.socket.send_bundle(&self.bundle, response.addr)?;
 
         Ok(())
 

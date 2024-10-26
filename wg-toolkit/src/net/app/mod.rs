@@ -15,12 +15,13 @@
 //! - Cell app, the server-side application, not directly exposed to the client that
 //!   is receiving requests from client when in-game.
 
+pub mod proxy;
+
 pub mod login;
 
 pub mod common;
 pub mod client;
 pub mod base;
-
 
 use std::{fmt, io};
 
