@@ -169,7 +169,7 @@ impl App {
         self.bundle.clear();
         self.bundle.element_writer().write_simple_reply(ping.element, request_id);
         self.channel.off_channel(addr).prepare(&mut self.bundle, false);
-        self.socket.send_bundle(&self.bundle, addr)?;
+        self.socket.send_bundle_without_encryption(&self.bundle, addr)?;
 
         let latency = self.received_instant.unwrap().elapsed();
         self.events.push_back(Event::Ping(PingEvent { 
@@ -329,7 +329,7 @@ impl App {
         self.bundle.element_writer().write_reply(response.inner, &res_encryption, response.request.request_id);
 
         self.channel.off_channel(response.addr).prepare(&mut self.bundle, false);
-        self.socket.send_bundle(&self.bundle, response.addr)?;
+        self.socket.send_bundle_without_encryption(&self.bundle, response.addr)?;
 
         Ok(())
 

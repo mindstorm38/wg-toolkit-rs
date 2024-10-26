@@ -10,10 +10,10 @@ use clap::{Args, Parser, Subcommand};
 mod pxml;
 mod res;
 
-#[cfg(feature = "cli-bootstrap")]
+#[cfg(feature = "bootstrap")]
 mod bootstrap;
 
-#[cfg(feature = "cli-wot")]
+#[cfg(feature = "wot")]
 mod wot;
 
 
@@ -48,9 +48,9 @@ pub enum Command {
     #[command(name = "pxml")]
     PackedXml(PackedXmlArgs),
     Res(ResArgs),
-    #[cfg(feature = "cli-wot")]
+    #[cfg(feature = "wot")]
     Wot(WotArgs),
-    #[cfg(feature = "cli-bootstrap")]
+    #[cfg(feature = "bootstrap")]
     Bootstrap(BootstrapArgs),
 }
 
@@ -215,9 +215,9 @@ fn main() -> ExitCode {
     let res = match args.cmd {
         Command::PackedXml(args) => pxml::cmd_pxml(args),
         Command::Res(args) => res::cmd_res(opts, args),
-        #[cfg(feature = "cli-wot")]
+        #[cfg(feature = "wot")]
         Command::Wot(args) => wot::cmd_wot(args),
-        #[cfg(feature = "cli-bootstrap")]
+        #[cfg(feature = "bootstrap")]
         Command::Bootstrap(args) => bootstrap::cmd_bootstrap(args),
     };
 

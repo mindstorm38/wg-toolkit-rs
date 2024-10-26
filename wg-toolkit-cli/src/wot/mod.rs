@@ -93,7 +93,7 @@ impl LoginThread {
 
         use login::Event;
 
-        println!("[L] Running on: {}", self.app.addr());
+        println!("[L] Running on: {}", self.app.addr().unwrap());
 
         if self.app.has_private_key() {
             println!("[L] Encryption enabled");
@@ -150,7 +150,7 @@ impl BaseThread {
 
     fn run(mut self) {
 
-        println!("[B] Running on: {}", self.app.addr());
+        println!("[B] Running on: {}", self.app.addr().unwrap());
 
         loop {
 

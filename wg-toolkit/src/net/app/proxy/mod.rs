@@ -54,9 +54,10 @@ struct Peer {
     socket: PacketSocket,
     blowfish: Arc<Blowfish>,
     channel: ChannelTracker,
+    writable: bool,
     /// Pending packets if the peer is not yet writable, should be used rarely at the
     /// very beginning and for a short time.
-    pending_packets: Option<Vec<Box<Packet>>>
+    pending_packets: Vec<Box<Packet>>,
 }
 
 impl App {
@@ -93,12 +94,13 @@ impl App {
             socket,
             blowfish,
             channel: ChannelTracker::new(),
-            pending_packets: Some(Vec::new()),
+            writable: false,
+            pending_packets: Vec::new(),
         });
 
         // Don't use the WRITABLE interest, if send would block we add the packet to 
         // pending ones.
-        self.poll.registry().register(&mut self.peers[index].socket, Token(index + 1), Interest::READABLE)?;
+        self.poll.registry().register(&mut self.peers[index].socket, Token(index + 1), Interest::READABLE | Interest::WRITABLE)?;
         Ok(())
 
     }
@@ -135,17 +137,17 @@ impl App {
                 if event.is_writable() {
                     self.poll.registry().reregister(&mut self.main.socket, MAIN_TOKEN, Interest::READABLE).unwrap();
                 }
-                self.handle_main_readable();
+                self.handle_main_event();
             }
             Token(index) if event.is_readable() || event.is_writable() => {
-                self.handle_peer_readable(index - 1);
+                self.handle_peer_event(index - 1, event.is_writable());
             }
             _ => {}
         }
 
     }
 
-    fn handle_main_readable(&mut self) {
+    fn handle_main_event(&mut self) {
 
         loop {
 
@@ -183,7 +185,7 @@ impl App {
 
     }
 
-    fn handle_peer_readable(&mut self, index: usize) {
+    fn handle_peer_event(&mut self, index: usize, writable: bool) {
 
         loop {
 
@@ -195,6 +197,10 @@ impl App {
                 break;
             };
     
+            if writable {
+                peer.writable = true;
+            }
+
             let (packet, app_addr) = match peer.socket.recv_without_encryption() {
                 Ok(ret) => ret,
                 Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
@@ -236,47 +242,21 @@ impl Peer {
 
     fn handle_out_packet(&mut self, main: &mut Main, cipher_packet: Box<Packet>) -> io::Result<()> {
         
-        // All this machinery to handle WouldBlock...
-        if let Some(pending_packets) = &mut self.pending_packets {
-            if let Some(pending_cipher_packet) = pending_packets.first() {
+        if !self.writable {
+            self.pending_packets.push(cipher_packet);
+        } else {
 
-                match self.socket.send_without_encryption(pending_cipher_packet.raw(), main.real_addr) {
-                    Ok(_) => {}
-                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                        // Don't try to send the new one, just make it pending.
-                        pending_packets.push(cipher_packet);
-                        return Ok(());
-                    }
-                    Err(e) => return Err(e)
-                }
-
-                // If sending the first pending packet is successful then all should be 
-                // successful, the socket should be ready now. DONT RESEND THE FIRST ONE.
-                let pending_packets = self.pending_packets.take().unwrap();
-                for (i, cipher_packet) in pending_packets.into_iter().enumerate() {
-                    if i != 0 {
-                        self.socket.send_without_encryption(cipher_packet.raw(), main.real_addr)?;
-                    }
+            if !self.pending_packets.is_empty() {
+                for cipher_packet in std::mem::take(&mut self.pending_packets) {
+                    self.socket.send_without_encryption(cipher_packet.raw(), main.real_addr)?;
                     self.accept_packet(main, cipher_packet, PacketDirection::Out);
                 }
-                
             }
-        }
 
-        match self.socket.send_without_encryption(cipher_packet.raw(), main.real_addr) {
-            Ok(_) => {}
-            Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                if let Some(pending_packets) = &mut self.pending_packets {
-                    pending_packets.push(cipher_packet);
-                    return Ok(());
-                } else {
-                    return Err(e);
-                }
-            }
-            Err(e) => return Err(e)
-        }
+            self.socket.send_without_encryption(cipher_packet.raw(), main.real_addr)?;
+            self.accept_packet(main, cipher_packet, PacketDirection::Out);
 
-        self.accept_packet(main, cipher_packet, PacketDirection::Out);
+        }
 
         Ok(())
 

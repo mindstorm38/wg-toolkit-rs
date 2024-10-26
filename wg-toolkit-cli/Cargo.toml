@@ -25,9 +25,9 @@ blowfish = "0.9"
 rsa = "0.8"
 
 [features]
-default = ["cli-bootstrap", "cli-wot"]
-cli-bootstrap = []
-cli-wot = []
+default = ["bootstrap", "wot"]
+bootstrap = []
+wot = []
 
 [[bin]]
 name = "wgtk"

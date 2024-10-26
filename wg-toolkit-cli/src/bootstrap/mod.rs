@@ -454,13 +454,14 @@ fn generate_entity(
 
     generate_interface(&mut writer, model, &entity.interface)?;
 
-    writeln!(writer, "impl Entity for {} {{", entity.interface.name)?;
-    writeln!(writer, "    const ID: u16 = {};", entity.id)?;
-    writeln!(writer, "    type ClientMethod = client::entity::{}Method;", entity.interface.name)?;
-    writeln!(writer, "    type BaseMethod = base::entity::{}Method;", entity.interface.name)?;
-    writeln!(writer, "    type CellMethod = cell::entity::{}Method;", entity.interface.name)?;
-    writeln!(writer, "}}")?;
-    writeln!(writer)?;
+    // TODO:
+    // writeln!(writer, "impl Entity for {} {{", entity.interface.name)?;
+    // writeln!(writer, "    const ID: u16 = {};", entity.id)?;
+    // writeln!(writer, "    type ClientMethod = client::entity::{}Method;", entity.interface.name)?;
+    // writeln!(writer, "    type BaseMethod = base::entity::{}Method;", entity.interface.name)?;
+    // writeln!(writer, "    type CellMethod = cell::entity::{}Method;", entity.interface.name)?;
+    // writeln!(writer, "}}")?;
+    // writeln!(writer)?;
     
     Ok(())
 
