@@ -11,10 +11,6 @@ use super::bundle::Bundle;
 
 /// The (currently hardcoded) timeout on bundle fragments.
 const FRAGMENT_TIMEOUT: Duration = Duration::from_secs(10);
-/// Encryption magic, 0xDEADBEEF in little endian.
-const ENCRYPTION_MAGIC: [u8; 4] = 0xDEADBEEFu32.to_le_bytes();
-/// Encryption footer length, 1 byte for wastage count + 4 bytes magic.
-const ENCRYPTION_FOOTER_LEN: usize = ENCRYPTION_MAGIC.len() + 1;
 
 
 /// This tracker helps tracking off-channel and in-channel communications and provides an
