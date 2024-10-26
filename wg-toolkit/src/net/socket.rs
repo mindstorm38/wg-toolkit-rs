@@ -1,11 +1,10 @@
 //! Providing an bundle-oriented socket, backed by an UDP socket.
 
+use std::net::{SocketAddr, UdpSocket};
 use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 use std::io::{self, Cursor};
-use std::net::SocketAddr;
-use std::sync::Arc;
-
-use mio::net::UdpSocket;
+use std::time::Duration;
 
 use blowfish::Blowfish;
 
@@ -20,8 +19,6 @@ const ENCRYPTION_MAGIC: [u8; 4] = 0xDEADBEEFu32.to_le_bytes();
 const ENCRYPTION_FOOTER_LEN: usize = ENCRYPTION_MAGIC.len() + 1;
 
 
-
-
 /// A tiny wrapper around UDP socket that allows sending and receiving raw packets, with
 /// support for encryption of specific socket addresses.
 /// 
@@ -31,8 +28,9 @@ const ENCRYPTION_FOOTER_LEN: usize = ENCRYPTION_MAGIC.len() + 1;
 pub struct PacketSocket {
     /// The inner socket.
     socket: UdpSocket,
-    /// Possible symmetric encryption on given socket addresses.
-    encryption: HashMap<SocketAddr, Arc<Blowfish>>,
+    /// Possible symmetric encryption on given socket addresses. Behind a shared 
+    /// read/write lock because most of the time we don't modify it.
+    encryption: Arc<RwLock<HashMap<SocketAddr, Arc<Blowfish>>>>,
 }
 
 impl PacketSocket {
@@ -40,7 +38,7 @@ impl PacketSocket {
     pub fn bind(addr: SocketAddr) -> io::Result<Self> {
         Ok(Self {
             socket: UdpSocket::bind(addr)?,
-            encryption: HashMap::new(),
+            encryption: Arc::new(RwLock::new(HashMap::new())),
         })
     }
     
@@ -48,14 +46,30 @@ impl PacketSocket {
         self.socket.local_addr()
     }
 
+    pub fn try_clone(&self) -> io::Result<PacketSocket> {
+        let socket = self.socket.try_clone()?;
+        Ok(Self {
+            socket,
+            encryption: Arc::clone(&self.encryption),
+        })
+    }
+
+    pub fn set_recv_timeout(&self, dur: Option<Duration>) -> io::Result<()> {
+        self.socket.set_read_timeout(dur)
+    }
+
+    pub fn set_send_timeout(&self, dur: Option<Duration>) -> io::Result<()> {
+        self.socket.set_write_timeout(dur)
+    }
+
     #[inline]
     pub fn set_encryption(&mut self, addr: SocketAddr, blowfish: Arc<Blowfish>) {
-        self.encryption.insert(addr, blowfish);
+        self.encryption.write().unwrap().insert(addr, blowfish);
     }
 
     #[inline]
     pub fn remove_encryption(&mut self, addr: SocketAddr) {
-        self.encryption.remove(&addr);
+        self.encryption.write().unwrap().remove(&addr);
     }
 
     /// Receive a packet from some peer, without encryption if set for the address.
@@ -76,7 +90,7 @@ impl PacketSocket {
         
         let (mut packet, addr) = self.recv_without_encryption()?;
 
-        if let Some(blowfish) = self.encryption.get(&addr) {
+        if let Some(blowfish) = self.encryption.read().unwrap().get(&addr) {
             packet = decrypt_packet(packet, &blowfish)
                 .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid encryption"))?;
         }
@@ -95,7 +109,7 @@ impl PacketSocket {
 
         let size;
 
-        if let Some(blowfish) = self.encryption.get(&addr) {
+        if let Some(blowfish) = self.encryption.read().unwrap().get(&addr) {
             let mut dst_packet = encryption_packet::take();
             encrypt_packet_raw(packet, &blowfish, dst_packet.raw_mut());
             size = self.send_without_encryption(dst_packet.raw(), addr)?;
@@ -119,7 +133,7 @@ impl PacketSocket {
 
     /// Send all packets in a bundle to the given peer.
     pub fn send_bundle(&self, bundle: &Bundle, addr: SocketAddr) -> io::Result<usize> {
-        if let Some(blowfish) = self.encryption.get(&addr) {
+        if let Some(blowfish) = self.encryption.read().unwrap().get(&addr) {
             
             let mut dst_packet = encryption_packet::take();
             let mut size = 0;
@@ -137,32 +151,6 @@ impl PacketSocket {
         } else {
             self.send_bundle_without_encryption(bundle, addr)
         }
-    }
-
-}
-
-impl mio::event::Source for PacketSocket {
-
-    fn register(
-        &mut self,
-        registry: &mio::Registry,
-        token: mio::Token,
-        interests: mio::Interest,
-    ) -> io::Result<()> {
-        self.socket.register(registry, token, interests)
-    }
-
-    fn reregister(
-        &mut self,
-        registry: &mio::Registry,
-        token: mio::Token,
-        interests: mio::Interest,
-    ) -> io::Result<()> {
-        self.socket.reregister(registry, token, interests)
-    }
-
-    fn deregister(&mut self, registry: &mio::Registry) -> io::Result<()> {
-        self.socket.deregister(registry)
     }
 
 }
