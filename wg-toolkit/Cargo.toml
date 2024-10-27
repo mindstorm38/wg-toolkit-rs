@@ -17,6 +17,7 @@ smallvec = "1.13"       # Used by pxml codec.
 base64 = "0.22"         # Used by pxml codec.
 glam = "0.29"           # Used for math vec types.
 indexmap = "2.6"        # Used for res filesystem.
+tracing = "0.1"         # Used possibly everywhere
 
 # Used for codecs read/writing.
 serde = "1.0"

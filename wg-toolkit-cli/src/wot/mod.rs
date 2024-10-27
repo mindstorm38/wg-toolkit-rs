@@ -13,6 +13,9 @@ use rsa::RsaPrivateKey;
 
 use blowfish::Blowfish;
 
+use tracing::level_filters::LevelFilter;
+use tracing::{info, warn};
+
 use wgtk::net::app::{login, base};
 
 use crate::{CliResult, WotArgs};
@@ -20,6 +23,12 @@ use crate::{CliResult, WotArgs};
 
 /// Entrypoint.
 pub fn cmd_wot(args: WotArgs) -> CliResult<()> {
+
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::builder()
+            .with_default_directive(LevelFilter::TRACE.into())
+            .from_env_lossy())
+        .init();
 
     let mut login_app = login::App::new(SocketAddr::V4(args.login_app))
         .map_err(|e| format!("Failed to bind login app: {e}"))?;
@@ -93,10 +102,10 @@ impl LoginThread {
 
         use login::Event;
 
-        println!("[L] Running on: {}", self.app.addr().unwrap());
+        info!(target: "login", "Running on: {}", self.app.addr().unwrap());
 
         if self.app.has_private_key() {
-            println!("[L] Encryption enabled");
+            info!(target: "login", "Encryption enabled");
         }
 
         loop {
@@ -104,17 +113,17 @@ impl LoginThread {
             match self.app.poll() {
                 Event::IoError(error) => {
                     if let Some(addr) = error.addr {
-                        println!("[L] [{addr}] Error: {}", error.error)
+                        warn!(target: "login", %addr, "Error: {}", error.error);
                     } else {
-                        println!("[L] Error: {}", error.error)
+                        warn!(target: "login", "Error: {}", error.error);
                     }
                 }
                 Event::Ping(ping) => {
-                    println!("[L] [{}] Ping-Pong: {:?}", ping.addr, ping.latency);
+                    info!(target: "login", addr = %ping.addr, "Ping-Pong: {:?}", ping.latency);
                 }
                 Event::Login(login) => {
                     
-                    println!("[L] [{}] Login...", login.addr);
+                    info!(target: "login", addr = %login.addr, "Login...");
 
                     let mut clients = self.shared.login_clients.lock().unwrap();
                     let (login_key, slot) = loop {
@@ -136,7 +145,7 @@ impl LoginThread {
                 
                 }
                 Event::Challenge(challenge) => {
-                    println!("[L] [{}] Challenge...", challenge.addr);
+                    info!(target: "login", addr = %challenge.addr, "Challenge...");
                 }
             }
 
@@ -150,16 +159,16 @@ impl BaseThread {
 
     fn run(mut self) {
 
-        println!("[B] Running on: {}", self.app.addr().unwrap());
+        info!(target: "base", "Running on: {}", self.app.addr().unwrap());
 
         loop {
 
             match self.app.poll() {
                 base::Event::IoError(error) => {
                     if let Some(addr) = error.addr {
-                        println!("[B] [{addr}] Error: {}", error.error)
+                        warn!(target: "base", %addr, "Error: {}", error.error);
                     } else {
-                        println!("[B] Error: {}", error.error)
+                        warn!(target: "base", "Error: {}", error.error);
                     }
                 }
                 base::Event::Login(login) => {
@@ -168,17 +177,17 @@ impl BaseThread {
                     let client = match clients.remove(&login.login_key) {
                         Some(client) => client,
                         None => {
-                            println!("[B] [{}] Login #{}... Invalid key", login.addr, login.attempt_num);
+                            info!(target: "base", addr = %login.addr, "Login #{}... Invalid key", login.attempt_num);
                             continue;
                         }
                     };
 
                     if client.addr != login.addr {
-                        println!("[B] [{}] Login #{}... Invalid address", login.addr, login.attempt_num);
+                        info!(target: "base", addr = %login.addr, "Login #{}... Invalid address", login.attempt_num);
                         continue;
                     }
                     
-                    println!("[B] [{}] Login #{}... Success", login.addr, login.attempt_num);
+                    info!(target: "base", addr = %login.addr, "Login #{}... Success", login.attempt_num);
                     self.app.answer_login_success(login.addr, client.blowfish);
 
                 }

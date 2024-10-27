@@ -5,6 +5,8 @@ use std::time::{Duration, Instant};
 use std::net::SocketAddr;
 use std::num::NonZero;
 
+use tracing::{instrument, trace};
+
 use super::packet::{Packet, PacketConfig, PacketConfigError};
 use super::bundle::Bundle;
 
@@ -98,6 +100,7 @@ impl ChannelTracker {
     /// If the packet is rejected for any reason listed in [`PacketRejectionError`], none
     /// is also returned but the packet is internally queued and can later be retrieved 
     /// with the error using [`Self::take_rejected_packets()`].
+    #[instrument(level = "trace", skip(self, packet))]
     pub fn accept(&mut self, mut packet: Box<Packet>, addr: SocketAddr) -> Option<(Bundle, Channel<'_>)> {
 
         // Retrieve the real clear-text length after a potential decryption.
@@ -109,6 +112,8 @@ impl ChannelTracker {
             return None;
         }
 
+        trace!(config = ?packet_config, "Length {len}");
+
         // Start by finding the appropriate channel for this packet regarding the local
         // socket address and channel-related flags on this packet.
         let mut channel;
@@ -117,6 +122,7 @@ impl ChannelTracker {
             let on_channel;
             if let Some((index, version)) = packet_config.indexed_channel() {
                 
+                trace!("Is on-channel: {index} v{version}");
                 on_channel = self.channels.entry((addr, Some(index)))
                     .or_insert_with(|| OnChannel {
                         off: OffChannelData::new(),
@@ -126,11 +132,13 @@ impl ChannelTracker {
                 // Unwrap because the channel should have index.
                 let current_version = on_channel.on.index.unwrap().version;
                 if version < current_version {
+                    trace!("Outdated, expected v{current_version}");
                     // TODO: outdated packet
                     return None;
                 }
 
             } else {
+                trace!("Is on-channel: not indexed");
                 on_channel = self.channels.entry((addr, None))
                     .or_insert_with(|| OnChannel {
                         off: OffChannelData::new(),
@@ -141,9 +149,11 @@ impl ChannelTracker {
             // First packet after channel creation should contains this flag.
             if !on_channel.on.received_create_packet {
                 if packet_config.create_channel() {
+                    trace!("Has-confirmed creation of the channel");
                     on_channel.on.received_create_packet = true;
                 } else {
                     // TODO: expected create channel packet
+                    trace!("Should be channel create");
                     return None;
                 }
             }
@@ -156,6 +166,7 @@ impl ChannelTracker {
 
         } else {
 
+            trace!("Is off-channel");
             let off_channel = self.off_channels.entry(addr)
                 .or_insert_with(|| OffChannel { off: OffChannelData::new() });
 
@@ -170,9 +181,11 @@ impl ChannelTracker {
         // Cumulative ack is not supposed to be used off-channel.
         if let Some(cumulative_ack) = packet_config.cumulative_ack() {
             if channel.on.is_some() {
+                trace!("Cumulative ack on channel: {cumulative_ack}");
                 channel.acknowledge_reliable_packet_cumulative(cumulative_ack);
             } else {
                 // Cumulative ack is not supported off-channel.
+                trace!("Cumulative ack is not supported off-channel");
                 return None;
             }
         }
@@ -268,9 +281,12 @@ impl Channel<'_> {
 
     /// Prepare a bundle to be sent, adding acks and other configuration required by this
     /// tracker into all packets. After this function, all packets are ready to be sent.
+    #[instrument(level = "trace", skip(self, bundle))]
     pub fn prepare(&mut self, bundle: &mut Bundle, reliable: bool) {
 
         let bundle_len = bundle.len() as u32;
+
+        trace!("Length {bundle_len}");
         
         // Create a common packet config for all the bundle.
         let mut packet_config = PacketConfig::new();
@@ -292,8 +308,13 @@ impl Channel<'_> {
 
             if let Some(index) = on_channel.index {
                 packet_config.set_indexed_channel(index.index, index.version);
+                trace!("Is on-channel: {} v{}", index.index, index.version);
+            } else {
+                trace!("Is on-channel: not indexed");
             }
 
+        } else {
+            trace!("Is off-channel");
         }
 
         // This may remove some acks from `off.received_reliable_packets` so it's 
@@ -301,6 +322,8 @@ impl Channel<'_> {
         if let Some(cumulative_ack) = self.inner.pop_received_reliable_packet_cumulative() {
             packet_config.set_cumulative_ack(cumulative_ack);
         }
+
+        trace!("Pending single acks: {:?}", self.inner.off.received_reliable_packets);
 
         // This swap is simple: it places the dequeue of all received reliable packets 
         // and their sequence numbers into the packet config's acks queue. We must 
@@ -331,6 +354,10 @@ impl Channel<'_> {
         // Now we need to restore acks that have not been sent: swap back (read above).
         std::mem::swap(&mut self.inner.off.received_reliable_packets, packet_config.single_acks_mut());
         debug_assert!(packet_config.single_acks().is_empty(), "packet config acks should be empty");
+
+        if !self.inner.off.received_reliable_packets.is_empty() {
+            trace!("Remaining single acks: {:?}", self.inner.off.received_reliable_packets)
+        }
 
     }
 
@@ -496,6 +523,7 @@ impl GenericChannel<'_> {
             self.off.reliable_packets.last().unwrap().sequence_num < sequence_num,
             "reliable packet sequence number should be greater than previous ones");
         
+        trace!("Add reliable packet: {sequence_num}");
         self.off.reliable_packets.push(ReliablePacket {
             sequence_num,
             time: Instant::now(),
@@ -511,7 +539,8 @@ impl GenericChannel<'_> {
             Err(_) => return false,
         };
 
-        let _reliable_packet = self.off.reliable_packets.remove(index);
+        let reliable_packet = self.off.reliable_packets.remove(index);
+        trace!("Single ack for reliable packet: {sequence_num} after {:?}", reliable_packet.time.elapsed());
         true
 
     }
@@ -526,7 +555,10 @@ impl GenericChannel<'_> {
             Err(index) => index,
         };
 
-        self.off.reliable_packets.drain(..index);
+        trace!("Cumulative ack for reliable packets: ..{sequence_num}");
+        for reliable_packet in self.off.reliable_packets.drain(..index) {
+            trace!("Cumulative ack for a previous packet after {:?}", reliable_packet.time.elapsed());
+        }
 
     }
 
@@ -541,8 +573,10 @@ impl GenericChannel<'_> {
 
         // We hope that we don't received it twice...
         self.off.received_reliable_packets.push_back(sequence_num);
+        trace!("Received reliable packet: {sequence_num}");
 
         if let Some(on) = self.on.as_deref_mut() {
+            
             if sequence_num == on.received_reliable_packets_cumulative {
                 // This is the best scenario, packet is received in-order.
                 on.received_reliable_packets_cumulative += 1;
@@ -563,6 +597,11 @@ impl GenericChannel<'_> {
                     Err(_) => return  // Ignore already existing packets.
                 }
             }
+
+            trace!("Received reliable packet cumulative: {}, buffered: {:?}", 
+                on.received_reliable_packets_cumulative, 
+                on.received_reliable_packets_buffered);
+
         }
 
     }
@@ -578,6 +617,7 @@ impl GenericChannel<'_> {
         let ret = on.received_reliable_packets_cumulative;
 
         if on.received_reliable_packets_cumulative_pop == ret {
+            trace!("Pop received reliable packet cumulative: none");
             return None;
         }
 
@@ -586,6 +626,7 @@ impl GenericChannel<'_> {
         self.off.received_reliable_packets.retain(|&num| num >= ret);
 
         on.received_reliable_packets_cumulative_pop = ret;
+        trace!("Pop received reliable packet cumulative: {ret}");
         Some(ret)
 
     }
@@ -610,6 +651,7 @@ impl SequenceNumAllocator {
         assert!(self.next_num + count < 0x10000000, "sequence number overflow");
         let first_num = self.next_num;
         self.next_num += count;
+        trace!("Allocated sequence numbers: {}..{}", first_num, self.next_num);
         first_num
     }
 
