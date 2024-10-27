@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use std::net::SocketAddr;
 use std::num::NonZero;
 
-use tracing::{instrument, trace};
+use tracing::{debug, instrument, trace};
 
 use super::packet::{Packet, PacketConfig, PacketConfigError};
 use super::bundle::Bundle;
@@ -112,7 +112,7 @@ impl ChannelTracker {
             return None;
         }
 
-        trace!(config = ?packet_config, "Length {len}");
+        trace!("Length: {len}");
 
         // Start by finding the appropriate channel for this packet regarding the local
         // socket address and channel-related flags on this packet.
@@ -153,7 +153,7 @@ impl ChannelTracker {
                     on_channel.on.received_create_packet = true;
                 } else {
                     // TODO: expected create channel packet
-                    trace!("Should be channel create");
+                    debug!("Should be channel create");
                     return None;
                 }
             }
@@ -185,7 +185,7 @@ impl ChannelTracker {
                 channel.acknowledge_reliable_packet_cumulative(cumulative_ack);
             } else {
                 // Cumulative ack is not supported off-channel.
-                trace!("Cumulative ack is not supported off-channel");
+                debug!("Cumulative ack is not supported off-channel");
                 return None;
             }
         }
@@ -286,7 +286,7 @@ impl Channel<'_> {
 
         let bundle_len = bundle.len() as u32;
 
-        trace!("Length {bundle_len}");
+        trace!("Count: {bundle_len}");
         
         // Create a common packet config for all the bundle.
         let mut packet_config = PacketConfig::new();
@@ -333,12 +333,13 @@ impl Channel<'_> {
         debug_assert!(self.inner.off.received_reliable_packets.is_empty(), "packet config acks were not empty");
 
         // Now we set the sequence number for 
-        for packet in bundle.packets_mut() {
+        for (packet_index, packet) in bundle.packets_mut().iter_mut().enumerate() {
 
             // Write configuration to the packet and then increment the sequence num.
             // The sequence num should only be set if channel with reliable or if we
             // have multiple packets: this number is unused in other cases.
             packet.write_config(&mut packet_config);
+            trace!("Packet #{packet_index} length: {}", packet.raw().data_len());
 
             if reliable {
                 self.inner.add_reliable_packet(packet_config.sequence_num());

@@ -30,6 +30,19 @@ impl fmt::LowerHex for BytesFmt<'_> {
     }
 }
 
+pub struct AsciiFmt<'a>(pub &'a [u8]);
+
+impl fmt::Display for AsciiFmt<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for byte in self.0 {
+            for ch in std::ascii::escape_default(*byte) {
+                f.write_char(ch as char)?;
+            }
+        }
+        Ok(())
+    }
+}
+
 /// A helper structure to truncate the output of some display implementor, adding 
 /// trailing '..' if necessary.
 pub struct TruncateFmt<F>(pub F, pub usize);

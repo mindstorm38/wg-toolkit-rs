@@ -16,6 +16,8 @@ use rsa::RsaPrivateKey;
 use rand::rngs::OsRng;
 use rand::RngCore;
 
+use tracing::trace;
+
 use crate::net::bundle::{Bundle, ElementReader, TopElementReader};
 use crate::net::channel::ChannelTracker;
 use crate::util::cuckoo::CuckooContext;
@@ -218,14 +220,22 @@ impl App {
         };
 
         let challenge = elt.read_simple::<ChallengeResponse<CuckooCycleResponse>>()?;
-        
+
+        trace!("Received key: {}, sent prefix: {}", 
+            crate::util::AsciiFmt(&challenge.element.data.key),
+            crate::util::AsciiFmt(&pending_challenge.key_prefix));
+
         // Start by checking coherency.
         if !challenge.element.data.key.starts_with(&pending_challenge.key_prefix) {
             return Err(io_invalid_data(format_args!("challenge has invalid key prefix")));
         }
 
+        trace!("Received solution: {:?}, sent max nonce: {}", 
+            challenge.element.data.solution, 
+            pending_challenge.max_nonce);
+
         let cuckoo = CuckooContext::new(pending_challenge.max_nonce, &challenge.element.data.key);
-        if !cuckoo.verify(&challenge.element.data.solution) {
+        if !cuckoo.verify_bw(&challenge.element.data.solution) {
             return Err(io_invalid_data(format_args!("challenge has invalid solution")));
         }
         

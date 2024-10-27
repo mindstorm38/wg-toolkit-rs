@@ -2,7 +2,7 @@
 
 pub mod gen;
 
-use std::collections::{hash_map, HashMap};
+use std::collections::{hash_map, HashMap, HashSet};
 use std::net::{SocketAddr, SocketAddrV4};
 use std::{fs, thread};
 use std::sync::{Arc, Mutex};
@@ -56,6 +56,7 @@ pub fn cmd_wot(args: WotArgs) -> CliResult<()> {
         app: login_app,
         shared: Arc::clone(&shared),
         base_app_addr: args.base_app,
+        login_challenges: HashMap::new(),
     };
 
     let base_thread = BaseThread {
@@ -77,6 +78,7 @@ struct LoginThread {
     app: login::App,
     shared: Arc<Shared>,
     base_app_addr: SocketAddrV4,
+    login_challenges: HashMap<SocketAddr, bool>,
 }
 
 #[derive(Debug)]
@@ -123,29 +125,39 @@ impl LoginThread {
                 }
                 Event::Login(login) => {
                     
-                    info!(target: "login", addr = %login.addr, "Login...");
+                    if !*self.login_challenges.entry(login.addr).or_default() {
+                        info!(target: "login", addr = %login.addr, "Login pending, sending challenge");
+                        self.app.answer_login_challenge(login.addr);
+                    } else {
 
-                    let mut clients = self.shared.login_clients.lock().unwrap();
-                    let (login_key, slot) = loop {
-                        let login_key = OsRng.next_u32();
-                        match clients.entry(login_key) {
-                            hash_map::Entry::Occupied(_) => continue,
-                            hash_map::Entry::Vacant(v) => break (login_key, v),
-                        }
-                    };
+                        info!(target: "login", addr = %login.addr, "Login success");
 
-                    let blowfish = self.app.answer_login_success(login.addr, self.base_app_addr, login_key, String::new()).unwrap();
+                        let mut clients = self.shared.login_clients.lock().unwrap();
+                        let (login_key, slot) = loop {
+                            let login_key = OsRng.next_u32();
+                            match clients.entry(login_key) {
+                                hash_map::Entry::Occupied(_) => continue,
+                                hash_map::Entry::Vacant(v) => break (login_key, v),
+                            }
+                        };
 
-                    slot.insert(LoginClient {
-                        addr: login.addr,
-                        blowfish,
-                    });
-                    
-                    // app.answer_login_error(login.addr, LoginError::Banned, "{\"bans\":\"{\\\"expiryTime\\\":1726435530,\\\"reason\\\":\\\"It's the reason\\\"}\"}".to_string());
+                        let blowfish = self.app.answer_login_success(login.addr, self.base_app_addr, login_key, String::new()).unwrap();
+
+                        slot.insert(LoginClient {
+                            addr: login.addr,
+                            blowfish,
+                        });
+
+                        // app.answer_login_error(login.addr, LoginError::Banned, "{\"bans\":\"{\\\"expiryTime\\\":1726435530,\\\"reason\\\":\\\"It's the reason\\\"}\"}".to_string());
+                        
+                    }
                 
                 }
                 Event::Challenge(challenge) => {
-                    info!(target: "login", addr = %challenge.addr, "Challenge...");
+                    info!(target: "login", addr = %challenge.addr, "Challenge successful...");
+                    if let Some(completed) = self.login_challenges.get_mut(&challenge.addr) {
+                        *completed = true;
+                    }
                 }
             }
 
