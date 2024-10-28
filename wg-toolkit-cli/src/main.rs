@@ -182,6 +182,10 @@ pub struct WotArgs {
     /// Encryption is disabled if not provided.
     #[arg(long)]
     pub priv_key_path: Option<PathBuf>,
+    /// Enable proxy mode or the base app, this will replace the base app with a proxy
+    /// that will log every bundle exchanged and forward packets to the real base app.
+    #[arg(long)]
+    pub proxy_to_base_app: Option<SocketAddrV4>,
 }
 
 /// Internal developer command used for updating the code of wg-toolkit automatically
