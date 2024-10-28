@@ -26,9 +26,10 @@ World of Tanks. This crate also provides an implementation of the network protoc
   - Reading directory entries from native filesystem and packages
 - Network protocol *(WIP)*
   - Packets encoding and decoding *(partial flags support)*
-  - Appending elements to bundles
-  - Assemble received packet in bundles
-  - Iterate elements in a bundle
+  - Writing and reading elements to and from a bundle of packets
+  - Off-channel and channel bundle input and output with reliable support
+  - Working login application
+  - *WIP* base application
 
 ## CLI
 - [Crate page](https://crates.io/crates/wg-toolkit-cli)
@@ -38,10 +39,8 @@ World of Tanks. This crate also provides an implementation of the network protoc
 - Resource virtual filesystem
   - Read file content and copy it to stdout
   - Read directory content with possible configured recursion
-
-## WoT CLI
-Not yet published, not yet working, but present in the code base, might be integrated to
-CLI at some point.
+- Demonstrative login and base applications for WoT (`wot` feature)
+- Bootstrapping of WoT entities/methods (`bootstrap` feature)
 
 ## Contributing guidelines
 When contributing to the code base, some rules should be followed:
