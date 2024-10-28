@@ -3,6 +3,8 @@
 use std::io::{self, Write, Cursor, Read};
 use std::fmt;
 
+use tracing::warn;
+
 use super::packet::{Packet, PACKET_FLAGS_LEN, PACKET_MAX_BODY_LEN};
 use super::element::{REPLY_ID, Element, TopElement, Reply};
 
@@ -547,7 +549,7 @@ impl<'a> BundleElementReader<'a> {
 
         // Just a warning because the decoding process didn't read all the data.
         if elt_reader.limit() != 0 {
-            // TODO:
+            warn!("remaining data while reading element of type '{}'", std::any::type_name::<E>());
         }
 
         // We seek to the end only if we want to go next.
