@@ -182,10 +182,16 @@ pub struct WotArgs {
     /// Encryption is disabled if not provided.
     #[arg(long)]
     pub priv_key_path: Option<PathBuf>,
-    /// Enable proxy mode or the base app, this will replace the base app with a proxy
-    /// that will log every bundle exchanged and forward packets to the real base app.
+    /// Enable proxy mode for the WoT applications.
+    /// 
+    /// The login application will forward request to the real login application by 
+    /// emulating a virtual client from the point of view of the real login application
+    /// given the socket address. Once the login process has been completed, the proxy
+    /// will keep this virtual client socket and the blowfish key and transfer it to the
+    /// base app proxy, so that it will be able to continue spying on the communication
+    /// without altering packets.
     #[arg(long)]
-    pub proxy_to_base_app: Option<SocketAddrV4>,
+    pub proxy_to_login_app: Option<SocketAddrV4>,
 }
 
 /// Internal developer command used for updating the code of wg-toolkit automatically

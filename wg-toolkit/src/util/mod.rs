@@ -5,6 +5,7 @@ use std::fmt::{self, Write};
 pub mod io;
 pub mod fnv;
 pub mod cuckoo;
+pub mod thread;
 
 
 /// A helper structure for beautiful printing of bytes. 
