@@ -1,10 +1,11 @@
 //! Thread polling utilities.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::thread;
 
 use crossbeam_channel::{Receiver, Sender};
+use tracing::trace;
 
 
 /// This structure is made to block on multiple thread at the same time and repeatedly
@@ -13,6 +14,7 @@ use crossbeam_channel::{Receiver, Sender};
 pub struct ThreadPoll<T> {
     tx: Sender<T>,
     rx: Receiver<T>,
+    count: AtomicUsize,
 }
 
 impl<T: Send + 'static> ThreadPoll<T> {
@@ -20,41 +22,53 @@ impl<T: Send + 'static> ThreadPoll<T> {
     pub fn new() -> Self {
         let (tx, rx) = crossbeam_channel::bounded(2);
         Self {
-            tx, rx,
+            tx, rx, count: AtomicUsize::new(0),
         }
     }
 
     /// Spawn a new value producer that will be continuously polled and its result will
     /// be added to the internal queue that can be retrieved with [`Self::poll`], this
     /// producer's thread terminates when this aggregator is dropped. In order for this
-    /// to properly work you should be using so kind of timeout on the producer.
-    pub fn spawn<F>(&self, mut producer: F) -> ThreadPollHandle
+    /// to properly work you should be using some kind of timeout on the producer.
+    pub fn spawn<F>(&self, mut producer: F)
     where 
-        F: FnMut() -> T,
+        F: FnMut() -> Option<T>,
         F: Send + 'static,
     {
 
         let tx = self.tx.clone();
-        let handle_alive = Arc::new(AtomicBool::new(true));
-        let handle = ThreadPollHandle {
-            alive: Arc::clone(&handle_alive)
-        };
+        let num = self.count.fetch_add(1, Ordering::Relaxed);
 
         thread::Builder::new()
-            .name(format!("Thread Poll Worker"))
+            .name(format!("Thread Poll Worker #{num}"))
             .spawn(move || {
-                while handle_alive.load(Ordering::Relaxed) {
-                    // Deliberately ignoring potential error if the channel has been closed
-                    // since we .
-                    if tx.send(producer()).is_err() {
+                trace!("Spawned Thread Poll Worker #{num}");
+                while let Some(value) = producer() {
+                    if tx.send(value).is_err() {
                         break;
                     }
                 }
+                trace!("Terminated Thread Poll Worker #{num}")
             })
             .unwrap();
         
-        handle
+    }
 
+    /// Same as [`Self::spawn`] but also returning a handle that, when dropped, will end
+    /// the associated worker thread.
+    pub fn spawn_with_handle<F>(&self, mut producer: F) -> ThreadPollHandle
+    where 
+        F: FnMut() -> Option<T>,
+        F: Send + 'static,
+    {
+        let alive = Arc::new(AtomicBool::new(true));
+        let thread_alive = Arc::clone(&alive);
+        self.spawn(move || if thread_alive.load(Ordering::Relaxed) {
+            producer()
+        } else {
+            None
+        });
+        ThreadPollHandle(alive)
     }
 
     /// Block until a new value is available.
@@ -71,15 +85,12 @@ impl<T: Send + 'static> ThreadPoll<T> {
 
 }
 
+/// Represent a handle to a thread poll worker, when all handles to 
 #[derive(Debug, Clone)]
-pub struct ThreadPollHandle {
-    alive: Arc<AtomicBool>,
-}
+pub struct ThreadPollHandle(Arc<AtomicBool>);
 
-impl ThreadPollHandle {
-    
-    pub fn terminate(&self) {
-        self.alive.store(false, Ordering::Relaxed);
+impl Drop for ThreadPollHandle {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Relaxed);
     }
-
 }

@@ -26,15 +26,13 @@ pub(crate) const UNSPECIFIED_ADDR: SocketAddr = SocketAddr::V4(SocketAddrV4::new
 pub(crate) const RECV_TIMEOUT: Duration = Duration::from_secs(5);
 
 
-/// The proxy application.
+/// The generic proxy application.
 #[derive(Debug)]
 pub struct App {
     /// Thread poll for socket result.
     socket_poll: ThreadPoll<SocketPollRet>,
     /// The main socket receiving peer packets.
     socket: PacketSocket,
-    /// The address of the real application where we proxy all packets.
-    real_addr: SocketAddr,
     /// Channel tracker for out packets.
     out_channel: ChannelTracker,
     /// Channel tracker for in packets.
@@ -42,6 +40,10 @@ pub struct App {
     /// Each peer connected and forwarded. Using an index map because we use the peer's
     /// index as the mio token (-1).
     peers: HashMap<SocketAddr, Arc<Peer>>,
+    /// Filled when a peer is rejected and a Rejection event is returned, it allows the
+    /// handler of that event to bind the missing peer and allow it to be accepted on
+    /// next poll. 
+    last_rejection: Option<(Box<Packet>, SocketAddr)>,
 }
 
 /// A registered peer that can forward and receive packets from the real application.
@@ -51,8 +53,10 @@ struct Peer {
     socket: PacketSocket,
     /// The address to send packets to the peer when receiving from real application.
     addr: SocketAddr,
+    /// Real address of the base server to communicate with.
+    real_addr: SocketAddr,
     /// Encryption key for this peer.
-    blowfish: Arc<Blowfish>,
+    blowfish: Option<Arc<Blowfish>>,
 }
 
 /// Type of return value for our socket poll. 
@@ -68,58 +72,84 @@ impl App {
 
     /// Create a new proxy application with the given listening address and the address
     /// to proxy to and from.
-    pub fn new(addr: SocketAddr, real_addr: SocketAddr) -> io::Result<Self> {
+    pub fn new(addr: SocketAddr) -> io::Result<Self> {
         
         let socket_poll = ThreadPoll::new();
 
         let socket = PacketSocket::bind(addr)?;
         socket.set_recv_timeout(Some(RECV_TIMEOUT))?;
 
-        let thread_socket = socket.try_clone()?;
-        socket_poll.spawn(move || SocketPollRet {
+        let thread_socket = socket.clone();
+        socket_poll.spawn(move || Some(SocketPollRet {
             peer: None,
             res: thread_socket.recv_without_encryption(),
-        });
+        }));
 
         Ok(Self {
             socket_poll,
             socket,
-            real_addr,
             out_channel: ChannelTracker::new(),
             in_channel: ChannelTracker::new(),
             peers: HashMap::new(),
+            last_rejection: None,
         })
 
     }
 
-    pub fn bind_peer(&mut self, addr: SocketAddr, blowfish: Arc<Blowfish>) -> io::Result<()> {
-        
-        let socket = PacketSocket::bind(UNSPECIFIED_ADDR)?;
+    /// Get the address this app is bound to.
+    pub fn addr(&self) -> io::Result<SocketAddr> {
+        self.socket.addr()
+    }
+
+    pub fn bind_peer(&mut self, 
+        addr: SocketAddr, 
+        real_addr: SocketAddr, 
+        blowfish: Option<Arc<Blowfish>>,
+        socket: Option<PacketSocket>, 
+    ) -> io::Result<()> {
+
+        let socket = match socket {
+            Some(socket) => socket,
+            None => PacketSocket::bind(UNSPECIFIED_ADDR)?
+        };
+
         socket.set_recv_timeout(Some(RECV_TIMEOUT))?;
 
         let peer = Arc::new(Peer {
             socket,
             addr,
+            real_addr,
             blowfish,
         });
 
         let thread_peer = Arc::clone(&peer);
-        self.socket_poll.spawn(move || SocketPollRet {
+        self.socket_poll.spawn(move || Some(SocketPollRet {
             peer: Some(Arc::clone(&thread_peer)),
             res: thread_peer.socket.recv_without_encryption(),
-        });
+        }));
 
         self.peers.insert(addr, peer);
 
         Ok(())
-
+        
     }
 
     /// Poll for the next event of this login app, blocking.
     pub fn poll(&mut self) -> Event {
         loop {
 
-            let socket_poll_ret = self.socket_poll.poll();
+            let ignore_rejection;
+            let socket_poll_ret;
+            if let Some((packet, addr)) = self.last_rejection.take() {
+                ignore_rejection = true;  // To avoid infinite rejection.
+                socket_poll_ret = SocketPollRet {
+                    res: Ok((packet, addr)),
+                    peer: None,
+                };
+            } else {
+                ignore_rejection = false;
+                socket_poll_ret = self.socket_poll.poll();
+            }
 
             let (cipher_packet, addr) = match socket_poll_ret.res {
                 Ok(ret) => ret,
@@ -142,11 +172,16 @@ impl App {
             } else if let Some(peer_) = self.peers.get(&addr) {
                 peer = &**peer_;
                 direction = PacketDirection::Out;
-                res = peer.socket.send_without_encryption(cipher_packet.raw(), self.real_addr);
+                res = peer.socket.send_without_encryption(cipher_packet.raw(), peer.real_addr);
             } else {
-                return Event::Rejection(RejectionEvent {
-                    addr,
-                });
+                if ignore_rejection {
+                    continue;
+                } else {
+                    self.last_rejection = Some((cipher_packet, addr));
+                    return Event::Rejection(RejectionEvent {
+                        addr,
+                    });
+                }
             }
 
             if let Err(e) = res {
@@ -156,15 +191,20 @@ impl App {
                 });
             }
 
-            let packet = match decrypt_packet(cipher_packet, &peer.blowfish) {
-                Ok(ret) => ret,
-                Err(_) => {
-                    return Event::IoError(IoErrorEvent {
-                        error: io_invalid_data(format_args!("invalid packet encryption")),
-                        addr: Some(addr),
-                    });
-                }
-            };
+            let packet;
+            if let Some(blowfish) = peer.blowfish.as_deref() {
+                packet = match decrypt_packet(cipher_packet, blowfish) {
+                    Ok(ret) => ret,
+                    Err(_) => {
+                        return Event::IoError(IoErrorEvent {
+                            error: io_invalid_data(format_args!("invalid packet encryption")),
+                            addr: Some(addr),
+                        });
+                    }
+                };
+            } else {
+                packet = cipher_packet;
+            }
 
             let channel = match direction {
                 PacketDirection::Out => &mut self.out_channel,
@@ -196,7 +236,9 @@ pub enum Event {
     Bundle(BundleEvent),
 }
 
-/// The given peer has been rejected because it has not been registered before.
+/// The given peer has been rejected because it has not been registered before. Using
+/// [`App::bind_peer`] you can fix this rejection and allow the peer to be proxied on 
+/// next poll.
 #[derive(Debug)]
 pub struct RejectionEvent {
     /// Address of the client that sent a packet.

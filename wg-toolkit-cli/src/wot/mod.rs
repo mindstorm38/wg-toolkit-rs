@@ -17,6 +17,7 @@ use tracing::level_filters::LevelFilter;
 use tracing::{info, instrument, warn};
 
 use wgtk::net::app::{login, base, proxy};
+use wgtk::net::socket::PacketSocket;
 
 use crate::{CliResult, WotArgs};
 
@@ -62,13 +63,28 @@ pub fn cmd_wot(args: WotArgs) -> CliResult<()> {
 
         }
 
+        login_app.set_forced_base_app_addr(args.base_app);
+
+        let base_app = proxy::App::new(SocketAddr::V4(args.base_app))
+            .map_err(|e| format!("Failed to bind base app: {e}"))?;
+
+        let shared = Arc::new(ProxyShared {
+            pending_clients: Mutex::new(HashMap::new()),
+        });
+
         let login_thread = LoginProxyThread {
             app: login_app,
-            base_app_addr: args.base_app,
+            shared: Arc::clone(&shared),
+        };
+
+        let base_thread = BaseProxyThread {
+            app: base_app,
+            shared,
         };
         
         thread::scope(move |scope| {
             scope.spawn(move || login_thread.run());
+            scope.spawn(move || base_thread.run());
         });
         
     } else {
@@ -88,6 +104,9 @@ pub fn cmd_wot(args: WotArgs) -> CliResult<()> {
 
         }
 
+        let base_app = base::App::new(SocketAddr::V4(args.base_app))
+            .map_err(|e| format!("Failed to bind base app: {e}"))?;
+
         let shared = Arc::new(Shared {
             login_clients: Mutex::new(HashMap::new()),
         });
@@ -98,9 +117,6 @@ pub fn cmd_wot(args: WotArgs) -> CliResult<()> {
             base_app_addr: args.base_app,
             login_challenges: HashMap::new(),
         };
-
-        let base_app = base::App::new(SocketAddr::V4(args.base_app))
-            .map_err(|e| format!("Failed to bind base app: {e}"))?;
 
         let base_thread = BaseThread {
             app: base_app,
@@ -121,12 +137,25 @@ pub fn cmd_wot(args: WotArgs) -> CliResult<()> {
 #[derive(Debug)]
 struct LoginProxyThread {
     app: login::proxy::App,
-    base_app_addr: SocketAddrV4,
+    shared: Arc<ProxyShared>,
 }
 
 #[derive(Debug)]
 struct BaseProxyThread {
     app: proxy::App,
+    shared: Arc<ProxyShared>,
+}
+
+#[derive(Debug)]
+struct ProxyShared {
+    pending_clients: Mutex<HashMap<SocketAddr, ProxyPendingClient>>,
+}
+
+#[derive(Debug)]
+struct ProxyPendingClient {
+    base_app_addr: SocketAddrV4,
+    blowfish: Arc<Blowfish>,
+    socket: PacketSocket,
 }
 
 impl LoginProxyThread {
@@ -155,10 +184,58 @@ impl LoginProxyThread {
                     info!(addr = %ping.addr, "Ping-Pong: {:?}", ping.latency);
                 }
                 Event::LoginSuccess(success) => {
-                    
+                    info!(addr = %success.addr, "Login success");
+                    self.shared.pending_clients.lock().unwrap().insert(success.addr, ProxyPendingClient { 
+                        socket: success.socket, 
+                        blowfish: success.blowfish, 
+                        base_app_addr: success.real_base_app_addr,
+                    });
                 }
                 Event::LoginError(error) => {
+                    info!(addr = %error.addr, "Login error: {:?}", error.error);
+                }
+            }
+        }
 
+    }
+
+}
+
+impl BaseProxyThread {
+
+    #[instrument(name = "base proxy", skip_all)]
+    fn run(mut self) {
+
+        use proxy::Event;
+
+        info!("Running on: {}", self.app.addr().unwrap());
+
+        loop {
+            match self.app.poll() {
+                Event::IoError(error) => {
+                    if let Some(addr) = error.addr {
+                        warn!(%addr, "Error: {}", error.error);
+                    } else {
+                        warn!("Error: {}", error.error);
+                    }
+                }
+                Event::Rejection(rejection) => {
+                    if let Some(pending_client) = self.shared.pending_clients.lock().unwrap().remove(&rejection.addr) {
+                        
+                        info!("Rejection of known peer: {} (to {})", rejection.addr, pending_client.base_app_addr);
+                        
+                        self.app.bind_peer(
+                            rejection.addr, 
+                            SocketAddr::V4(pending_client.base_app_addr), 
+                            Some(pending_client.blowfish),
+                            Some(pending_client.socket)).unwrap();
+
+                    } else {
+                        warn!("Rejection of unknown peer: {}", rejection.addr);
+                    }
+                }
+                Event::Bundle(bundle) => {
+                    info!("Decoded bundle (TODO)");
                 }
             }
         }

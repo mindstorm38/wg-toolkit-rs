@@ -24,59 +24,59 @@ const ENCRYPTION_FOOTER_LEN: usize = ENCRYPTION_MAGIC.len() + 1;
 /// 
 /// This can be used as a MIO source to know when to receive and send packets, because
 /// it is non-blocking by default and it cannot be changed.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PacketSocket {
+    /// Internal sharable state.
+    inner: Arc<Inner>,
+}
+
+#[derive(Debug)]
+struct Inner {
     /// The inner socket.
     socket: UdpSocket,
     /// Possible symmetric encryption on given socket addresses. Behind a shared 
     /// read/write lock because most of the time we don't modify it.
-    encryption: Arc<RwLock<HashMap<SocketAddr, Arc<Blowfish>>>>,
+    encryption: RwLock<HashMap<SocketAddr, Arc<Blowfish>>>,
 }
 
 impl PacketSocket {
 
     pub fn bind(addr: SocketAddr) -> io::Result<Self> {
         Ok(Self {
-            socket: UdpSocket::bind(addr)?,
-            encryption: Arc::new(RwLock::new(HashMap::new())),
+            inner: Arc::new(Inner {
+                socket: UdpSocket::bind(addr)?,
+                encryption: RwLock::new(HashMap::new()),
+            }),
         })
     }
     
     pub fn addr(&self) -> io::Result<SocketAddr> {
-        self.socket.local_addr()
-    }
-
-    pub fn try_clone(&self) -> io::Result<PacketSocket> {
-        let socket = self.socket.try_clone()?;
-        Ok(Self {
-            socket,
-            encryption: Arc::clone(&self.encryption),
-        })
+        self.inner.socket.local_addr()
     }
 
     pub fn set_recv_timeout(&self, dur: Option<Duration>) -> io::Result<()> {
-        self.socket.set_read_timeout(dur)
+        self.inner.socket.set_read_timeout(dur)
     }
 
     pub fn set_send_timeout(&self, dur: Option<Duration>) -> io::Result<()> {
-        self.socket.set_write_timeout(dur)
+        self.inner.socket.set_write_timeout(dur)
     }
 
     #[inline]
     pub fn set_encryption(&mut self, addr: SocketAddr, blowfish: Arc<Blowfish>) {
-        self.encryption.write().unwrap().insert(addr, blowfish);
+        self.inner.encryption.write().unwrap().insert(addr, blowfish);
     }
 
     #[inline]
     pub fn remove_encryption(&mut self, addr: SocketAddr) {
-        self.encryption.write().unwrap().remove(&addr);
+        self.inner.encryption.write().unwrap().remove(&addr);
     }
 
     /// Receive a packet from some peer, without encryption if set for the address.
     pub fn recv_without_encryption(&self) -> io::Result<(Box<Packet>, SocketAddr)> {
         
         let mut packet = Packet::new_boxed();
-        let (len, addr) = self.socket.recv_from(packet.raw_mut().raw_data_mut())?;
+        let (len, addr) = self.inner.socket.recv_from(packet.raw_mut().raw_data_mut())?;
 
         // Adjust the data length depending on what have been received.
         packet.raw_mut().set_data_len(len);
@@ -90,7 +90,7 @@ impl PacketSocket {
         
         let (mut packet, addr) = self.recv_without_encryption()?;
 
-        if let Some(blowfish) = self.encryption.read().unwrap().get(&addr) {
+        if let Some(blowfish) = self.inner.encryption.read().unwrap().get(&addr) {
             packet = decrypt_packet(packet, &blowfish)
                 .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid encryption"))?;
         }
@@ -101,7 +101,7 @@ impl PacketSocket {
 
     /// Send a packet to the given peer, without encryption if set for the address.
     pub fn send_without_encryption(&self, packet: &RawPacket, addr: SocketAddr) -> io::Result<usize> {
-        self.socket.send_to(packet.data(), addr)
+        self.inner.socket.send_to(packet.data(), addr)
     }
 
     /// Send a packet to the given peer.
@@ -109,7 +109,7 @@ impl PacketSocket {
 
         let size;
 
-        if let Some(blowfish) = self.encryption.read().unwrap().get(&addr) {
+        if let Some(blowfish) = self.inner.encryption.read().unwrap().get(&addr) {
             let mut dst_packet = encryption_packet::take();
             encrypt_packet_raw(packet, &blowfish, dst_packet.raw_mut());
             size = self.send_without_encryption(dst_packet.raw(), addr)?;
@@ -133,7 +133,7 @@ impl PacketSocket {
 
     /// Send all packets in a bundle to the given peer.
     pub fn send_bundle(&self, bundle: &Bundle, addr: SocketAddr) -> io::Result<usize> {
-        if let Some(blowfish) = self.encryption.read().unwrap().get(&addr) {
+        if let Some(blowfish) = self.inner.encryption.read().unwrap().get(&addr) {
             
             let mut dst_packet = encryption_packet::take();
             let mut size = 0;
