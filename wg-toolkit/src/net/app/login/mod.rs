@@ -2,6 +2,7 @@
 //! to the base application afterward.
 
 pub mod element;
+pub mod proxy;
 
 use std::collections::{HashMap, VecDeque};
 use std::net::{SocketAddr, SocketAddrV4};
@@ -10,8 +11,8 @@ use std::sync::Arc;
 use std::io;
 
 use crypto_common::KeyInit;
-use blowfish::Blowfish;
 use rsa::RsaPrivateKey;
+use blowfish::Blowfish;
 
 use rand::rngs::OsRng;
 use rand::RngCore;
@@ -40,6 +41,7 @@ pub mod id {
     pub const CHALLENGE_RESPONSE: u8    = 0x03;
 }
 
+
 /// The login application.
 #[derive(Debug)]
 pub struct App {
@@ -54,7 +56,7 @@ pub struct App {
     /// Optional private key to set if encryption is enabled on the login app. This 
     /// implies that the client should use the matching public key when logging in in
     /// order to validate.
-    priv_key: Option<Arc<RsaPrivateKey>>,
+    encryption_key: Option<Arc<RsaPrivateKey>>,
     /// Login requests of each client in process with the login app.
     pending_requests: HashMap<SocketAddr, PendingRequest>,
     /// Responses to be sent in response to login or challenge requests.
@@ -64,7 +66,6 @@ pub struct App {
     /// Used for benchmarking performance.
     received_instant: Option<Instant>,
 }
-
 impl App {
 
     pub fn new(addr: SocketAddr) -> io::Result<Self> {
@@ -73,7 +74,7 @@ impl App {
             channel: ChannelTracker::new(),
             events: VecDeque::new(),
             bundle: Bundle::new(),
-            priv_key: None,
+            encryption_key: None,
             pending_requests: HashMap::new(),
             pending_responses: VecDeque::new(),
             pending_challenges: HashMap::new(),
@@ -88,18 +89,18 @@ impl App {
 
     /// Enable encryption on login app, given a RSA private key, the client should use 
     /// the matching public key in order to validate this server.
-    pub fn set_private_key(&mut self, key: Arc<RsaPrivateKey>) {
-        self.priv_key = Some(key);
+    pub fn set_encryption(&mut self, key: Arc<RsaPrivateKey>) {
+        self.encryption_key = Some(key);
     }
 
     /// As opposed to [`Self::set_private_key`], disable encryption on login app.
-    pub fn unset_private_key(&mut self) {
-        self.priv_key = None;
+    pub fn remove_encryption(&mut self) {
+        self.encryption_key = None;
     }
 
     /// Return true if encryption is enabled on this login app.
-    pub fn has_private_key(&self) -> bool {
-        self.priv_key.is_some()
+    pub fn has_encryption(&self) -> bool {
+        self.encryption_key.is_some()
     }
 
     /// Poll for the next event of this login app, blocking.
@@ -186,15 +187,15 @@ impl App {
     /// Handle a login request to the login node.
     fn handle_login_request(&mut self, addr: SocketAddr, elt: TopElementReader) -> io::Result<()> {
         
-        let req_encryption = self.priv_key.as_ref()
+        let recv_encryption = self.encryption_key.as_ref()
             .map(|key| LoginRequestEncryption::Server(Arc::clone(&key)))
             .unwrap_or(LoginRequestEncryption::Clear);
 
-        let login = elt.read::<LoginRequest>(&req_encryption)?;
+        let login = elt.read::<LoginRequest>(&recv_encryption)?;
         
         let request_id = login.request_id
             .ok_or_else(|| io_invalid_data(format_args!("login should be a request")))?;
-        
+
         let blowfish = Arc::new(Blowfish::new_from_slice(&login.element.blowfish_key)
             .map_err(|_| io_invalid_data(format_args!("login has invalid blowfish key: {:?}", login.element.blowfish_key)))?);
 

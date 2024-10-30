@@ -2,21 +2,21 @@
 
 pub mod gen;
 
-use std::collections::{hash_map, HashMap, HashSet};
+use std::collections::{hash_map, HashMap};
 use std::net::{SocketAddr, SocketAddrV4};
-use std::{fs, thread};
 use std::sync::{Arc, Mutex};
+use std::{fs, thread};
 
+use rsa::pkcs8::{DecodePrivateKey, DecodePublicKey};
 use rsa::rand_core::{OsRng, RngCore};
-use rsa::pkcs8::DecodePrivateKey;
-use rsa::RsaPrivateKey;
+use rsa::{RsaPrivateKey, RsaPublicKey};
 
 use blowfish::Blowfish;
 
 use tracing::level_filters::LevelFilter;
-use tracing::{info, warn};
+use tracing::{info, instrument, warn};
 
-use wgtk::net::app::{login, base};
+use wgtk::net::app::{login, base, proxy};
 
 use crate::{CliResult, WotArgs};
 
@@ -30,48 +30,144 @@ pub fn cmd_wot(args: WotArgs) -> CliResult<()> {
             .from_env_lossy())
         .init();
 
-    let mut login_app = login::App::new(SocketAddr::V4(args.login_app))
-        .map_err(|e| format!("Failed to bind login app: {e}"))?;
+    if let Some(real_login_app) = args.real_login_app {
 
-    let base_app = base::App::new(SocketAddr::V4(args.base_app))
-        .map_err(|e| format!("Failed to bind base app: {e}"))?;
+        let real_encryption_key;
+        if let Some(pub_key_path) = args.real_pub_key_path.as_deref() {
+            
+            let pub_key_content = fs::read_to_string(pub_key_path)
+                .map_err(|e| format!("Failed to read public key at {}: {e}", pub_key_path.display()))?;
 
-    if let Some(priv_key_path) = args.priv_key_path.as_deref() {
+            let pub_key = Arc::new(RsaPublicKey::from_public_key_pem(&pub_key_content)
+                .map_err(|e| format!("Failed to decode PEM public key: {e}"))?);
 
-        let priv_key_content = fs::read_to_string(priv_key_path)
-            .map_err(|e| format!("Failed to read private key at {}: {e}", priv_key_path.display()))?;
+            real_encryption_key = Some(pub_key);
 
-        let priv_key = Arc::new(RsaPrivateKey::from_pkcs8_pem(&priv_key_content)
-            .map_err(|e| format!("Failed to decode PKCS#8 private key: {e}"))?);
+        } else {
+            real_encryption_key = None;
+        }
 
-        login_app.set_private_key(priv_key);
+        let mut login_app = login::proxy::App::new(SocketAddr::V4(args.login_app), SocketAddr::V4(real_login_app), real_encryption_key)
+            .map_err(|e| format!("Failed to bind login app: {e}"))?;
+
+        if let Some(priv_key_path) = args.priv_key_path.as_deref() {
+
+            let priv_key_content = fs::read_to_string(priv_key_path)
+                .map_err(|e| format!("Failed to read private key at {}: {e}", priv_key_path.display()))?;
+
+            let priv_key = Arc::new(RsaPrivateKey::from_pkcs8_pem(&priv_key_content)
+                .map_err(|e| format!("Failed to decode PKCS#8 private key: {e}"))?);
+
+            login_app.set_encryption(priv_key);
+
+        }
+
+        let login_thread = LoginProxyThread {
+            app: login_app,
+            base_app_addr: args.base_app,
+        };
+        
+        thread::scope(move |scope| {
+            scope.spawn(move || login_thread.run());
+        });
+        
+    } else {
+
+        let mut login_app = login::App::new(SocketAddr::V4(args.login_app))
+            .map_err(|e| format!("Failed to bind login app: {e}"))?;
+
+        if let Some(priv_key_path) = args.priv_key_path.as_deref() {
+
+            let priv_key_content = fs::read_to_string(priv_key_path)
+                .map_err(|e| format!("Failed to read private key at {}: {e}", priv_key_path.display()))?;
+
+            let priv_key = Arc::new(RsaPrivateKey::from_pkcs8_pem(&priv_key_content)
+                .map_err(|e| format!("Failed to decode PKCS#8 private key: {e}"))?);
+
+            login_app.set_encryption(priv_key);
+
+        }
+
+        let shared = Arc::new(Shared {
+            login_clients: Mutex::new(HashMap::new()),
+        });
+
+        let login_thread = LoginThread {
+            app: login_app,
+            shared: Arc::clone(&shared),
+            base_app_addr: args.base_app,
+            login_challenges: HashMap::new(),
+        };
+
+        let base_app = base::App::new(SocketAddr::V4(args.base_app))
+            .map_err(|e| format!("Failed to bind base app: {e}"))?;
+
+        let base_thread = BaseThread {
+            app: base_app,
+            shared,
+        };
+
+        thread::scope(move |scope| {
+            scope.spawn(move || login_thread.run());
+            scope.spawn(move || base_thread.run());
+        });
 
     }
-
-    let shared = Arc::new(Shared {
-        login_clients: Mutex::new(HashMap::new()),
-    });
-
-    let login_thread = LoginThread {
-        app: login_app,
-        shared: Arc::clone(&shared),
-        base_app_addr: args.base_app,
-        login_challenges: HashMap::new(),
-    };
-
-    let base_thread = BaseThread {
-        app: base_app,
-        shared,
-    };
-
-    thread::scope(move |scope| {
-        scope.spawn(move || login_thread.run());
-        scope.spawn(move || base_thread.run());
-    });
 
     Ok(())
 
 }
+
+#[derive(Debug)]
+struct LoginProxyThread {
+    app: login::proxy::App,
+    base_app_addr: SocketAddrV4,
+}
+
+#[derive(Debug)]
+struct BaseProxyThread {
+    app: proxy::App,
+}
+
+impl LoginProxyThread {
+
+    #[instrument(name = "login proxy", skip_all)]
+    fn run(mut self) {
+
+        use login::proxy::Event;
+
+        info!("Running on: {}", self.app.addr().unwrap());
+        
+        if self.app.has_encryption() {
+            info!("Encryption enabled");
+        }
+
+        loop {
+            match self.app.poll() {
+                Event::IoError(error) => {
+                    if let Some(addr) = error.addr {
+                        warn!(%addr, "Error: {}", error.error);
+                    } else {
+                        warn!("Error: {}", error.error);
+                    }
+                }
+                Event::Ping(ping) => {
+                    info!(addr = %ping.addr, "Ping-Pong: {:?}", ping.latency);
+                }
+                Event::LoginSuccess(success) => {
+                    
+                }
+                Event::LoginError(error) => {
+
+                }
+            }
+        }
+
+    }
+
+}
+
+
 
 #[derive(Debug)]
 struct LoginThread {
@@ -100,37 +196,37 @@ struct LoginClient {
 
 impl LoginThread {
 
+    #[instrument(name = "login", skip_all)]
     fn run(mut self) {
 
         use login::Event;
 
-        info!(target: "login", "Running on: {}", self.app.addr().unwrap());
+        info!("Running on: {}", self.app.addr().unwrap());
 
-        if self.app.has_private_key() {
-            info!(target: "login", "Encryption enabled");
+        if self.app.has_encryption() {
+            info!("Encryption enabled");
         }
 
         loop {
-
             match self.app.poll() {
                 Event::IoError(error) => {
                     if let Some(addr) = error.addr {
-                        warn!(target: "login", %addr, "Error: {}", error.error);
+                        warn!(%addr, "Error: {}", error.error);
                     } else {
-                        warn!(target: "login", "Error: {}", error.error);
+                        warn!("Error: {}", error.error);
                     }
                 }
                 Event::Ping(ping) => {
-                    info!(target: "login", addr = %ping.addr, "Ping-Pong: {:?}", ping.latency);
+                    info!(addr = %ping.addr, "Ping-Pong: {:?}", ping.latency);
                 }
                 Event::Login(login) => {
-                    
+
                     if !*self.login_challenges.entry(login.addr).or_default() {
-                        info!(target: "login", addr = %login.addr, "Login pending, sending challenge");
+                        info!(addr = %login.addr, "Login pending, sending challenge");
                         self.app.answer_login_challenge(login.addr);
                     } else {
 
-                        info!(target: "login", addr = %login.addr, "Login success");
+                        info!(addr = %login.addr, "Login success");
 
                         let mut clients = self.shared.login_clients.lock().unwrap();
                         let (login_key, slot) = loop {
@@ -154,13 +250,12 @@ impl LoginThread {
                 
                 }
                 Event::Challenge(challenge) => {
-                    info!(target: "login", addr = %challenge.addr, "Challenge successful...");
+                    info!(addr = %challenge.addr, "Challenge successful...");
                     if let Some(completed) = self.login_challenges.get_mut(&challenge.addr) {
                         *completed = true;
                     }
                 }
             }
-
         }
 
     }
@@ -169,18 +264,19 @@ impl LoginThread {
 
 impl BaseThread {
 
+    #[instrument(name = "base", skip_all)]
     fn run(mut self) {
 
-        info!(target: "base", "Running on: {}", self.app.addr().unwrap());
+        info!("Running on: {}", self.app.addr().unwrap());
 
         loop {
 
             match self.app.poll() {
                 base::Event::IoError(error) => {
                     if let Some(addr) = error.addr {
-                        warn!(target: "base", %addr, "Error: {}", error.error);
+                        warn!(%addr, "Error: {}", error.error);
                     } else {
-                        warn!(target: "base", "Error: {}", error.error);
+                        warn!("Error: {}", error.error);
                     }
                 }
                 base::Event::Login(login) => {
@@ -189,17 +285,17 @@ impl BaseThread {
                     let client = match clients.remove(&login.login_key) {
                         Some(client) => client,
                         None => {
-                            info!(target: "base", addr = %login.addr, "Login #{}... Invalid key", login.attempt_num);
+                            info!(addr = %login.addr, "Login #{}... Invalid key", login.attempt_num);
                             continue;
                         }
                     };
 
                     if client.addr != login.addr {
-                        info!(target: "base", addr = %login.addr, "Login #{}... Invalid address", login.attempt_num);
+                        info!(addr = %login.addr, "Login #{}... Invalid address", login.attempt_num);
                         continue;
                     }
                     
-                    info!(target: "base", addr = %login.addr, "Login #{}... Success", login.attempt_num);
+                    info!(addr = %login.addr, "Login #{}... Success", login.attempt_num);
                     self.app.answer_login_success(login.addr, client.blowfish);
 
                 }

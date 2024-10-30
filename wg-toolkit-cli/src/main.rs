@@ -191,7 +191,9 @@ pub struct WotArgs {
     /// base app proxy, so that it will be able to continue spying on the communication
     /// without altering packets.
     #[arg(long)]
-    pub proxy_to_login_app: Option<SocketAddrV4>,
+    pub real_login_app: Option<SocketAddrV4>,
+    #[arg(long, requires = "real_login_app")]
+    pub real_pub_key_path: Option<PathBuf>,
 }
 
 /// Internal developer command used for updating the code of wg-toolkit automatically

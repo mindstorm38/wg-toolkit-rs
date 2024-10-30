@@ -35,6 +35,10 @@ pub struct ChannelTracker {
 struct ChannelTrackerShared {
     /// Sequence number allocator used for off-channel communications.
     off_sequence_num_alloc: SequenceNumAllocator,
+    /// Represent the last prefix being write to a packet.
+    last_accepted_prefix: u32,
+    /// The current prefix offset being used for updating all packets' prefixes.
+    prefix_offset: u32,
 }
 
 impl ChannelTracker {
@@ -43,6 +47,8 @@ impl ChannelTracker {
         Self {
             shared: ChannelTrackerShared {
                 off_sequence_num_alloc: SequenceNumAllocator::new(1),
+                last_accepted_prefix: 0,
+                prefix_offset: 0,
             },
             off_channels: HashMap::new(),
             channels: HashMap::new(),
@@ -94,6 +100,26 @@ impl ChannelTracker {
 
     }
 
+    /// Reset the prefix offset to zero.
+    #[inline]
+    pub fn reset_prefix_offset(&mut self) {
+        self.shared.prefix_offset = 0;
+    }
+
+    /// Return the last accepted prefix from any packet.
+    #[inline]
+    pub fn last_accepted_prefix(&self) -> u32 {
+        self.shared.last_accepted_prefix
+    }
+
+    /// Set the current prefix offset used for computing the prefix of prepared packets
+    /// from the value of the last accepted packet.
+    #[inline]
+    pub fn transfer_prefix_offset_from_last_received(&mut self) {
+        self.shared.prefix_offset = self.shared.last_accepted_prefix;
+        // self.shared.prefix_offset = 0x7A11751F;
+    }
+
     /// Accept a new incoming packet and optionally return a bundle if it just completed
     /// a new bundle.
     /// 
@@ -111,6 +137,8 @@ impl ChannelTracker {
             self.rejected_packets.push((addr, packet, PacketRejectionError::Config(error)));
             return None;
         }
+
+        self.shared.last_accepted_prefix = packet.raw().read_prefix();
 
         trace!("Length: {len}");
 
@@ -324,7 +352,8 @@ impl Channel<'_> {
         }
 
         trace!("Pending single acks: {:?}", self.inner.off.received_reliable_packets);
-
+        trace!("Using prefix offset: 0x{:08X}", self.inner.shared.prefix_offset);
+        
         // This swap is simple: it places the dequeue of all received reliable packets 
         // and their sequence numbers into the packet config's acks queue. We must 
         // remember after this to transfer back the remaining sequence numbers that
@@ -340,6 +369,9 @@ impl Channel<'_> {
             // have multiple packets: this number is unused in other cases.
             packet.write_config(&mut packet_config);
             trace!("Packet #{packet_index} length: {}", packet.raw().data_len());
+
+            // Compute the prefix.
+            packet.raw_mut().update_prefix(self.inner.shared.prefix_offset);
 
             if reliable {
                 self.inner.add_reliable_packet(packet_config.sequence_num());

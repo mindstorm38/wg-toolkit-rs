@@ -13,7 +13,6 @@ use crossbeam_channel::{Receiver, Sender};
 pub struct ThreadPoll<T> {
     tx: Sender<T>,
     rx: Receiver<T>,
-    alive: Arc<AtomicBool>,
 }
 
 impl<T: Send + 'static> ThreadPoll<T> {
@@ -22,7 +21,6 @@ impl<T: Send + 'static> ThreadPoll<T> {
         let (tx, rx) = crossbeam_channel::bounded(2);
         Self {
             tx, rx,
-            alive: Arc::new(AtomicBool::new(true)),
         }
     }
 
@@ -37,7 +35,6 @@ impl<T: Send + 'static> ThreadPoll<T> {
     {
 
         let tx = self.tx.clone();
-        let alive = Arc::clone(&self.alive);
         let handle_alive = Arc::new(AtomicBool::new(true));
         let handle = ThreadPollHandle {
             alive: Arc::clone(&handle_alive)
@@ -46,10 +43,12 @@ impl<T: Send + 'static> ThreadPoll<T> {
         thread::Builder::new()
             .name(format!("Thread Poll Worker"))
             .spawn(move || {
-                while alive.load(Ordering::Relaxed) && handle_alive.load(Ordering::Relaxed) {
+                while handle_alive.load(Ordering::Relaxed) {
                     // Deliberately ignoring potential error if the channel has been closed
                     // since we .
-                    let _ = tx.send(producer());
+                    if tx.send(producer()).is_err() {
+                        break;
+                    }
                 }
             })
             .unwrap();
@@ -70,12 +69,6 @@ impl<T: Send + 'static> ThreadPoll<T> {
         self.rx.try_recv().ok()
     }
 
-}
-
-impl<T> Drop for ThreadPoll<T> {
-    fn drop(&mut self) {
-        self.alive.store(false, Ordering::Relaxed);
-    }
 }
 
 #[derive(Debug, Clone)]

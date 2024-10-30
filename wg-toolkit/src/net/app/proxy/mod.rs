@@ -19,10 +19,11 @@ use super::io_invalid_data;
 
 
 /// The unspecified address used to let the socket allocate its own address.
-const UNSPECIFIED_ADDR: SocketAddr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0));
+pub(crate) const UNSPECIFIED_ADDR: SocketAddr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0));
+
 /// The receive timeout on socket, used to ensure that we check that the thread can 
 /// continue running.
-const RECV_TIMEOUT: Duration = Duration::from_secs(5);
+pub(crate) const RECV_TIMEOUT: Duration = Duration::from_secs(5);
 
 
 /// The proxy application.
@@ -96,8 +97,6 @@ impl App {
         let socket = PacketSocket::bind(UNSPECIFIED_ADDR)?;
         socket.set_recv_timeout(Some(RECV_TIMEOUT))?;
 
-        let thread_socket = socket.try_clone()?;
-
         let peer = Arc::new(Peer {
             socket,
             addr,
@@ -107,7 +106,7 @@ impl App {
         let thread_peer = Arc::clone(&peer);
         self.socket_poll.spawn(move || SocketPollRet {
             peer: Some(Arc::clone(&thread_peer)),
-            res: thread_socket.recv_without_encryption(),
+            res: thread_peer.socket.recv_without_encryption(),
         });
 
         self.peers.insert(addr, peer);

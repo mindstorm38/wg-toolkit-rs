@@ -233,12 +233,37 @@ impl RawPacket {
         self.data[PACKET_PREFIX_LEN..][..PACKET_FLAGS_LEN].copy_from_slice(&flags.to_le_bytes())
     }
 
+    /// Update the prefix of this packet according to the formula found in the assembly.
+    /// 
+    /// This was actually reverse engineered from the assembly of the game, to find the
+    /// formula without knowing the address, you should start by searching the string
+    /// `OnceOffPacket` which should be used in one place, in BigWorld source it's
+    /// `OnOffSender::addOnceOffResendTimer` in BigWorld source. This function is used
+    /// in one place, in source it's `PacketSender::sendPacket`, near the end of this
+    /// function there is a call to the `select` syscall after a call to a function 
+    /// which take 3 arguments, goto this function, it should start with a 'if' statement
+    /// with a +300 offset in the condition, this if contains two calls, the last one
+    /// is the prefix computation (which conditionally get the offset from another 
+    /// structure, but we don't care and always use zero at the moment).
+    pub fn update_prefix(&mut self, offset: u32) {
+
+        let p0 = u32::from_le_bytes(self.data[PACKET_PREFIX_LEN + 0..][..4].try_into().unwrap());
+        let p1 = u32::from_le_bytes(self.data[PACKET_PREFIX_LEN + 4..][..4].try_into().unwrap());
+
+        let a = offset.wrapping_add(p0).wrapping_add(p1);
+        let b = a << 13;
+        let c = (b ^ a) >> 17;
+        let d = c ^ b ^ a ^ ((c ^ b ^ a) << 5);
+
+        self.write_prefix(d);
+
+    }
+
 }
 
 impl fmt::Debug for RawPacket {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RawPacket")
-            .field("raw_data", &format_args!("{:X}", BytesFmt(self.raw_data())))
             .field("data", &format_args!("{:X}", BytesFmt(self.data())))
             .field("len", &self.len)
             .finish()
@@ -898,11 +923,11 @@ mod flags {
     pub const IS_RELIABLE: u16          = 0x0010;
     pub const IS_FRAGMENT: u16          = 0x0020;
     pub const HAS_SEQUENCE_NUMBER: u16  = 0x0040;
-    pub const INDEXED_CHANNEL: u16      = 0x0080;
+    pub const INDEXED_CHANNEL: u16      = 0x0080;  // Found change! It's channel has version
     pub const HAS_CHECKSUM: u16         = 0x0100;
     pub const CREATE_CHANNEL: u16       = 0x0200;
     pub const HAS_CUMULATIVE_ACK: u16   = 0x0400;
-    pub const UNK_0800: u16             = 0x0800;
+    pub const UNK_0800: u16             = 0x0800;  // Found! It's basically channel has index
     pub const UNK_1000: u16             = 0x1000;
 }
 

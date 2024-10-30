@@ -54,7 +54,7 @@ impl<'a, R: Read> Read for BlowfishReader<'a, R> {
         // Position 'BLOCK_SIZE' inform us that we should read and decode a new block.
         if self.cur_pos == BLOCK_SIZE {
 
-            // The a whole block before decrypting it.
+            // Read the whole block before decrypting.
             match self.inner.read_exact(self.cur_block.slice_mut()) {
                 Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => return Ok(0),
                 Err(e) => return Err(e),
@@ -72,7 +72,7 @@ impl<'a, R: Read> Read for BlowfishReader<'a, R> {
 
         // Actual length we can read.
         let len = buf.len().min(BLOCK_SIZE - self.cur_pos);
-        buf[..len].copy_from_slice(&self.cur_block.slice()[self.cur_pos..]);
+        buf[..len].copy_from_slice(&self.cur_block.slice()[self.cur_pos..][..len]);
         self.cur_pos += len;
 
         Ok(len)
