@@ -38,17 +38,17 @@ impl<T: Send + 'static> ThreadPoll<T> {
 
         let tx = self.tx.clone();
         let num = self.count.fetch_add(1, Ordering::Relaxed);
-
+        
         thread::Builder::new()
-            .name(format!("Thread Poll Worker #{num}"))
+            .name(format!("poll-worker-{num}"))
             .spawn(move || {
-                trace!("Spawned Thread Poll Worker #{num}");
+                trace!("Spawned poll worker #{num}");
                 while let Some(value) = producer() {
                     if tx.send(value).is_err() {
                         break;
                     }
                 }
-                trace!("Terminated Thread Poll Worker #{num}")
+                trace!("Terminated poll worker #{num}")
             })
             .unwrap();
         

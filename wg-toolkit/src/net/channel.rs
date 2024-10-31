@@ -240,6 +240,8 @@ impl ChannelTracker {
             Some((first_num, last_num)) => {
 
                 let num = packet_config.sequence_num();
+                let relative_num = num - first_num;
+                trace!("Fragment: {num} ({first_num}..={last_num})");
 
                 match channel.off.fragments.entry(first_num) {
                     hash_map::Entry::Occupied(mut o) => {
@@ -248,11 +250,13 @@ impl ChannelTracker {
                         // and start again with the packet.
                         // FIXME: Maybe dumb?
                         if o.get().is_old(instant, FRAGMENT_TIMEOUT) {
-                            self.rejected_packets.extend(o.get_mut().drain()
+                            let mut fragments = o.remove();
+                            self.rejected_packets.extend(fragments.drain()
                                 .map(|packet| (addr, packet, PacketRejectionError::TimedOut)));
+                            return None;
                         }
 
-                        o.get_mut().set(num, packet);
+                        o.get_mut().set(relative_num, packet);
 
                         // When all fragments are collected, remove entry and return.
                         if o.get().is_full() {
@@ -262,7 +266,7 @@ impl ChannelTracker {
                     },
                     hash_map::Entry::Vacant(v) => {
                         let mut fragments = Fragments::new(last_num - first_num + 1);
-                        fragments.set(num, packet);
+                        fragments.set(relative_num, packet);
                         v.insert(fragments);
                     }
                 }
@@ -284,7 +288,7 @@ impl ChannelTracker {
     /// manually prepare bundles but instead just forward packets, in such case we should
     /// be able to simulate preparation of outgoing packets.
     #[instrument(level = "trace", skip(self, packet))]
-    pub fn accept_out(&mut self, mut packet: Box<Packet>, addr: SocketAddr) -> bool {
+    pub fn accept_out(&mut self, packet: &mut Packet, addr: SocketAddr) -> bool {
 
         // Retrieve the real clear-text length after a potential decryption.
         let len = packet.raw().data_len();
@@ -294,7 +298,7 @@ impl ChannelTracker {
             return false;
         }
 
-        let channel;
+        let mut channel;
         if packet_config.on_channel() {
 
             let on_channel;
@@ -342,6 +346,10 @@ impl ChannelTracker {
                 debug!("Cumulative ack is not supported off-channel");
                 return false;
             }
+        }
+
+        if packet_config.reliable() {
+            channel.add_reliable_packet(packet_config.sequence_num());
         }
 
         true
@@ -765,7 +773,7 @@ impl SequenceNumAllocator {
 /// Internal structure to keep fragments from a given sequence.
 #[derive(Debug)]
 struct Fragments {
-    fragments: Vec<Option<Box<Packet>>>,  // Using boxes to avoid moving huge structures.
+    fragments: Vec<Option<Box<Packet>>>,
     seq_count: u32,
     last_update: Instant,
 }

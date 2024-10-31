@@ -8,6 +8,8 @@ use rsa::{RsaPrivateKey, RsaPublicKey};
 use crypto_common::KeyInit;
 use blowfish::Blowfish;
 
+use tracing::trace;
+
 use crate::net::bundle::{Bundle, ElementReader, ReplyElementReader, TopElementReader};
 use crate::net::app::login::element::{ChallengeResponse, CuckooCycleResponse};
 use crate::net::app::proxy::{UNSPECIFIED_ADDR, RECV_TIMEOUT};
@@ -20,6 +22,9 @@ use crate::util::thread::{ThreadPoll, ThreadPollHandle};
 use super::element::{LoginError, LoginRequest, LoginRequestEncryption, LoginResponse, LoginResponseEncryption, Ping};
 use super::io_invalid_data;
 use super::id;
+
+
+const DEAD_PEER_TIMEOUT: Duration = Duration::from_secs(10);
 
 
 /// The login application.
@@ -55,8 +60,6 @@ struct Inner {
     in_channel: ChannelTracker,
     /// A temporary bundle for sending.
     bundle: Bundle,
-    /// Reference time for 
-    reference_time: Instant,
 }
 
 #[derive(Debug)]
@@ -68,6 +71,8 @@ struct Peer {
     socket: PacketSocket,
     /// The address to send packets to the peer when receiving from real application.
     addr: SocketAddr,
+    /// The last instant this peer has received any packet.
+    last_time: Instant,
     /// Information about the last request made by the client, if any.
     last_request: Option<PeerLastRequest>,
 }
@@ -75,7 +80,6 @@ struct Peer {
 #[derive(Debug)]
 struct PeerLastRequest {
     request_id: u32,
-    time: Instant,
     kind: PeerLastRequestKind,
 }
 
@@ -121,7 +125,6 @@ impl App {
                 out_channel: ChannelTracker::new(),
                 in_channel: ChannelTracker::new(),
                 bundle: Bundle::new(),
-                reference_time: Instant::now(),
             },
             peers: HashMap::new(),
         })
@@ -161,6 +164,19 @@ impl App {
     pub fn poll(&mut self) -> Event {
         loop {
 
+            // Dropping dead peers, this will also terminate poll threads.
+            if !self.peers.is_empty() {
+                let now = Instant::now();
+                self.peers.retain(|addr, peer| {
+                    if now - peer.last_time >= DEAD_PEER_TIMEOUT {
+                        trace!("Dropped dead peer: {addr}");
+                        false
+                    } else {
+                        true
+                    }
+                });
+            }
+
             while let Some(event) = self.inner.events.pop_front() {
                 return event;
             }
@@ -179,6 +195,8 @@ impl App {
             };
             
             // debug!("<{}: [{:08X}] {:?}", addr, packet.raw().read_prefix(), packet.raw());
+
+            let now = Instant::now();
 
             let channel;
             let peer;
@@ -220,6 +238,7 @@ impl App {
                             socket_poll_handle,
                             socket,
                             addr,
+                            last_time: now,
                             last_request: None,
                         })
 
@@ -227,8 +246,8 @@ impl App {
                 };
             }
 
-            // peer.last_accept_time.store(Instant::now().duration_since(self.reference_time).as_secs(), Ordering::Relaxed);
-            
+            peer.last_time = now;
+
             let Some((bundle, _)) = channel.accept(packet, peer.addr) else {
                 continue;
             };
@@ -290,7 +309,6 @@ impl Inner {
 
         peer.last_request = Some(PeerLastRequest {
             request_id,
-            time: Instant::now(),
             kind: PeerLastRequestKind::Ping {  },
         });
         
@@ -317,7 +335,6 @@ impl Inner {
 
         peer.last_request = Some(PeerLastRequest {
             request_id,
-            time: Instant::now(),
             kind: PeerLastRequestKind::Login { blowfish },
         });
 
@@ -387,7 +404,7 @@ impl Inner {
         }
 
         let last_request = peer.last_request.take().unwrap();
-        let latency = last_request.time.elapsed();
+        let latency = peer.last_time.elapsed();
 
         match last_request.kind {
             PeerLastRequestKind::Ping {  } => {
@@ -412,7 +429,6 @@ impl Inner {
                     self.events.push_back(Event::LoginSuccess(LoginSuccessEvent {
                         addr: peer.addr,
                         blowfish,
-                        socket: peer.socket.clone(),
                         real_base_app_addr: success.addr,
                         login_key: success.login_key,
                         server_message: success.server_message.clone(),
@@ -482,8 +498,6 @@ pub struct LoginSuccessEvent {
     /// The blowfish key the client sent with its login request and used to decode any
     /// successful response, but also for any input/output packet with the base app.
     pub blowfish: Arc<Blowfish>,
-    /// A cloned handle to the socket
-    pub socket: PacketSocket,
     /// The address of the base app that was answered by the real server, if any base
     /// app address is forced then this value is still the value of the real server.
     pub real_base_app_addr: SocketAddrV4,

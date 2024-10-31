@@ -18,7 +18,6 @@ use tracing::{info, instrument, warn};
 
 use wgtk::net::app::{login, base, proxy};
 use wgtk::net::bundle::ElementReader;
-use wgtk::net::socket::PacketSocket;
 
 use crate::{CliResult, WotArgs};
 
@@ -156,7 +155,6 @@ struct ProxyShared {
 struct ProxyPendingClient {
     base_app_addr: SocketAddrV4,
     blowfish: Arc<Blowfish>,
-    socket: PacketSocket,
 }
 
 impl LoginProxyThread {
@@ -187,9 +185,8 @@ impl LoginProxyThread {
                 Event::LoginSuccess(success) => {
                     info!(addr = %success.addr, "Login success");
                     self.shared.pending_clients.lock().unwrap().insert(success.addr, ProxyPendingClient { 
-                        socket: success.socket, 
-                        blowfish: success.blowfish, 
                         base_app_addr: success.real_base_app_addr,
+                        blowfish: success.blowfish, 
                     });
                 }
                 Event::LoginError(error) => {
@@ -229,7 +226,7 @@ impl BaseProxyThread {
                             rejection.addr, 
                             SocketAddr::V4(pending_client.base_app_addr), 
                             Some(pending_client.blowfish),
-                            Some(pending_client.socket)).unwrap();
+                            None).unwrap();
 
                     } else {
                         warn!("Rejection of unknown peer: {}", rejection.addr);
