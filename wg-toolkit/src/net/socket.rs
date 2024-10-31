@@ -8,6 +8,8 @@ use std::time::Duration;
 
 use blowfish::Blowfish;
 
+use tracing::trace;
+
 use super::filter::{BlowfishReader, BlowfishWriter, blowfish::BLOCK_SIZE};
 use super::packet::{Packet, RawPacket};
 use super::bundle::Bundle;
@@ -172,7 +174,11 @@ fn decrypt_packet_raw(src_packet: &RawPacket, bf: &Blowfish, dst_packet: &mut Ra
     // Note that src and dst have the same length, thanks to blowfish encryption.
     // Then we can already check the length and ensures that it is a multiple of
     // blowfish block size *and* can contain the wastage and encryption magic.
-    if src.len() % BLOCK_SIZE != 0 || src.len() < ENCRYPTION_FOOTER_LEN {
+    if src.len() % BLOCK_SIZE != 0 {
+        trace!("Invalid source body length: {}, block size: {BLOCK_SIZE}", src.len());
+        return false;
+    } else if src.len() < ENCRYPTION_FOOTER_LEN {
+        trace!("Invalid source body length: {}, min len: {ENCRYPTION_FOOTER_LEN}", src.len());
         return false;
     }
 
@@ -187,6 +193,9 @@ fn decrypt_packet_raw(src_packet: &RawPacket, bf: &Blowfish, dst_packet: &mut Ra
 
     // Check invalid magic.
     if &dst[magic_begin..wastage_begin] != &ENCRYPTION_MAGIC {
+        trace!("Invalid destination packet magic: {:X}, expected: {:X}", 
+            crate::util::BytesFmt(&dst[magic_begin..wastage_begin]),
+            crate::util::BytesFmt(&ENCRYPTION_MAGIC));
         return false;
     }
 

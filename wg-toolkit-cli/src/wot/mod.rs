@@ -17,6 +17,7 @@ use tracing::level_filters::LevelFilter;
 use tracing::{info, instrument, warn};
 
 use wgtk::net::app::{login, base, proxy};
+use wgtk::net::bundle::ElementReader;
 use wgtk::net::socket::PacketSocket;
 
 use crate::{CliResult, WotArgs};
@@ -235,7 +236,25 @@ impl BaseProxyThread {
                     }
                 }
                 Event::Bundle(bundle) => {
-                    info!("Decoded bundle (TODO)");
+
+                    info!(addr = %bundle.addr, "Decoded bundle (TODO)");
+
+                    let mut reader = bundle.bundle.element_reader();
+                    while let Some(elt) = reader.next_element() {
+                        match elt {
+                            ElementReader::Top(elt) => {
+                                let elt = elt.read_simple::<()>().unwrap();
+                                info!(addr = %bundle.addr, "Next top element #{}, request: {:?}", elt.id, elt.request_id);
+                            }
+                            ElementReader::Reply(elt) => {
+                                let request_id = elt.request_id();
+                                let _elt = elt.read_simple::<()>().unwrap();
+                                info!(addr = %bundle.addr, "Next reply element #{request_id}");
+                            }
+                        }
+                        break;
+                    }
+
                 }
             }
         }

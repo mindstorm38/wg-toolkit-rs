@@ -7,7 +7,7 @@ use std::num::NonZero;
 
 use byteorder::{ReadBytesExt, WriteBytesExt, LE};
 
-use crate::util::BytesFmt;
+use crate::util::AsciiFmt;
 
 
 /// According to disassembly of WoT, outside of a channel, the max size if always
@@ -194,7 +194,9 @@ impl RawPacket {
     /// prefix (4 bytes) + flags (2) bytes.
     #[inline]
     pub fn shrink(&mut self, len: usize) -> &[u8] {
-        assert!(self.len - len >= PACKET_MIN_LEN, "not enough data to shrink");
+        assert!(self.len - len >= PACKET_MIN_LEN, 
+            "not enough data to shrink, requested {} with only {} (min length: {PACKET_MIN_LEN})", 
+            len, self.len);
         self.len -= len;
         &self.data[self.len..][..len]
     }
@@ -238,13 +240,13 @@ impl RawPacket {
     /// This was actually reverse engineered from the assembly of the game, to find the
     /// formula without knowing the address, you should start by searching the string
     /// `OnceOffPacket` which should be used in one place, in BigWorld source it's
-    /// `OnOffSender::addOnceOffResendTimer` in BigWorld source. This function is used
-    /// in one place, in source it's `PacketSender::sendPacket`, near the end of this
-    /// function there is a call to the `select` syscall after a call to a function 
-    /// which take 3 arguments, goto this function, it should start with a 'if' statement
-    /// with a +300 offset in the condition, this if contains two calls, the last one
-    /// is the prefix computation (which conditionally get the offset from another 
-    /// structure, but we don't care and always use zero at the moment).
+    /// `OnOffSender::addOnceOffResendTimer`. This function is used in one place, in 
+    /// source it's `PacketSender::sendPacket`, near the end of this function there is 
+    /// a call to the `select` syscall after a call to a function which take 3 arguments,
+    /// goto this function, it should start with a 'if' statement with a +300 offset in 
+    /// the condition, this if contains two calls, the last one is the prefix computation
+    /// (which conditionally get the offset from another structure, but we don't care and
+    /// always use zero at the moment).
     pub fn update_prefix(&mut self, offset: u32) {
 
         let p0 = u32::from_le_bytes(self.data[PACKET_PREFIX_LEN + 0..][..4].try_into().unwrap());
@@ -264,7 +266,10 @@ impl RawPacket {
 impl fmt::Debug for RawPacket {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RawPacket")
-            .field("data", &format_args!("{:X}", BytesFmt(self.data())))
+            .field("prefix", &format_args!("{:08X}", self.read_prefix()))
+            .field("flags", &format_args!("{:04X}", self.read_flags()))
+            .field("flags", &format_args!("{}", FlagsFmt(self.read_flags())))
+            .field("body", &format_args!("{}", AsciiFmt(&self.body()[2..])))
             .field("len", &self.len)
             .finish()
     }
@@ -665,7 +670,7 @@ impl Packet {
 impl fmt::Debug for Packet {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Packet")
-            .field("content", &format_args!("{:X}", BytesFmt(self.content())))
+            .field("content", &format_args!("{}", AsciiFmt(self.content())))
             .field("content_len", &self.content_len())
             .field("footer_len", &self.footer_len())
             .field("first_request_offset", &self.first_request_offset())
@@ -923,12 +928,69 @@ mod flags {
     pub const IS_RELIABLE: u16          = 0x0010;
     pub const IS_FRAGMENT: u16          = 0x0020;
     pub const HAS_SEQUENCE_NUMBER: u16  = 0x0040;
-    pub const INDEXED_CHANNEL: u16      = 0x0080;  // Found change! It's channel has version
+    pub const INDEXED_CHANNEL: u16      = 0x0080;
     pub const HAS_CHECKSUM: u16         = 0x0100;
     pub const CREATE_CHANNEL: u16       = 0x0200;
     pub const HAS_CUMULATIVE_ACK: u16   = 0x0400;
-    pub const UNK_0800: u16             = 0x0800;  // Found! It's basically channel has index
+    pub const UNK_0800: u16             = 0x0800;
     pub const UNK_1000: u16             = 0x1000;
+}
+
+
+/// Wrapper structure for displaying flags.
+pub struct FlagsFmt(pub u16);
+
+impl fmt::Display for FlagsFmt {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+
+        static NAMES: [&'static str; 13] = [
+            "REQS",
+            "PIGB",
+            "ACKS",
+            "CHAN",
+            "RELI",
+            "FRAG",
+            "SEQN",
+            "INDX",
+            "CSUM",
+            "CREA",
+            "CUMU",
+            "0800",
+            "1000",
+        ];
+
+        let mut flag = self.0;
+        let mut prev = false;
+        for flag_name in NAMES {
+            if flag & 1 != 0 {
+                if prev {
+                    f.write_str("|")?;
+                }
+                f.write_str(flag_name)?;
+                prev = true;
+            }
+            flag >>= 1;
+        }
+
+        if flag != 0 {
+            if prev {
+                f.write_str("|")?;
+            }
+            f.write_fmt(format_args!("0x{:04X}?", flag << NAMES.len()))?;
+        }
+
+        Ok(())
+
+    }
+}
+
+impl fmt::Debug for FlagsFmt {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Flags(")?;
+        fmt::Display::fmt(self, f)?;
+        f.write_str(")")?;
+        Ok(())
+    }
 }
 
 

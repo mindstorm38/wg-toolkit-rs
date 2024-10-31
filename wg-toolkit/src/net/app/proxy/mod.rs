@@ -10,6 +10,8 @@ use std::io;
 
 use blowfish::Blowfish;
 
+use tracing::{trace, warn};
+
 use crate::util::thread::ThreadPoll;
 use crate::net::channel::{ChannelIndex, ChannelTracker};
 use crate::net::socket::{PacketSocket, decrypt_packet};
@@ -195,7 +197,10 @@ impl App {
             if let Some(blowfish) = peer.blowfish.as_deref() {
                 packet = match decrypt_packet(cipher_packet, blowfish) {
                     Ok(ret) => ret,
-                    Err(_) => {
+                    Err(cipher_packet) => {
+                        // warn!("invalid encryption, continuing without it...");
+                        // cipher_packet
+                        // warn!(direction = ?direction, "Cipher packet: {:?}", cipher_packet.raw());
                         return Event::IoError(IoErrorEvent {
                             error: io_invalid_data(format_args!("invalid packet encryption")),
                             addr: Some(addr),
@@ -204,6 +209,11 @@ impl App {
                 };
             } else {
                 packet = cipher_packet;
+            }
+
+            match direction {
+                PacketDirection::Out => trace!(peer_addr = %peer.addr, real_addr = %peer.real_addr, "> {:?}", packet.raw()),
+                PacketDirection::In => trace!(peer_addr = %peer.addr, real_addr = %peer.real_addr, "< {:?}", packet.raw()),
             }
 
             let channel = match direction {

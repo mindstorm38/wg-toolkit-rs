@@ -617,7 +617,6 @@ impl ElementReader<'_, '_> {
 }
 
 /// The simple variant of element, provides direct decoding using a codec.
-#[derive(Debug)]
 pub struct TopElementReader<'reader, 'bundle>(&'reader mut BundleElementReader<'bundle>, u8);
 
 impl TopElementReader<'_, '_> {
@@ -653,9 +652,14 @@ impl TopElementReader<'_, '_> {
 
 }
 
+impl fmt::Debug for TopElementReader<'_, '_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TopElementReader").field("id", &self.1).finish()
+    }
+}
+
 /// The reply variant of element, provides a way to read replies and get `Reply` elements
 /// containing the final element.
-#[derive(Debug)]
 pub struct ReplyElementReader<'reader, 'bundle>(&'reader mut BundleElementReader<'bundle>, u32);
 
 impl ReplyElementReader<'_, '_> {
@@ -693,4 +697,10 @@ impl ReplyElementReader<'_, '_> {
         self.read::<E>(&())
     }
 
+}
+
+impl fmt::Debug for ReplyElementReader<'_, '_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ReplyElementReader").field("request_id", &self.1).finish()
+    }
 }

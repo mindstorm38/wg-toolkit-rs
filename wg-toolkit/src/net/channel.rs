@@ -140,8 +140,6 @@ impl ChannelTracker {
 
         self.shared.last_accepted_prefix = packet.raw().read_prefix();
 
-        trace!("Length: {len}");
-
         // Start by finding the appropriate channel for this packet regarding the local
         // socket address and channel-related flags on this packet.
         let mut channel;
@@ -175,14 +173,15 @@ impl ChannelTracker {
             }
 
             // First packet after channel creation should contains this flag.
+            // TODO: Remove this? Because there is no create flag on external channels.
             if !on_channel.on.received_create_packet {
                 if packet_config.create_channel() {
                     trace!("Has-confirmed creation of the channel");
                     on_channel.on.received_create_packet = true;
                 } else {
-                    // TODO: expected create channel packet
-                    debug!("Should be channel create");
-                    return None;
+                    // // TODO: expected create channel packet
+                    // debug!("Should be channel create");
+                    // return None;
                 }
             }
 
@@ -209,7 +208,6 @@ impl ChannelTracker {
         // Cumulative ack is not supposed to be used off-channel.
         if let Some(cumulative_ack) = packet_config.cumulative_ack() {
             if channel.on.is_some() {
-                trace!("Cumulative ack on channel: {cumulative_ack}");
                 channel.acknowledge_reliable_packet_cumulative(cumulative_ack);
             } else {
                 // Cumulative ack is not supported off-channel.
@@ -277,6 +275,76 @@ impl ChannelTracker {
         }
 
         None
+
+    }
+
+    /// Accept an outgoing packet, this should never be used in practice because the
+    /// [`Channel::prepare`] method used to prepare complete bundles is already handling
+    /// the reliable tracking. However, this function is used for proxies where we never
+    /// manually prepare bundles but instead just forward packets, in such case we should
+    /// be able to simulate preparation of outgoing packets.
+    #[instrument(level = "trace", skip(self, packet))]
+    pub fn accept_out(&mut self, mut packet: Box<Packet>, addr: SocketAddr) -> bool {
+
+        // Retrieve the real clear-text length after a potential decryption.
+        let len = packet.raw().data_len();
+
+        let mut packet_config = PacketConfig::new();
+        if let Err(_error) = packet.read_config(len, &mut packet_config) {
+            return false;
+        }
+
+        let channel;
+        if packet_config.on_channel() {
+
+            let on_channel;
+            if let Some((index, version)) = packet_config.indexed_channel() {
+                trace!("Is on-channel: {index} v{version}");
+                on_channel = self.channels.entry((addr, Some(index)))
+                    .or_insert_with(|| OnChannel {
+                        off: OffChannelData::new(),
+                        on: OnChannelData::new_with_index_version(index, version),
+                    });
+            } else {
+                trace!("Is on-channel: not indexed");
+                on_channel = self.channels.entry((addr, None))
+                    .or_insert_with(|| OnChannel {
+                        off: OffChannelData::new(),
+                        on: OnChannelData::new_without_index(),
+                    });
+            }
+
+            channel = GenericChannel {
+                shared: &mut self.shared,
+                off: &mut on_channel.off,
+                on: Some(&mut on_channel.on),
+            };
+
+        } else {
+
+            trace!("Is off-channel");
+            let off_channel = self.off_channels.entry(addr)
+                .or_insert_with(|| OffChannel { off: OffChannelData::new() });
+
+            channel = GenericChannel {
+                shared: &mut self.shared,
+                off: &mut off_channel.off,
+                on: None,
+            };
+
+        }
+
+        if let Some(_cumulative_ack) = packet_config.cumulative_ack() {
+            if channel.on.is_some() {
+                // TODO:
+            } else {
+                // Cumulative ack is not supported off-channel.
+                debug!("Cumulative ack is not supported off-channel");
+                return false;
+            }
+        }
+
+        true
 
     }
 
@@ -663,6 +731,10 @@ impl GenericChannel<'_> {
         Some(ret)
 
     }
+
+    // fn acknowledge_received_reliable_packet_cumulative(&mut self, sequence_num: u32) {
+
+    // }
 
 }
 
