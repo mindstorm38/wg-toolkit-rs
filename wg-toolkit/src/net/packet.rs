@@ -9,7 +9,7 @@ use std::fmt;
 
 use crate::util::io::{SliceCursor, WgReadExt, WgWriteExt};
 
-use crate::util::AsciiFmt;
+use crate::util::BytesFmt;
 
 
 /// According to disassembly of WoT, outside of a channel, the max size if always
@@ -136,30 +136,6 @@ impl Packet {
     pub fn slice_mut(&mut self) -> &mut [u8] {
         &mut self.inner.buf[..self.inner.len as usize]
     }
-
-    // /// Return the maximum size of the body of a packet.
-    // #[inline]
-    // pub fn body_cap(&self) -> usize {
-    //     self.data_cap() - PACKET_PREFIX_LEN
-    // }
-
-    // /// Return the length of this packet.
-    // #[inline]
-    // pub fn body_len(&self) -> usize {
-    //     self.data_len() - PACKET_PREFIX_LEN
-    // }
-
-    // /// Get a slice to the data from after the prefix to the end.
-    // #[inline]
-    // pub fn body(&self) -> &[u8] {
-    //     &self.data()[PACKET_PREFIX_LEN..]
-    // }
-
-    // /// Get a mutable slice to the data from after the prefix to the end.
-    // #[inline]
-    // pub fn body_mut(&mut self) -> &mut [u8] {
-    //     &mut self.data_mut()[PACKET_PREFIX_LEN..]
-    // }
 
     /// Grow the packet's data by a given amount of bytes, and return a
     /// mutable slice to the newly allocated data.
@@ -298,7 +274,7 @@ impl fmt::Debug for Packet {
             .field("prefix", &format_args!("{:08X}", self.read_prefix()))
             .field("flags", &format_args!("{:04X}", self.read_flags()))
             .field("flags", &format_args!("{}", FlagsFmt(self.read_flags())))
-            .field("body", &format_args!("{}", AsciiFmt(&self.slice()[PACKET_HEADER_LEN..])))
+            .field("body", &format_args!("{:X}", BytesFmt(&self.slice()[PACKET_HEADER_LEN..])))
             .field("len", &self.inner.len)
             .finish()
     }
@@ -307,7 +283,7 @@ impl fmt::Debug for Packet {
 
 /// Represent a configuration for flags their footer values to write or read on/from a
 /// packet's data.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct PacketConfig {
     /// Flags that are written or read from the packet, defining which of the following
     /// fields are used or not, this avoids using boolean or options.
@@ -827,6 +803,68 @@ impl PacketConfig {
         
     }
 
+}
+
+impl fmt::Debug for PacketConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        
+        let alt = f.alternate();
+        let mut debug = f.debug_struct("PacketConfig");
+
+        if alt {
+
+            debug.field("footer_offset", &self.footer_offset());
+
+            if let Some(val) = self.first_request_offset() {
+                debug.field("first_request_offset", &val);
+            }
+
+            if self.reliable() || self.sequence_range().is_some() {
+                debug.field("sequence_num", &self.sequence_num());
+            }
+
+            if let Some(val) = self.sequence_range() {
+                debug.field("sequence_range", &val);
+            }
+
+            if self.reliable() { debug.field("reliable", &true); }
+            if self.create_channel() { debug.field("create_channel", &true); }
+
+            if let Some(val) = self.cumulative_ack() {
+                debug.field("cumulative_ack", &val);
+            }
+
+            if self.on_channel() { debug.field("on_channel", &true); }
+
+            if let Some((index, version)) = self.indexed_channel() {
+                debug.field("channel_index", &index);
+                debug.field("channel_version", &version);
+            }
+
+            if self.has_checksum() { debug.field("has_checksum", &true); }
+
+            if let Some(val) = self.unk_1000() {
+                debug.field("unk_1000", &val);
+            }
+
+        } else {
+            debug.field("footer_offset", &self.footer_offset());
+            debug.field("first_request_offset", &self.first_request_offset());
+            debug.field("sequence_num", &self.sequence_num());
+            debug.field("sequence_range", &self.sequence_range());
+            debug.field("reliable", &self.reliable());
+            debug.field("create_channel", &self.create_channel());
+            debug.field("cumulative_ack", &self.cumulative_ack());
+            debug.field("single_acks", &self.single_acks());
+            debug.field("on_channel", &self.on_channel());
+            debug.field("indexed_channel", &self.indexed_channel());
+            debug.field("has_checksum", &self.has_checksum());
+            debug.field("unk_1000", &self.unk_1000());
+        }
+
+        debug.finish()
+            
+    }
 }
 
 

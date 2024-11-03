@@ -137,6 +137,8 @@ impl ChannelTracker {
             }
         };
 
+        // trace!("Config: {:#?}", locked.config());
+
         self.shared.last_accepted_prefix = locked.packet().read_prefix();
 
         // Start by finding the appropriate channel for this packet regarding the local
@@ -231,6 +233,8 @@ impl ChannelTracker {
         if locked.config().unk_1000().is_some() {
             return None;
         }
+
+        // TODO: Check that the sequence range is not too wide: denial of service.
         
         let instant = Instant::now();
 
@@ -336,9 +340,9 @@ impl ChannelTracker {
 
         }
 
-        if let Some(_cumulative_ack) = locked.config().cumulative_ack() {
+        if let Some(cumulative_ack) = locked.config().cumulative_ack() {
             if channel.on.is_some() {
-                // TODO:
+                channel.acknowledge_received_reliable_packet_cumulative(cumulative_ack);
             } else {
                 // Cumulative ack is not supported off-channel.
                 debug!("Cumulative ack is not supported off-channel");
@@ -346,8 +350,12 @@ impl ChannelTracker {
             }
         }
 
+        for &single_ack in locked.config().single_acks() {
+            channel.acknowledge_received_reliable_packet(single_ack);
+        }
+
         if locked.config().reliable() {
-            channel.add_reliable_packet(locked.config().sequence_num());
+            channel.add_reliable_packet_unordered(locked.config().sequence_num());
         }
 
         true
@@ -618,6 +626,31 @@ impl GenericChannel<'_> {
 
     }
 
+    /// Same as [`Self::add_reliable_packet()`] but accepting unordered sequence number,
+    /// this is used by [`PacketTracker::accept_out`] and proxy. *The insertion is still
+    /// more performant when inserting a sequence number that is almost the largest in
+    /// the set.*
+    fn add_reliable_packet_unordered(&mut self, sequence_num: u32) {
+
+        trace!("Add reliable packet (unordered): {sequence_num}");
+        
+        let mut insert_index = 0;
+        for (i, packet) in self.off.reliable_packets.iter().enumerate().rev() {
+            if packet.sequence_num == sequence_num {
+                return;  // Ignore duplicate.
+            } else if packet.sequence_num < sequence_num {
+                insert_index = i + 1;
+                break;
+            }
+        }
+        
+        self.off.reliable_packets.insert(insert_index, ReliablePacket {
+            sequence_num,
+            time: Instant::now(),
+        });
+
+    }
+
     /// When a single ack is received on a packet, this can be called to 
     fn acknowledge_reliable_packet(&mut self, sequence_num: u32) -> bool {
 
@@ -718,9 +751,25 @@ impl GenericChannel<'_> {
 
     }
 
-    // fn acknowledge_received_reliable_packet_cumulative(&mut self, sequence_num: u32) {
+    /// Force acknowledgement of a received reliable packet, used with `accept_out` only.
+    fn acknowledge_received_reliable_packet(&mut self, sequence_num: u32) {
 
-    // }
+        // Swap remove because order don't matter.
+        if let Some(pos) = self.off.received_reliable_packets.iter().position(|&num| num == sequence_num) {
+            self.off.received_reliable_packets.swap_remove_back(pos);
+        }
+
+    }
+    
+    fn acknowledge_received_reliable_packet_cumulative(&mut self, sequence_num: u32) {
+        
+        self.off.received_reliable_packets.retain(|&num| num >= sequence_num);
+
+        if let Some(_on) = self.on.as_deref_mut() {
+            // TODO: ?
+        }
+
+    }
 
 }
 

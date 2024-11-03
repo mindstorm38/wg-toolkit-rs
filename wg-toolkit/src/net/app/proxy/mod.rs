@@ -10,7 +10,7 @@ use std::io;
 
 use blowfish::Blowfish;
 
-use tracing::trace;
+use tracing::{trace, warn};
 
 use crate::net::packet::Packet;
 use crate::util::thread::ThreadPoll;
@@ -216,12 +216,16 @@ impl App {
                 PacketDirection::In => trace!(peer_addr = %peer.addr, real_addr = %peer.real_addr, "< {:?}", packet),
             }
 
-            let channel = match direction {
-                PacketDirection::Out => &mut self.out_channel,
-                PacketDirection::In => &mut self.in_channel,
+            let (accept_channel, accept_out_channel) = match direction {
+                PacketDirection::Out => (&mut self.out_channel, &mut self.in_channel),
+                PacketDirection::In => (&mut self.in_channel, &mut self.out_channel),
             };
 
-            if let Some((bundle, channel)) = channel.accept(packet, peer.addr) {
+            if !accept_out_channel.accept_out(&packet, peer.addr) {
+                warn!(peer_addr = %peer.addr, real_addr = %peer.real_addr, "accept out failed");
+            }
+
+            if let Some((bundle, channel)) = accept_channel.accept(packet, peer.addr) {
                 return Event::Bundle(BundleEvent {
                     addr: peer.addr,
                     bundle,
