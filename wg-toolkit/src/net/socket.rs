@@ -1,6 +1,7 @@
 //! Providing an bundle-oriented socket, backed by an UDP socket.
 
 use std::net::{SocketAddr, UdpSocket};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::io::{self, Cursor};
@@ -39,6 +40,10 @@ struct Inner {
     /// Possible symmetric encryption on given socket addresses. Behind a shared 
     /// read/write lock because most of the time we don't modify it.
     encryption: RwLock<HashMap<SocketAddr, Arc<Blowfish>>>,
+    total_send_size: AtomicUsize,
+    total_send_count: AtomicUsize,
+    total_recv_size: AtomicUsize,
+    total_recv_count: AtomicUsize,
 }
 
 impl PacketSocket {
@@ -48,6 +53,10 @@ impl PacketSocket {
             inner: Arc::new(Inner {
                 socket: UdpSocket::bind(addr)?,
                 encryption: RwLock::new(HashMap::new()),
+                total_send_size: AtomicUsize::new(0),
+                total_send_count: AtomicUsize::new(0),
+                total_recv_size: AtomicUsize::new(0),
+                total_recv_count: AtomicUsize::new(0),
             }),
         })
     }
@@ -74,6 +83,16 @@ impl PacketSocket {
         self.inner.encryption.write().unwrap().remove(&addr);
     }
 
+    /// Get a snapshot of this socket's statistics.
+    pub fn stat(&self) -> PacketSocketStat {
+        PacketSocketStat {
+            total_send_size: self.inner.total_send_size.load(Ordering::Relaxed),
+            total_send_count: self.inner.total_send_count.load(Ordering::Relaxed),
+            total_recv_size: self.inner.total_recv_size.load(Ordering::Relaxed),
+            total_recv_count: self.inner.total_recv_count.load(Ordering::Relaxed),
+        }
+    }
+
     /// Receive a packet from some peer, without encryption if set for the address.
     pub fn recv_without_encryption(&self) -> io::Result<(Packet, SocketAddr)> {
         
@@ -82,6 +101,10 @@ impl PacketSocket {
 
         // Adjust the data length depending on what have been received.
         packet.set_len(len);
+
+        // Here we use the release ordering on count to ensure that any 
+        self.inner.total_recv_size.fetch_add(len, Ordering::Relaxed);
+        self.inner.total_recv_count.fetch_add(1, Ordering::Relaxed);
 
         Ok((packet, addr))
 
@@ -103,6 +126,8 @@ impl PacketSocket {
 
     /// Send a packet to the given peer, without encryption if set for the address.
     pub fn send_without_encryption(&self, packet: &Packet, addr: SocketAddr) -> io::Result<usize> {
+        self.inner.total_send_size.fetch_add(packet.len(), Ordering::Relaxed);
+        self.inner.total_send_count.fetch_add(1, Ordering::Relaxed);
         self.inner.socket.send_to(packet.slice(), addr)
     }
 
@@ -155,6 +180,15 @@ impl PacketSocket {
         }
     }
 
+}
+
+/// A snapshot of packet socket statistics.
+#[derive(Debug)]
+pub struct PacketSocketStat {
+    pub total_send_size: usize,
+    pub total_send_count: usize,
+    pub total_recv_size: usize,
+    pub total_recv_count: usize,
 }
 
 /// Decrypt a packet of a given length with a blowfish key. Note that the destination 

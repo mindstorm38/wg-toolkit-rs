@@ -5,8 +5,7 @@
 
 use std::io::{self, Read, Write};
 
-use crate::net::bundle::{BundleElementWriter, TopElementReader, BundleElement};
-use crate::net::element::{Element, SimpleElement, TopElement, ElementLength};
+use crate::net::element::{SimpleElement, TopElement, ElementLength};
 use crate::util::io::*;
 
 

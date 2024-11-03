@@ -234,19 +234,17 @@ impl BaseProxyThread {
                 }
                 Event::Bundle(bundle) => {
 
-                    info!(addr = %bundle.addr, "Decoded bundle (TODO)");
-
                     let mut reader = bundle.bundle.element_reader();
                     while let Some(elt) = reader.next_element() {
                         match elt {
                             ElementReader::Top(elt) => {
                                 let elt = elt.read_simple::<()>().unwrap();
-                                info!(addr = %bundle.addr, "Next top element #{}, request: {:?}", elt.id, elt.request_id);
+                                info!(addr = %bundle.addr, dir = ?bundle.direction, "Top element #{}, request: {:?}", elt.id, elt.request_id);
                             }
                             ElementReader::Reply(elt) => {
                                 let request_id = elt.request_id();
                                 let _elt = elt.read_simple::<()>().unwrap();
-                                info!(addr = %bundle.addr, "Next reply element #{request_id}");
+                                info!(addr = %bundle.addr, dir = ?bundle.direction, "Reply element #{request_id}");
                             }
                         }
                         break;
