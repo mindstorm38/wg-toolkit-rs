@@ -1,71 +1,66 @@
 //! Structures for managing bundles of packets.
 
-use std::io::{self, Write, Cursor, Read};
+use std::io::{self, Write, Read};
 use std::fmt;
 
 use tracing::warn;
 
-use super::packet::{Packet, PACKET_FLAGS_LEN, PACKET_MAX_BODY_LEN};
+use super::packet::{self, PacketConfig, PacketLocked, Packet};
 use super::element::{REPLY_ID, Element, TopElement, Reply};
 
-use crate::util::io::*;
-use crate::util::BytesFmt;
+use crate::util::io::{WgReadExt, WgWriteExt, IoCounter};
+
+
+/// The maximum length for writing bundle elements, it's basically the packet capacity 
+/// with prefix, flags and reserved footer length subtracted.
+pub const BUNDLE_PACKET_CAP: usize = 
+    packet::PACKET_CAP - 
+    packet::PACKET_HEADER_LEN - 
+    packet::PACKET_RESERVED_FOOTER_LEN;
+    
+const REQUEST_ID_LEN: usize = 4;
+const REQUEST_NEXT_LEN: usize = 2;
+const REQUEST_HEADER_LEN: usize = REQUEST_ID_LEN + REQUEST_NEXT_LEN;
+
+/// It makes no sense to have more packets, this will allow us to optimize some sizes
+/// of control structures, using only `u16` to index packets.
+const BUNDLE_MAX_PACKET_COUNT: usize = u16::MAX as _;
 
 
 /// A bundle is a sequence of packets that are used to store elements. 
-/// Elements of various types, like regular elements, requests or 
-/// replies can be simply added and the number of packets contained in
-/// this bundle is automatically adjusted if no more space is available.
-/// 
-/// Functions that are used to add elements provide a builder-like 
-/// structure by returning a mutable reference to itself.
+/// Elements of various types, like regular elements, requests or replies can be simply 
+/// added and the number of packets contained in this bundle is automatically adjusted 
+/// if no more space is available.
 #[derive(Debug)]
 pub struct Bundle {
     /// Chain of packets.
-    packets: Vec<Box<Packet>>,
-    /// Indicate if a new packet must be added before a new message. 
-    /// It's used to avoid mixing manually-added packets with packets 
-    /// from newly inserted elements. It's mandatory because we don't 
-    /// know what `request_last_link_offset` should be from manually
-    /// added packets.
-    force_new_packet: bool,
-    /// Available length on the last packet, used to avoid borrowing issues.
-    available_len: usize,
-    /// Offset of the link of the last request, `0` if not request yet.
-    last_request_header_offset: usize,
+    packets: Vec<BundlePacket>,
+    /// Remaining free size in the current packet. When zero, it will always trigger the
+    /// creation of a new packet before any subsequent write.
+    free: u16,
+    /// Offset in the current packet of the last "next request offset" link (u16) that 
+    /// should be filled when a new request element is added, to point to its body offset 
+    /// (starting with flags, so value 0 or 1 equals "no next request"). That offset is
+    /// in content space.
+    last_request_link_offset: Option<u16>,
 }
 
 impl Bundle {
 
-    /// Construct a new empty bundle, this bundle doesn't
-    /// allocate until you add the first element.
-    pub fn new() -> Bundle {
-        Self::with_multiple(vec![])
-    }
-
-    /// Create a new bundle with one predefined packet.
-    pub fn with_single(packet: Box<Packet>) -> Self {
-        Self::with_multiple(vec![packet])
-    }
-
-    /// Create a new bundle with multiple predefined packets.
-    pub fn with_multiple(packets: Vec<Box<Packet>>) -> Self {
+    pub fn new() -> Self {
         Self {
-            available_len: packets.last().map(|p| p.content_available_len()).unwrap_or(0),
-            packets,
-            force_new_packet: true,
-            last_request_header_offset: 0,
+            packets: Vec::new(),
+            free: 0,
+            last_request_link_offset: None,
         }
     }
 
-    /// See [`BundleElementReader`].
-    pub fn element_reader(&self) -> BundleElementReader<'_> {
-        BundleElementReader::new(self)
+    pub fn new_with_single(packet: PacketLocked) -> Self {
+        std::iter::once(packet).collect()
     }
-
-    /// See [`BundleElementWriter`].
-    pub fn element_writer(&mut self) -> BundleElementWriter<'_> {
-        BundleElementWriter::new(self)
+    
+    pub fn new_with_multiple(packets: impl Iterator<Item = PacketLocked>) -> Self {
+        packets.collect()
     }
 
     /// Return the number of packets in this bundle.
@@ -82,66 +77,210 @@ impl Bundle {
     /// Clear the bundle by removing all packets.
     pub fn clear(&mut self) {
         self.packets.clear();
-        self.force_new_packet = true;
-        self.available_len = 0;
-        self.last_request_header_offset = 0;
+        self.free = 0;
+        self.last_request_link_offset = None;
     }
 
-    /// Get a slice of all packets of this bundle.
-    #[inline]
-    pub fn packets(&self) -> &[Box<Packet>] {
-        &self.packets[..]
+    /// Push a new packet in this bundle, the packet must be locked to ensure that the
+    /// associated read/write config is synchronized with the packet's content. Writing
+    /// any element after pushing will necessarily push a new packet, because we don't
+    /// know where is the last request element in that new packet.
+    pub fn push(&mut self, locked: PacketLocked) {
+
+        assert!(self.packets.len() < BUNDLE_MAX_PACKET_COUNT, "too much packets");
+
+        let (packet, config) = locked.destruct();
+
+        self.packets.push(BundlePacket {
+            packet,
+            len: (config.footer_offset() - packet::PACKET_HEADER_LEN) as u16,
+            first_request_offset: config.first_request_offset().map(|s| s as u16),
+        });
+
+        // Set the free size to zero to force create a new packet on any write.
+        self.free = 0;
+        self.last_request_link_offset = None;
+
     }
 
-    #[inline]
-    pub fn packets_mut(&mut self) -> &mut [Box<Packet>] {
-        &mut self.packets[..]
+    /// Push a new empty packet in that bundle, the bundle will be able to write into it
+    /// when needed.
+    pub fn push_empty(&mut self) {
+        
+        assert!(self.packets.len() < BUNDLE_MAX_PACKET_COUNT, "too much packets");
+
+        self.packets.push(BundlePacket {
+            packet: Packet::new(),
+            len: 0,
+            first_request_offset: None,
+        });
+
+        self.free = BUNDLE_PACKET_CAP as u16;
+        self.last_request_link_offset = None;
+
     }
 
-    /// Internal method to add a new packet at the end of the chain.
-    fn add_packet(&mut self) {
-        let packet = Packet::new_boxed();
-        self.available_len = packet.content_available_len();
-        self.packets.push(packet);
-        self.last_request_header_offset = 0;
-        self.force_new_packet = false;
-    }
-
-    /// Internal method to add a a new packet only if forced.
-    fn add_packet_if_forced(&mut self) {
-        if self.force_new_packet {
-            self.add_packet();
+    /// Write the given configuration to all packets in this bundle. However, there will
+    /// be some modifications to the packet configuration to apply the bundle's 
+    /// parameters: 
+    /// - the sequence number will be incremented after each packet;
+    /// - if the bundle contains more than one packet, the sequence range will be set 
+    ///   accordingly, so the whole sequence range must've been allocated;
+    /// - if the bundle contains zero or one packet, sequence range is disabled;
+    /// - for each packet, the first request offset will be forced;
+    /// - any cumulative ack is cleared after the first packet.
+    /// 
+    /// Any subsequent 
+    pub fn write_config(&mut self, config: &mut PacketConfig) {
+        
+        if self.packets.len() > 1 {
+            config.set_sequence_range(config.sequence_num(), config.sequence_num() + self.packets.len() as u32 - 1);
+        } else {
+            config.clear_sequence_range();
         }
+
+        for packet in &mut self.packets {
+            
+            if let Some(offset) = packet.first_request_offset {
+                config.set_first_request_offset(offset as usize);
+            } else {
+                config.clear_first_request_offset();
+            }
+
+            packet.packet.write_config(&mut *config);
+
+            config.set_sequence_num(config.sequence_num() + 1);
+            config.clear_cumulative_ack();
+            
+        }
+
+        config.clear_first_request_offset();  // Some cleanup...
+
+    }
+
+    /// Write the given prefix to all packet.
+    pub fn write_prefix(&mut self, prefix: u32) {
+        for packet in &mut self.packets {
+            packet.packet.write_prefix(prefix);
+        }
+    }
+
+    /// Update the prefix of all packets using the given offset. 
+    /// See [`RawPacket::update_prefix`].
+    pub fn update_prefix(&mut self, offset: u32) {
+        for packet in &mut self.packets {
+            packet.packet.update_prefix(offset);
+        }
+    }
+
+    /// An iterator to all packets in this bundle, not modifiable.
+    pub fn iter(&self) -> impl Iterator<Item = &'_ Packet> + '_ {
+        self.packets.iter().map(|p| &p.packet)
+    }
+
+    /// Destruct this bundle into its component packets.
+    pub fn into_iter(self) -> impl Iterator<Item = Packet> {
+        self.packets.into_iter().map(|p| p.packet)
+    }
+
+    /// See [`BundleElementReader`].
+    pub fn element_reader(&self) -> BundleElementReader<'_> {
+        BundleElementReader::new(self)
+    }
+
+    /// See [`BundleElementWriter`].
+    pub fn element_writer(&mut self) -> BundleElementWriter<'_> {
+        BundleElementWriter::new(self)
     }
 
     /// Reserve exactly the given length in the current packet or a new one if
     /// such space is not available in the current packet. **Given length must 
-    /// not exceed maximum packet size.**
+    /// not exceed bundle packet capacity.**
     /// 
     /// This function is currently only used for writing the element's header.
     fn reserve_exact(&mut self, len: usize) -> &mut [u8] {
-        debug_assert!(len <= PACKET_MAX_BODY_LEN);
-        let new_packet = self.available_len < len;
-        if new_packet {
-            self.add_packet();
+        debug_assert!(len != 0, "cannot reserve zero byte");
+        debug_assert!(len <= BUNDLE_PACKET_CAP, "cannot reserve exact more that bundle packet capacity");
+        let len = len as u16;  // Safe cast because of assert.
+        if self.free < len {
+            self.push_empty();
         }
         let packet = self.packets.last_mut().unwrap();
-        self.available_len -= len;
-        packet.grow(len)
+        self.free -= len;
+        packet.grow(len as usize)
     }
 
     /// Reserve up to the given length in the current packet, if no byte is
     /// available in the current packet, a new packet is created. The final
     /// reserved length is the size of the returned slice.
     fn reserve(&mut self, len: usize) -> &mut [u8] {
-        let new_packet = self.available_len == 0;
-        if new_packet {
-            self.add_packet();
+        debug_assert!(len != 0, "cannot reserve zero byte");
+        if self.free == 0 {
+            self.push_empty();
         }
         let packet = self.packets.last_mut().unwrap();
-        let len = len.min(self.available_len);
-        self.available_len -= len;
+        let len = len.min(self.free as usize);
+        self.free -= len as u16;  // Safe cast because of '.min' on 'self.free'.
         packet.grow(len)
+    }
+
+}
+
+/// A bundle can be created from an iterator of locked packets.
+impl FromIterator<PacketLocked> for Bundle {
+    fn from_iter<T: IntoIterator<Item = PacketLocked>>(iter: T) -> Self {
+        let mut bundle = Self::new();
+        for packet in iter {
+            bundle.push(packet);
+        }
+        bundle
+    }
+}
+
+
+/// Internal storage structure for a bundle's packet.
+#[derive(Debug)]
+struct BundlePacket {
+    /// The packet data.
+    packet: Packet,
+    /// The total length of element's content written to this packet, this doesn't count
+    /// the underlying packet's header (prefix and flags) and footer.
+    len: u16,
+    /// Offset of the first request within element's content space.
+    first_request_offset: Option<u16>,
+}
+
+impl BundlePacket {
+
+    /// Return the length taken by elements in that packet.
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.len as usize
+    }
+
+    /// Return the remaining free size for storing bundle elements in that packet.
+    #[inline]
+    pub fn free(&self) -> usize {
+        BUNDLE_PACKET_CAP - self.len()
+    }
+
+    /// Get a slice to the data, with the packet's length.
+    #[inline]
+    pub fn slice(&self) -> &[u8] {
+        &self.packet.slice()[packet::PACKET_HEADER_LEN..][..self.len as usize]
+    }
+
+    /// Get a mutable slice to the data, with the packet's length.
+    #[inline]
+    pub fn slice_mut(&mut self) -> &mut [u8] {
+        &mut self.packet.slice_mut()[packet::PACKET_HEADER_LEN..][..self.len as usize]
+    }
+
+    #[inline]
+    pub fn grow(&mut self, len: usize) -> &mut [u8] {
+        assert!(len <= self.free(), "not enough available data");
+        self.len += len as u16;
+        self.packet.grow(len)
     }
 
 }
@@ -178,71 +317,87 @@ impl<'a> Write for BundleWriter<'a> {
 }
 
 
-/// A simple reader for bundle that join all packet's bodies into
-/// a single stream. This is internally used by [`BundleElementReader`] 
-/// for reading elements and replies.
+/// A simple reader for bundle that join all packet's bodies into a single stream. This 
+/// is internally used by [`BundleElementReader`] for reading elements and replies.
 /// 
-/// *Note that it implements clone in order to save advancement of
-/// the reader and allowing rollbacks.*
+/// *Note that it implements clone in order to save advancement of the reader and 
+/// allowing rollbacks.*
 #[derive(Clone)]
 struct BundleReader<'a> {
-    /// The current packet with the remaining ones.
-    packets: &'a [Box<Packet>],
-    /// The remaining body data in the current packet.
-    body: &'a [u8],
-    /// The current position of the reader, used for requests.
-    pos: usize,
+    /// Back reference to the bundle, this only take one pointer.
+    bundle: &'a Bundle,
+    /// See [`BUNDLE_MAX_PACKET_COUNT`] for why using `u16` to store index.
+    packet_index: u16,
+    /// Keep track of current offset the content is at, relative to packet's content.
+    content_offset: u16,
+    /// The content remaining to read, we really want to optimize reading this content
+    /// so we keep a slice of this it here to avoid the double indirection of going into
+    /// a bundle packet reference and then into the packet's boxed data.
+    content: &'a [u8],
 }
 
 impl<'a> BundleReader<'a> {
 
     fn new(bundle: &'a Bundle) -> Self {
-        let packets = bundle.packets();
         Self {
-            packets,
-            body: packets.get(0)
-                .map(|p| p.content())
-                .unwrap_or(&[]),
-            pos: 0,
+            bundle,
+            packet_index: 0,
+            content_offset: 0,
+            content: bundle.packets.first().map(|p| p.slice()).unwrap_or(&[]),
         }
     }
 
-    /// Internal function to get a reference to the current packet.
-    fn packet(&self) -> Option<&'a Packet> {
-        self.packets.get(0).map(|b| &**b)
-    }
-
-    /// Internal function that ensures that the body is not empty.
-    /// If empty, it search for the next non-empty packet and return.
-    /// 
-    /// It returns true if the operation was successful, false otherwise.
-    fn ensure(&mut self) -> bool {
-        while self.body.is_empty() {
-            if self.packets.is_empty() {
-                return false; // No more data.
+    fn ensure_inner(&mut self) -> bool {
+        while self.content.is_empty() {
+            // We don't want to go above length.
+            if self.packet_index < self.bundle.packets.len() as u16 {
+                self.packet_index += 1;
+            }
+            // Still use checked '.get' because value may overwrite.
+            if let Some(packet) = self.bundle.packets.get(self.packet_index as usize) {
+                self.content_offset = 0;
+                self.content = packet.slice();
             } else {
-                // Discard the current packet from the slice.
-                self.packets = &self.packets[1..];
-                // And if there is one packet, set the body from this packet.
-                if let Some(p) = self.packets.get(0) {
-                    self.body = p.content();
-                }
+                return false;
             }
         }
         true
     }
 
-    /// Internal function to goto a given position in the bundle.
-    /// 
-    /// *The given position is checked to be past the current one.*
-    fn goto(&mut self, pos: usize) {
-        assert!(pos >= self.pos, "given pos is lower than current pos");
-        let mut remaining = pos - self.pos;
-        while remaining != 0 && self.ensure() {
-            let len = self.body.len().min(remaining);
-            self.pos += len;
-            remaining -= len;
+    /// Ensure that a non-empty contiguous slice of content is available to read.
+    pub fn ensure(&mut self) -> Option<&'a [u8]> {
+        self.ensure_inner().then_some(self.content)
+    }
+
+    #[inline]
+    pub fn content_offset(&self) -> u16 {
+        self.content_offset
+    }
+
+    /// Get the packet index currently being read, note that the current content may be
+    /// empty for this packet, and [`Self::ensure`] should be called before to get the right
+    /// packet to read.
+    #[inline]
+    pub fn packet_index(&self) -> u16 {
+        self.packet_index
+    }
+
+    /// Same as [`Self::packet_index`] but returns the reference to the packet.
+    pub fn packet(&self) -> Option<&'a BundlePacket> {
+        self.bundle.packets.get(self.packet_index as usize)
+    }
+
+    /// Advance the current reader by a given amount. Return true if successful, if not
+    /// the reader has been emptied by remaining delta could not be advanced.
+    fn advance(&mut self, mut delta: usize) -> bool {
+        while delta != 0 {
+            if !self.ensure_inner() { return false }
+            let len = delta.min(self.content.len());
+            self.content = &self.content[len..];
+            self.content_offset += len as u16;
+            delta -= len;
         }
+        true
     }
 
 }
@@ -250,19 +405,15 @@ impl<'a> BundleReader<'a> {
 impl<'a> Read for BundleReader<'a> {
 
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-
-        if !self.ensure() {
-            return Ok(0);
+        if self.ensure_inner() {
+            let len = buf.len().min(self.content.len());
+            buf[..len].copy_from_slice(&self.content[..len]);
+            self.content = &self.content[len..];
+            self.content_offset += len as u16;
+            Ok(len)
+        } else {
+            Ok(0)
         }
-
-        let len = buf.len().min(self.body.len());
-        buf[..len].copy_from_slice(&self.body[..len]);
-
-        self.body = &self.body[len..];
-        self.pos += len;
-
-        Ok(len)
-
     }
 
 }
@@ -270,9 +421,6 @@ impl<'a> Read for BundleReader<'a> {
 impl fmt::Debug for BundleReader<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("BundleReader")
-            .field("packets", &self.packets)
-            .field("body", &format_args!("{:X}", BytesFmt(self.body)))
-            .field("pos", &self.pos)
             .finish()
     }
 }
@@ -376,56 +524,50 @@ impl<'a> BundleElementWriter<'a> {
     /// element and its config. With an optional request ID.
     pub fn write_raw<E: TopElement>(&mut self, element: BundleElement<E>, config: &E::Config) {
 
-        self.bundle.add_packet_if_forced();
-
-        const REQUEST_HEADER_LEN: usize = 6;
-
         // Allocate element's header, +1 for element's ID, +6 reply_id and link offset.
+        // Using reserve exact so all the header is contiguous.
         let header_len = 1 + E::LEN.len() + if element.request_id.is_some() { REQUEST_HEADER_LEN } else { 0 };
         let header_slice = self.bundle.reserve_exact(header_len);
         header_slice[0] = element.id;
 
+        // If it's a request, write the request ID followed 
         if let Some(request_id) = element.request_id {
-            let mut request_header_cursor = Cursor::new(&mut header_slice[header_len - 6..]);
-            request_header_cursor.write_u32(request_id).unwrap();
-            request_header_cursor.write_u16(0).unwrap(); // Next request offset set to null.
+            let mut request_header_slice = &mut header_slice[header_len - REQUEST_HEADER_LEN..][..REQUEST_HEADER_LEN];
+            request_header_slice.write_u32(request_id).unwrap();
+            request_header_slice.write_u16(0).unwrap(); // Next request offset set to null.
         }
 
         // Keep the packet index to rewrite the packet's length after writing it.
         let cur_packet_idx = self.bundle.packets.len() - 1;
 
-        // IMPORTANT: All offsets are in the content, not the raw body or raw data.
+        // IMPORTANT: All offsets are in the content, not absolute.
         let cur_packet = &mut self.bundle.packets[cur_packet_idx];
-        let cur_packet_len = cur_packet.content_len();
+        let cur_packet_len = cur_packet.len();
         let cur_packet_elt_offset = cur_packet_len - header_len;
 
         // NOTE: We add flags length to element offset because offset contains flags.
         if element.request_id.is_some() {
         
-            if self.bundle.last_request_header_offset == 0 {
-                // If there is no previous request, we set the first request offset.
-                cur_packet.set_first_request_offset(PACKET_FLAGS_LEN + cur_packet_elt_offset);
+            if let Some(last_request_link_offset) = self.bundle.last_request_link_offset {
+                let mut request_next_slice = &mut cur_packet.slice_mut()[last_request_link_offset as usize..][..REQUEST_NEXT_LEN];
+                request_next_slice.write_u16((packet::PACKET_FLAGS_LEN + cur_packet_elt_offset) as u16).unwrap();
             } else {
-                // Add 4 because first 4 bytes is the request id.
-                Cursor::new(&mut cur_packet.content_mut()[self.bundle.last_request_header_offset + 4..])
-                    .write_u16((PACKET_FLAGS_LEN + cur_packet_elt_offset) as u16).unwrap();
+                cur_packet.first_request_offset = Some(cur_packet_elt_offset as u16);
             }
-
-            // We keep the offset of the request header, it will be used if a request
-            // element is added after this one so we can write the link to the next.
-            self.bundle.last_request_header_offset = cur_packet_len - REQUEST_HEADER_LEN;
+            
+            self.bundle.last_request_link_offset = Some((cur_packet_len - REQUEST_NEXT_LEN) as u16);
             
         }
 
-        // Write the actual element's content.
+        // Write the actual element's content. For now we just unwrap the encode result,
+        // because no IO error should be produced by a BundleWriter.
         let mut writer = IoCounter::new(BundleWriter::new(&mut *self.bundle));
-        // For now we just unwrap the encode result, because no IO error should be produced by a BundleWriter.
         element.element.encode(&mut writer, config).unwrap();
         let length = writer.count() as u32;
 
         // Finally write id and length, we can unwrap because we know that enough length is available.
-        let header_slice = &mut self.bundle.packets[cur_packet_idx].content_mut()[cur_packet_elt_offset..];
-        E::LEN.write(Cursor::new(&mut header_slice[1..]), length).unwrap();
+        let header_len_slice = &mut self.bundle.packets[cur_packet_idx].slice_mut()[cur_packet_elt_offset + 1..];
+        E::LEN.write(header_len_slice, length).unwrap();
 
     }
 
@@ -438,34 +580,23 @@ impl<'a> BundleElementWriter<'a> {
 /// This structure can be obtained from [`Bundle::element_reader`].
 pub struct BundleElementReader<'a> {
     bundle_reader: BundleReader<'a>,
-    next_request_offset: usize
+    last_packet_index: u16,
+    next_request_offset: Option<u16>,
 }
 
 impl<'a> BundleElementReader<'a> {
 
     /// Internal constructor used by [`Bundle`] to create the reader.
     fn new(bundle: &'a Bundle) -> Self {
+
         let bundle_reader = BundleReader::new(bundle);
+
         Self {
-            next_request_offset: bundle_reader.packet()
-                .map(|p| p.first_request_offset().unwrap_or(0))
-                .unwrap_or(0),
-            bundle_reader
+            next_request_offset: bundle_reader.packet().and_then(|p| p.first_request_offset),
+            last_packet_index: 0,
+            bundle_reader,
         }
-    }
-
-    /// Return `true` if the current element is a request, this is just dependent of
-    /// the current position within the current packet.
-    pub fn is_request(&self) -> bool {
-        // Get the real data pos (instead of the body pos).
-        let data_pos = self.bundle_reader.pos + PACKET_FLAGS_LEN;
-        self.next_request_offset != 0 && data_pos == self.next_request_offset
-    }
-
-    /// Read the current element's identifier. This call return the same result until
-    /// you explicitly choose to go to the next element while reading the element
-    pub fn next_id(&self) -> Option<u8> {
-        self.bundle_reader.body.get(0).copied()
+        
     }
 
     /// Read the current element, return a guard that you should use a codec to decode
@@ -487,6 +618,14 @@ impl<'a> BundleElementReader<'a> {
             }
             None => None
         }
+    }   
+
+    /// Read the current element's identifier. This call return the same result until
+    /// you explicitly choose to go to the next element while reading the element. This
+    /// method takes self by mutable reference because it may need to go to the next
+    /// packet when needed.
+    pub fn next_id(&mut self) -> Option<u8> {
+        self.bundle_reader.ensure().map(|content| content[0])
     }
 
     /// Try to decode the current element using a given codec. You can choose to go
@@ -496,79 +635,76 @@ impl<'a> BundleElementReader<'a> {
         E: TopElement
     {
 
-        let request = self.is_request();
-        let header_len = E::LEN.len() + 1 + if request { 6 } else { 0 };
-
-        if self.bundle_reader.body.len() < header_len {
-            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "not enough data to read the header"));
+        // Here we ensure that we have some bytes to read the next element from.
+        let Some(slice) = self.bundle_reader.ensure() else {
+            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "no more element to read from in the packets"));
+        };
+        
+        // We also update the next request offset if we are on a new packet!
+        let start_packet_index = self.bundle_reader.packet_index();
+        if self.last_packet_index != start_packet_index {
+            self.next_request_offset = self.bundle_reader.packet().and_then(|p| p.first_request_offset);
+            self.last_packet_index = start_packet_index;
         }
 
-        // We store a screenshot of the reader in order to be able to rollback in case of error.
+        // Once we have a non-empty header slice, check if it correspond to the next 
+        // request that we are expecting.
+        let offset = self.bundle_reader.content_offset();
+        let request = self.next_request_offset == Some(offset);
+
+        // Compute the required contiguous length of the header, add request header 
+        // length if that element is a request.
+        let header_len = 1 + E::LEN.len() + if request { REQUEST_HEADER_LEN } else { 0 };
+        
+        // We requires that the element's header is written contiguous in a single packet.
+        if slice.len() < header_len {
+            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "the header of the next element is not contiguous"));
+        }
+
+        // Keep a clone in order to rollback if not 'next' or any error happens.
         let reader_save = self.bundle_reader.clone();
 
-        match self.read_element_internal::<E>(config, next, request) {
-            Ok(elt) if next => Ok(elt),
-            Ok(elt) => {
-                // If no error but we don't want to go next.
-                self.bundle_reader.clone_from(&reader_save);
-                Ok(elt)
-            }
-            Err(e) => {
-                // If any error happens, we cancel the operation.
-                self.bundle_reader.clone_from(&reader_save);
-                Err(e)
-            }
-        }
+        // After length has been checked, we can read all this for sure, so we unwrap.
+        let elt_id = self.bundle_reader.read_u8().unwrap();
+        let elt_len = E::LEN.read(&mut self.bundle_reader, elt_id).unwrap();
 
-    }
-
-    /// Internal only. Used by `next` to wrap all IO errors and reset seek if an error happens.
-    #[inline(always)]
-    fn read_element_internal<E>(&mut self, config: &E::Config, next: bool, request: bool) -> io::Result<BundleElement<E>>
-    where
-        E: TopElement
-    {
-
-        let start_packet = self.bundle_reader.packet().unwrap();
-
-        let elt_id = self.bundle_reader.read_u8()?;
-        let elt_len = E::LEN.read(&mut self.bundle_reader, elt_id)?;
-
+        // If the element is a request, we read the next request offset, if that offset
+        // is 0 (or 1 but that value is never used) then there is no next request.
         let reply_id = if request {
             let reply_id = self.bundle_reader.read_u32()?;
-            self.next_request_offset = self.bundle_reader.read_u16()? as usize;
+            let next_request_offset = self.bundle_reader.read_u16()?;
+            self.next_request_offset = next_request_offset.checked_sub(packet::PACKET_FLAGS_LEN as u16);
             Some(reply_id)
         } else {
             None
         };
 
-        let elt_data_begin = self.bundle_reader.pos;
-
+        // Use ::take to limit the number of byte read from the reader.
         let mut elt_reader = Read::take(&mut self.bundle_reader, elt_len as u64);
-        let element = E::decode(&mut elt_reader, elt_len as usize, config)?;
+        let element = match E::decode(&mut elt_reader, elt_len as usize, config) {
+            Ok(ret) => ret,
+            Err(e) => {
+                self.bundle_reader = reader_save;  // Rollback before going further.
+                return Err(e);
+            }
+        };
 
-        // Just a warning because the decoding process didn't read all the data.
-        if elt_reader.limit() != 0 {
-            warn!("remaining data while reading element of type '{}'", std::any::type_name::<E>());
-        }
-
-        // We seek to the end only if we want to go next.
         if next {
 
-            self.bundle_reader.goto(elt_data_begin + elt_len as usize);
-
-            // Here we check if we have changed packets during decoding of the element.
-            // If changed, we change the next request offset.
-            match self.bundle_reader.packet() {
-                Some(end_packet) => {
-                    if !std::ptr::eq(start_packet, end_packet) {
-                        self.next_request_offset = end_packet.first_request_offset().unwrap_or(0);
-                    }
-                    // Else, we are still in the same packet so we don't need to change this.
-                }
-                None => self.next_request_offset = 0
+            // Just a warning because the decoding process didn't read all the data. This
+            // warning is just enabled when going next, it avoids getting the error when
+            // reading the reply header for example.
+            let unread_len = elt_reader.limit() as usize;
+            if unread_len != 0 {
+                warn!("remaining data while reading element of type '{}'", std::any::type_name::<E>());
             }
 
+            // We advance the reader by the amount that has not been read.
+            self.bundle_reader.advance(unread_len);
+
+        } else {
+            // Not going next, only rollback the internal reader.
+            self.bundle_reader = reader_save;
         }
 
         Ok(BundleElement {
@@ -586,8 +722,6 @@ impl fmt::Debug for BundleElementReader<'_> {
         f.debug_struct("BundleElementReader")
             .field("bundle_reader", &self.bundle_reader)
             .field("next_request_offset", &self.next_request_offset)
-            .field("next_id()", &self.next_id())
-            .field("is_request()", &self.is_request())
             .finish()
     }
 }

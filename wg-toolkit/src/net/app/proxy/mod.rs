@@ -10,12 +10,12 @@ use std::io;
 
 use blowfish::Blowfish;
 
-use tracing::{trace, warn};
+use tracing::trace;
 
+use crate::net::packet::Packet;
 use crate::util::thread::ThreadPoll;
 use crate::net::channel::{ChannelIndex, ChannelTracker};
 use crate::net::socket::{PacketSocket, decrypt_packet};
-use crate::net::packet::Packet;
 use crate::net::bundle::Bundle;
 use super::io_invalid_data;
 
@@ -45,7 +45,7 @@ pub struct App {
     /// Filled when a peer is rejected and a Rejection event is returned, it allows the
     /// handler of that event to bind the missing peer and allow it to be accepted on
     /// next poll. 
-    last_rejection: Option<(Box<Packet>, SocketAddr)>,
+    last_rejection: Option<(Packet, SocketAddr)>,
 }
 
 /// A registered peer that can forward and receive packets from the real application.
@@ -65,7 +65,7 @@ struct Peer {
 #[derive(Debug)]
 struct SocketPollRet {
     /// The raw I/O result containing the packet if successful.
-    res: io::Result<(Box<Packet>, SocketAddr)>,
+    res: io::Result<(Packet, SocketAddr)>,
     /// The peer address if this is the result of a peer socket.
     peer: Option<Arc<Peer>>,
 }
@@ -170,11 +170,11 @@ impl App {
             if let Some(peer_) = &socket_poll_ret.peer {
                 peer = &**peer_;
                 direction = PacketDirection::In;
-                res = self.socket.send_without_encryption(cipher_packet.raw(), peer.addr);
+                res = self.socket.send_without_encryption(&cipher_packet, peer.addr);
             } else if let Some(peer_) = self.peers.get(&addr) {
                 peer = &**peer_;
                 direction = PacketDirection::Out;
-                res = peer.socket.send_without_encryption(cipher_packet.raw(), peer.real_addr);
+                res = peer.socket.send_without_encryption(&cipher_packet, peer.real_addr);
             } else {
                 if ignore_rejection {
                     continue;
@@ -197,7 +197,7 @@ impl App {
             if let Some(blowfish) = peer.blowfish.as_deref() {
                 packet = match decrypt_packet(cipher_packet, blowfish) {
                     Ok(ret) => ret,
-                    Err(cipher_packet) => {
+                    Err(_cipher_packet) => {
                         // warn!("invalid encryption, continuing without it...");
                         // cipher_packet
                         // warn!(direction = ?direction, "Cipher packet: {:?}", cipher_packet.raw());
@@ -212,8 +212,8 @@ impl App {
             }
 
             match direction {
-                PacketDirection::Out => trace!(peer_addr = %peer.addr, real_addr = %peer.real_addr, "> {:?}", packet.raw()),
-                PacketDirection::In => trace!(peer_addr = %peer.addr, real_addr = %peer.real_addr, "< {:?}", packet.raw()),
+                PacketDirection::Out => trace!(peer_addr = %peer.addr, real_addr = %peer.real_addr, "> {:?}", packet),
+                PacketDirection::In => trace!(peer_addr = %peer.addr, real_addr = %peer.real_addr, "< {:?}", packet),
             }
 
             let channel = match direction {

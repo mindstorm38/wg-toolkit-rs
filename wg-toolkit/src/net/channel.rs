@@ -7,7 +7,7 @@ use std::num::NonZero;
 
 use tracing::{debug, instrument, trace};
 
-use super::packet::{Packet, PacketConfig, PacketConfigError};
+use super::packet::{Packet, PacketConfig, PacketLocked, PacketConfigError};
 use super::bundle::Bundle;
 
 
@@ -27,7 +27,7 @@ pub struct ChannelTracker {
     /// Known channels for each address, with optional channel indexing.
     channels: HashMap<(SocketAddr, Option<NonZero<u32>>), OnChannel>,
     /// List of rejected packets.
-    rejected_packets: Vec<(SocketAddr, Box<Packet>, PacketRejectionError)>,
+    rejected_packets: Vec<(SocketAddr, Packet, PacketRejectionError)>,
 }
 
 /// A structure referenced by any channel handle, containing shared states.
@@ -127,26 +127,25 @@ impl ChannelTracker {
     /// is also returned but the packet is internally queued and can later be retrieved 
     /// with the error using [`Self::take_rejected_packets()`].
     #[instrument(level = "trace", skip(self, packet))]
-    pub fn accept(&mut self, mut packet: Box<Packet>, addr: SocketAddr) -> Option<(Bundle, Channel<'_>)> {
+    pub fn accept(&mut self, packet: Packet, addr: SocketAddr) -> Option<(Bundle, Channel<'_>)> {
 
-        // Retrieve the real clear-text length after a potential decryption.
-        let len = packet.raw().data_len();
+        let locked = match packet.read_config_locked() {
+            Ok(locked) => locked,
+            Err((error, packet)) => {
+                self.rejected_packets.push((addr, packet, PacketRejectionError::Config(error)));
+                return None;
+            }
+        };
 
-        let mut packet_config = PacketConfig::new();
-        if let Err(error) = packet.read_config(len, &mut packet_config) {
-            self.rejected_packets.push((addr, packet, PacketRejectionError::Config(error)));
-            return None;
-        }
-
-        self.shared.last_accepted_prefix = packet.raw().read_prefix();
+        self.shared.last_accepted_prefix = locked.packet().read_prefix();
 
         // Start by finding the appropriate channel for this packet regarding the local
         // socket address and channel-related flags on this packet.
         let mut channel;
-        if packet_config.on_channel() {
+        if locked.config().on_channel() {
 
             let on_channel;
-            if let Some((index, version)) = packet_config.indexed_channel() {
+            if let Some((index, version)) = locked.config().indexed_channel() {
                 
                 trace!("Is on-channel: {index} v{version}");
                 on_channel = self.channels.entry((addr, Some(index)))
@@ -175,7 +174,7 @@ impl ChannelTracker {
             // First packet after channel creation should contains this flag.
             // TODO: Remove this? Because there is no create flag on external channels.
             if !on_channel.on.received_create_packet {
-                if packet_config.create_channel() {
+                if locked.config().create_channel() {
                     trace!("Has-confirmed creation of the channel");
                     on_channel.on.received_create_packet = true;
                 } else {
@@ -206,7 +205,7 @@ impl ChannelTracker {
         }
 
         // Cumulative ack is not supposed to be used off-channel.
-        if let Some(cumulative_ack) = packet_config.cumulative_ack() {
+        if let Some(cumulative_ack) = locked.config().cumulative_ack() {
             if channel.on.is_some() {
                 channel.acknowledge_reliable_packet_cumulative(cumulative_ack);
             } else {
@@ -217,29 +216,29 @@ impl ChannelTracker {
         }
 
         // If we have some acks.
-        for &ack in packet_config.single_acks() {
+        for &ack in locked.config().single_acks() {
             channel.acknowledge_reliable_packet(ack);
         }
 
         // If the received packet is reliable, we'll need to send a ack for it in future.
-        if packet_config.reliable() {
-            channel.add_received_reliable_packet(packet_config.sequence_num());
+        if locked.config().reliable() {
+            channel.add_received_reliable_packet(locked.config().sequence_num());
         }
 
         // We can observe that packets with the flag 0x1000 are only used
         // for auto acking with sometimes duplicated data that is sent
         // just after. If it become a problem this check can be removed. 
-        if packet_config.unk_1000().is_some() {
+        if locked.config().unk_1000().is_some() {
             return None;
         }
         
         let instant = Instant::now();
 
-        match packet_config.sequence_range() {
+        match locked.config().sequence_range() {
             // Only if there is a range and this range is not a single num.
             Some((first_num, last_num)) => {
 
-                let num = packet_config.sequence_num();
+                let num = locked.config().sequence_num();
                 let relative_num = num - first_num;
                 trace!("Fragment: {num} ({first_num}..={last_num})");
 
@@ -250,13 +249,13 @@ impl ChannelTracker {
                         // and start again with the packet.
                         // FIXME: Maybe dumb?
                         if o.get().is_old(instant, FRAGMENT_TIMEOUT) {
-                            let mut fragments = o.remove();
-                            self.rejected_packets.extend(fragments.drain()
-                                .map(|packet| (addr, packet, PacketRejectionError::TimedOut)));
+                            // let mut fragments = o.remove();
+                            // self.rejected_packets.extend(fragments.drain()
+                            //     .map(|packet| (addr, packet, PacketRejectionError::TimedOut)));
                             return None;
                         }
 
-                        o.get_mut().set(relative_num, packet);
+                        o.get_mut().set(relative_num, locked);
 
                         // When all fragments are collected, remove entry and return.
                         if o.get().is_full() {
@@ -266,7 +265,7 @@ impl ChannelTracker {
                     },
                     hash_map::Entry::Vacant(v) => {
                         let mut fragments = Fragments::new(last_num - first_num + 1);
-                        fragments.set(relative_num, packet);
+                        fragments.set(relative_num, locked);
                         v.insert(fragments);
                     }
                 }
@@ -274,7 +273,7 @@ impl ChannelTracker {
             }
             // Not sequence range in the packet, create a bundle only with it.
             _ => {
-                return Some((Bundle::with_single(packet), Channel { inner: channel }));
+                return Some((Bundle::new_with_single(locked), Channel { inner: channel }));
             }
         }
 
@@ -288,21 +287,20 @@ impl ChannelTracker {
     /// manually prepare bundles but instead just forward packets, in such case we should
     /// be able to simulate preparation of outgoing packets.
     #[instrument(level = "trace", skip(self, packet))]
-    pub fn accept_out(&mut self, packet: &mut Packet, addr: SocketAddr) -> bool {
+    pub fn accept_out(&mut self, packet: &Packet, addr: SocketAddr) -> bool {
 
-        // Retrieve the real clear-text length after a potential decryption.
-        let len = packet.raw().data_len();
-
-        let mut packet_config = PacketConfig::new();
-        if let Err(_error) = packet.read_config(len, &mut packet_config) {
-            return false;
-        }
+        let locked = match packet.read_config_locked_ref() {
+            Ok(locked) => locked,
+            Err(_error) => {
+                return false;
+            }
+        };
 
         let mut channel;
-        if packet_config.on_channel() {
+        if locked.config().on_channel() {
 
             let on_channel;
-            if let Some((index, version)) = packet_config.indexed_channel() {
+            if let Some((index, version)) = locked.config().indexed_channel() {
                 trace!("Is on-channel: {index} v{version}");
                 on_channel = self.channels.entry((addr, Some(index)))
                     .or_insert_with(|| OnChannel {
@@ -338,7 +336,7 @@ impl ChannelTracker {
 
         }
 
-        if let Some(_cumulative_ack) = packet_config.cumulative_ack() {
+        if let Some(_cumulative_ack) = locked.config().cumulative_ack() {
             if channel.on.is_some() {
                 // TODO:
             } else {
@@ -348,8 +346,8 @@ impl ChannelTracker {
             }
         }
 
-        if packet_config.reliable() {
-            channel.add_reliable_packet(packet_config.sequence_num());
+        if locked.config().reliable() {
+            channel.add_reliable_packet(locked.config().sequence_num());
         }
 
         true
@@ -384,12 +382,12 @@ impl Channel<'_> {
     }
 
     /// Prepare a bundle to be sent, adding acks and other configuration required by this
-    /// tracker into all packets. After this function, all packets are ready to be sent.
+    /// tracker into all packets. After this function, all packets are ready to be sent
+    /// and the bundle should not be touched for this to remain true.
     #[instrument(level = "trace", skip(self, bundle))]
     pub fn prepare(&mut self, bundle: &mut Bundle, reliable: bool) {
 
         let bundle_len = bundle.len() as u32;
-
         trace!("Count: {bundle_len}");
         
         // Create a common packet config for all the bundle.
@@ -399,11 +397,11 @@ impl Channel<'_> {
 
         if reliable || bundle_len > 1 {
             packet_config.set_sequence_num(self.inner.alloc_sequence_num(bundle_len));
-        }
-        
-        if bundle_len > 1 {
-            let first_num = packet_config.sequence_num();
-            packet_config.set_sequence_range(first_num, first_num + bundle_len - 1);
+            if reliable {
+                for num in packet_config.sequence_num()..packet_config.sequence_num() + bundle_len {
+                    self.inner.add_reliable_packet(num);
+                }
+            }
         }
         
         if let Some(on_channel) = self.inner.on.as_deref_mut() {
@@ -437,28 +435,8 @@ impl Channel<'_> {
         std::mem::swap(&mut self.inner.off.received_reliable_packets, packet_config.single_acks_mut());
         debug_assert!(self.inner.off.received_reliable_packets.is_empty(), "packet config acks were not empty");
 
-        // Now we set the sequence number for 
-        for (packet_index, packet) in bundle.packets_mut().iter_mut().enumerate() {
-
-            // Write configuration to the packet and then increment the sequence num.
-            // The sequence num should only be set if channel with reliable or if we
-            // have multiple packets: this number is unused in other cases.
-            packet.write_config(&mut packet_config);
-            trace!("Packet #{packet_index} length: {}", packet.raw().data_len());
-
-            // Compute the prefix.
-            packet.raw_mut().update_prefix(self.inner.shared.prefix_offset);
-
-            if reliable {
-                self.inner.add_reliable_packet(packet_config.sequence_num());
-            }
-
-            packet_config.set_sequence_num(packet_config.sequence_num() + 1);
-
-            // Only send the cumulative ack on first packet, so remove it on next.
-            packet_config.clear_cumulative_ack();
-
-        }
+        bundle.write_config(&mut packet_config);
+        bundle.update_prefix(self.inner.shared.prefix_offset);
 
         // Now we need to restore acks that have not been sent: swap back (read above).
         std::mem::swap(&mut self.inner.off.received_reliable_packets, packet_config.single_acks_mut());
@@ -773,7 +751,7 @@ impl SequenceNumAllocator {
 /// Internal structure to keep fragments from a given sequence.
 #[derive(Debug)]
 struct Fragments {
-    fragments: Vec<Option<Box<Packet>>>,
+    fragments: Vec<Option<PacketLocked>>,
     seq_count: u32,
     last_update: Instant,
 }
@@ -789,16 +767,16 @@ impl Fragments {
         }
     }
 
-    /// This this fragments packets and reset internal count to zero.
-    fn drain(&mut self) -> impl Iterator<Item = Box<Packet>> {
-        self.seq_count = 0;
-        std::mem::take(&mut self.fragments)
-            .into_iter()
-            .filter_map(|slot| slot)
-    }
+    // /// This this fragments packets and reset internal count to zero.
+    // fn drain(&mut self) -> impl Iterator<Item = PacketLocked> {
+    //     self.seq_count = 0;
+    //     std::mem::take(&mut self.fragments)
+    //         .into_iter()
+    //         .filter_map(|slot| slot)
+    // }
 
     /// Set a fragment.
-    fn set(&mut self, num: u32, packet: Box<Packet>) {
+    fn set(&mut self, num: u32, packet: PacketLocked) {
         let frag = &mut self.fragments[num as usize];
         if frag.is_none() {
             self.seq_count += 1;
@@ -821,10 +799,9 @@ impl Fragments {
     #[inline]
     fn into_bundle(self) -> Bundle {
         assert!(self.is_full());
-        let packets = self.fragments.into_iter()
+        self.fragments.into_iter()
             .map(|o| o.unwrap())
-            .collect();
-        Bundle::with_multiple(packets)
+            .collect()
     }
 
 }

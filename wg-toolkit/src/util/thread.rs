@@ -42,13 +42,13 @@ impl<T: Send + 'static> ThreadPoll<T> {
         thread::Builder::new()
             .name(format!("poll-worker-{num}"))
             .spawn(move || {
-                trace!("Spawned poll worker #{num}");
+                trace!("New poll worker #{num} ({})", std::any::type_name::<F>());
                 while let Some(value) = producer() {
                     if tx.send(value).is_err() {
                         break;
                     }
                 }
-                trace!("Terminated poll worker #{num}")
+                trace!("Kill poll worker #{num}")
             })
             .unwrap();
         

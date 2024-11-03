@@ -5,7 +5,7 @@ use rsa::{RsaPrivateKey, RsaPublicKey, pkcs8::{FromPublicKey, FromPrivateKey}, P
 
 // use wgtk::net::element::{ElementRegistry, ElementDef, ElementLength};
 use wgtk::net::bundle::BundleAssembler;
-use wgtk::net::packet::Packet;
+use wgtk::net::packet::Packet0;
 
 
 // PACKET:
@@ -88,7 +88,7 @@ fn serv(/*_elements: &*/) {
 
     loop {
 
-        let mut packet = Packet::new_boxed(true);
+        let mut packet = Packet0::new_boxed(true);
         let (len, addr) = sock.recv_from(&mut packet.data).unwrap();
         print!("[{}] Received {} bytes... ", addr, len);
 

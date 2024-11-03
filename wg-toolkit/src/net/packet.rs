@@ -1,39 +1,39 @@
 //! Packet structure definition with synchronization methods.
 
-use std::io::{Cursor, Read, Write, Seek};
 use std::collections::VecDeque;
-use std::fmt;
+use std::io::{Cursor, Read};
 use std::num::NonZero;
+use std::fmt;
 
-use byteorder::{ReadBytesExt, WriteBytesExt, LE};
+// use byteorder::{ReadBytesExt, WriteBytesExt, LE};
+
+use crate::util::io::{SliceCursor, WgReadExt, WgWriteExt};
 
 use crate::util::AsciiFmt;
 
 
 /// According to disassembly of WoT, outside of a channel, the max size if always
-/// `1500 - 28 = 1472`, this includes the 4-bytes prefix.
-pub const PACKET_MAX_LEN: usize = 1300;
-// pub const PACKET_MAX_LEN: usize = 1472;
+/// `1500 - 28 = 1472`, this includes the 4-bytes prefix. When prefix use is disabled
+/// then it's only 1468 that the interface is able to receive.
+pub const PACKET_CAP: usize = 1472;
 /// The length of the unknown 4-byte prefix.
 pub const PACKET_PREFIX_LEN: usize = 4;
 /// Flags are u16.
 pub const PACKET_FLAGS_LEN: usize = 2;
 /// Minimum length of a raw packet, containing prefix and flags.
-pub const PACKET_MIN_LEN: usize = PACKET_PREFIX_LEN + PACKET_FLAGS_LEN;
+pub const PACKET_HEADER_LEN: usize = PACKET_PREFIX_LEN + PACKET_FLAGS_LEN;
 
-/// Maximum size that can possibly taken by the footer.
+/// The reserved footer len that should be necessarily free at the end of a packet.
 /// - 8 for sequence range
-/// - 4 for first request offset
+/// - 2 for first request offset
+/// - 4 for flag 0x1000
 /// - 4 for sequence number
 /// - 1 for single acks count
 /// - 4 * 1 for at least one single acks
 /// - 4 for cumulative ack
-/// - 8 for indexed channel (not yet supported in sync data/state)
+/// - 8 for indexed channel
 /// - 4 for checksum
-pub const PACKET_MAX_FOOTER_LEN: usize = 8 + 4 + 4 + 1 + 4 + 4 + 8 + 4;
-
-/// The theoretical maximum length for the body, if maximum length is used by header + footer.
-pub const PACKET_MAX_BODY_LEN: usize = PACKET_MAX_LEN - PACKET_MIN_LEN - PACKET_MAX_FOOTER_LEN;
+pub const PACKET_RESERVED_FOOTER_LEN: usize = 8 + 2 + 4 + 4 + 1 + 4 + 4 + 8 + 4;
 
 
 /// Raw packet layout with only data and length. This structure provides functions for
@@ -45,119 +45,121 @@ pub const PACKET_MAX_BODY_LEN: usize = PACKET_MAX_LEN - PACKET_MIN_LEN - PACKET_
 /// The internal data is split in multiple slices that are accessible through the API:
 /// 
 /// - *Raw data*, it contains the full internal data with max data length, this should
-///   be used for receiving datagram from the network;
+///   be used for receiving datagram from the network.
 /// 
-/// - *Data*, it contains all the data up to the packet's length;
-/// 
-/// - *Body*, it contains all the data starting with the packet's flags up to the
-///   packet's length.
+/// - *Data*, it contains all the data up to the packet's length.
 /// 
 #[derive(Clone)]
-pub struct RawPacket {
-    /// Full raw data of the packet.
-    data: [u8; PACKET_MAX_LEN],
-    /// Length of the packet, must not be lower than minimum length which
-    /// contains the prefix and the flags.
-    len: usize,
+pub struct Packet {
+    /// Inner boxed data.
+    inner: Box<Inner>,
 }
 
-impl RawPacket {
+/// Internal packet data that is boxed.
+#[derive(Clone)]
+struct Inner {
+    /// Full raw data of the packet.
+    buf: [u8; PACKET_CAP],
+    /// Length of the packet, must not be lower than minimum length which contains the 
+    /// prefix and the flags. Stored as `u16` to save size, not much here but for
+    /// consistency with [`SyncPacket`] fields, and we don't need more.
+    len: u16,
+}
+
+impl Packet {
 
     #[inline]
     pub fn new() -> Self {
-        Self { 
-            data: [0; PACKET_MAX_LEN], 
-            len: PACKET_MIN_LEN,
+        Self {
+            inner: Box::new(Inner {
+                buf: [0; PACKET_CAP], 
+                len: PACKET_HEADER_LEN as u16,
+            })
         }
     }
 
     /// Reset this packet's length, flags and prefix.
     #[inline]
     pub fn reset(&mut self) {
-        self.len = PACKET_MIN_LEN;
-        self.data[..PACKET_MIN_LEN].fill(0);
+        self.inner.len = PACKET_HEADER_LEN as u16;
+        self.inner.buf[..PACKET_HEADER_LEN].fill(0);
     }
 
-    /// Get a slice to the full raw data, this means that this isn't 
-    /// constrained by the length of the packet.
+    /// Get a slice to the full raw data, this means that this isn't constrained by the 
+    /// length of the packet.
     #[inline]
-    pub fn raw_data(&self) -> &[u8] {
-        &self.data[..]
+    pub fn buf(&self) -> &[u8; PACKET_CAP] {
+        &self.inner.buf
     }
 
-    /// Get a mutable slice to the full raw data, this means that this isn't 
-    /// constrained by the length of the packet.
+    /// Get a mutable slice to the full raw data, this means that this isn't constrained 
+    /// by the length of the packet. The data length can be modified according to the 
+    /// changes in this mutable slice.
     /// 
     /// This mutable slice can be used to receive data from an UDP datagram.
     #[inline]
-    pub fn raw_data_mut(&mut self) -> &mut [u8] {
-        &mut self.data[..]
+    pub fn buf_mut(&mut self) -> &mut [u8; PACKET_CAP] {
+        &mut self.inner.buf
     }
 
-    /// Return the maximum size of a packet.
+    /// Return the length of this packet, never below [`PACKET_HEADER_LEN`].
     #[inline]
-    pub fn data_max_len(&self) -> usize {
-        self.data.len()
-    }
-
-    /// Return the length of this packet.
-    #[inline]
-    pub fn data_len(&self) -> usize {
-        self.len
-    }
-
-    /// Return the available length in this packet.
-    #[inline]
-    pub fn data_available_len(&self) -> usize {
-        self.data_max_len() - self.data_len()
+    pub fn len(&self) -> usize {
+        self.inner.len as usize
     }
 
     /// Set the length of this packet. The function panics if the length
     /// is not at least `PACKET_MIN_LEN` or at most `PACKET_MAX_LEN`.
     #[inline]
-    pub fn set_data_len(&mut self, len: usize) {
-        assert!(len >= PACKET_MIN_LEN, "given length too small");
-        assert!(len <= PACKET_MAX_LEN, "given length too high");
-        self.len = len;
+    pub fn set_len(&mut self, len: usize) {
+        assert!(len >= PACKET_HEADER_LEN, "given length too small");
+        assert!(len <= PACKET_CAP, "given length too high");
+        self.inner.len = len as u16;
+    }
+
+    /// Return the available length in this packet.
+    #[inline]
+    pub fn free(&self) -> usize {
+        PACKET_CAP - self.len()
     }
 
     /// Get a slice to the data, with the packet's length.
     /// 
     /// This slice can be used to send data as an UDP datagram for exemple.
     #[inline]
-    pub fn data(&self) -> &[u8] {
-        &self.data[..self.len]
+    pub fn slice(&self) -> &[u8] {
+        &self.inner.buf[..self.inner.len as usize]
     }
 
     /// Get a mutable slice to the data, with the packet's length.
     #[inline]
-    pub fn data_mut(&mut self) -> &mut [u8] {
-        &mut self.data[..self.len]
+    pub fn slice_mut(&mut self) -> &mut [u8] {
+        &mut self.inner.buf[..self.inner.len as usize]
     }
 
-    /// Return the maximum size of the body of a packet.
-    #[inline]
-    pub fn max_body_len(&self) -> usize {
-        self.data_max_len() - PACKET_PREFIX_LEN
-    }
+    // /// Return the maximum size of the body of a packet.
+    // #[inline]
+    // pub fn body_cap(&self) -> usize {
+    //     self.data_cap() - PACKET_PREFIX_LEN
+    // }
 
-    /// Return the length of this packet.
-    #[inline]
-    pub fn body_len(&self) -> usize {
-        self.data_len() - PACKET_PREFIX_LEN
-    }
+    // /// Return the length of this packet.
+    // #[inline]
+    // pub fn body_len(&self) -> usize {
+    //     self.data_len() - PACKET_PREFIX_LEN
+    // }
 
-    /// Get a slice to the data from after the prefix to the end.
-    #[inline]
-    pub fn body(&self) -> &[u8] {
-        &self.data[PACKET_PREFIX_LEN..self.len]
-    }
+    // /// Get a slice to the data from after the prefix to the end.
+    // #[inline]
+    // pub fn body(&self) -> &[u8] {
+    //     &self.data()[PACKET_PREFIX_LEN..]
+    // }
 
-    /// Get a mutable slice to the data from after the prefix to the end.
-    #[inline]
-    pub fn body_mut(&mut self) -> &mut [u8] {
-        &mut self.data[PACKET_PREFIX_LEN..self.len]
-    }
+    // /// Get a mutable slice to the data from after the prefix to the end.
+    // #[inline]
+    // pub fn body_mut(&mut self) -> &mut [u8] {
+    //     &mut self.data_mut()[PACKET_PREFIX_LEN..]
+    // }
 
     /// Grow the packet's data by a given amount of bytes, and return a
     /// mutable slice to the newly allocated data.
@@ -166,73 +168,22 @@ impl RawPacket {
     /// requested length.
     #[inline]
     pub fn grow(&mut self, len: usize) -> &mut [u8] {
-        assert!(self.data_available_len() >= len, "not enough available data");
-        let ptr = &mut self.data[self.len..][..len];
-        self.len += len;
+        assert!(len <= self.free(), "not enough available data");
+        let ptr = &mut self.inner.buf[self.inner.len as usize..][..len];
+        self.inner.len += len as u16;  // Safe to cast because of assert
         ptr
-    }
-
-    /// Grow the packet's data by a given amount of bytes, and return
-    /// a writer to the given data. This writer can be used to write
-    /// new data to the newly allocated data.
-    /// 
-    /// This function panics if the available length is smaller than
-    /// requested length.
-    #[inline]
-    pub fn grow_write(&mut self, len: usize) -> impl Write + Seek + '_ {
-        Cursor::new(self.grow(len))
-    }
-
-    /// Shrink the packet's data by a given amount of bytes, and return
-    /// a slice to the deallocated data. The slice is not mutable because
-    /// returned data is no longer contained in packet's data.
-    /// 
-    /// The discarded data is left untouched, which mean that you can 
-    /// rollback to the previous length to recover the data.
-    /// 
-    /// This function panics if the length after shrink is lower than
-    /// prefix (4 bytes) + flags (2) bytes.
-    #[inline]
-    pub fn shrink(&mut self, len: usize) -> &[u8] {
-        assert!(self.len - len >= PACKET_MIN_LEN, 
-            "not enough data to shrink, requested {} with only {} (min length: {PACKET_MIN_LEN})", 
-            len, self.len);
-        self.len -= len;
-        &self.data[self.len..][..len]
-    }
-
-    /// Shrink the packet's data by a given amount of bytes, and return
-    /// a reader to the freed data.
-    /// 
-    /// This function panics if the length after shrink is lower than
-    /// prefix (4 bytes) + flags (2) bytes.
-    #[inline]
-    pub fn shrink_read(&mut self, len: usize) -> impl Read + '_ {
-        Cursor::new(self.shrink(len))
     }
 
     /// Read the prefix of this packet. 
     #[inline]
     pub fn read_prefix(&self) -> u32 {
-        u32::from_le_bytes(self.data[..PACKET_PREFIX_LEN].try_into().unwrap())
+        u32::from_le_bytes(self.inner.buf[..PACKET_PREFIX_LEN].try_into().unwrap())
     }
 
     /// Write the prefix of this packet.
     #[inline]
     pub fn write_prefix(&mut self, prefix: u32) {
-        self.data[..PACKET_PREFIX_LEN].copy_from_slice(&prefix.to_le_bytes())
-    }
-
-    /// Read the flags of this packet.
-    #[inline]
-    pub fn read_flags(&self) -> u16 {
-        u16::from_le_bytes(self.data[PACKET_PREFIX_LEN..][..PACKET_FLAGS_LEN].try_into().unwrap())
-    }
-
-    /// Write the flags of this packet.
-    #[inline]
-    pub fn write_flags(&mut self, flags: u16) {
-        self.data[PACKET_PREFIX_LEN..][..PACKET_FLAGS_LEN].copy_from_slice(&flags.to_le_bytes())
+        self.inner.buf[..PACKET_PREFIX_LEN].copy_from_slice(&prefix.to_le_bytes())
     }
 
     /// Update the prefix of this packet according to the formula found in the assembly.
@@ -249,8 +200,8 @@ impl RawPacket {
     /// always use zero at the moment).
     pub fn update_prefix(&mut self, offset: u32) {
 
-        let p0 = u32::from_le_bytes(self.data[PACKET_PREFIX_LEN + 0..][..4].try_into().unwrap());
-        let p1 = u32::from_le_bytes(self.data[PACKET_PREFIX_LEN + 4..][..4].try_into().unwrap());
+        let p0 = u32::from_le_bytes(self.inner.buf[PACKET_PREFIX_LEN + 0..][..4].try_into().unwrap());
+        let p1 = u32::from_le_bytes(self.inner.buf[PACKET_PREFIX_LEN + 4..][..4].try_into().unwrap());
 
         let a = offset.wrapping_add(p0).wrapping_add(p1);
         let b = a << 13;
@@ -261,408 +212,82 @@ impl RawPacket {
 
     }
 
-}
-
-impl fmt::Debug for RawPacket {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("RawPacket")
-            .field("prefix", &format_args!("{:08X}", self.read_prefix()))
-            .field("flags", &format_args!("{:04X}", self.read_flags()))
-            .field("flags", &format_args!("{}", FlagsFmt(self.read_flags())))
-            .field("body", &format_args!("{}", AsciiFmt(&self.body()[2..])))
-            .field("len", &self.len)
-            .finish()
-    }
-}
-
-
-/// Represent a [`RawPacket`] with additional state. The additional state keeps
-/// track of different offsets in the packet's raw data. Like footer and first
-/// request element offsets. This structure also provides functions for
-/// synchronizing data from the state and vice-versa.
-/// 
-/// This structure only expose a single slice of data which contain the content
-/// data, starting after the flags and ending before the footer. To access more
-/// low-level slices you can should use the raw packet.
-#[derive(Clone)]
-pub struct Packet {
-    /// The internal raw packet used for data manipulation.
-    raw: RawPacket,
-    /// Offset of the footer when the packet is finalized or loaded. The footer
-    /// size if the difference between the raw packet's length and this footer
-    /// offset.
-    footer_offset: usize,
-    /// The offset of the first element (see bundle) that is also a request in 
-    /// the packet. If there are more requests in the packet, their offset is
-    /// written in a link manner in the N-1 element.
-    first_request_offset: usize,
-}
-
-impl Packet {
-
-    /// Create a new packet instance.
+    /// Read the flags of this packet.
     #[inline]
-    pub fn new() -> Self {
-        Self {
-            raw: RawPacket::new(),
-            footer_offset: PACKET_MIN_LEN,
-            first_request_offset: 0,
+    pub fn read_flags(&self) -> u16 {
+        u16::from_le_bytes(self.inner.buf[PACKET_PREFIX_LEN..][..PACKET_FLAGS_LEN].try_into().unwrap())
+    }
+
+    /// Write the flags of this packet.
+    #[inline]
+    pub fn write_flags(&mut self, flags: u16) {
+        self.inner.buf[PACKET_PREFIX_LEN..][..PACKET_FLAGS_LEN].copy_from_slice(&flags.to_le_bytes())
+    }
+
+    /// Read the configuration of this packet into an already existing configuration, 
+    /// this is practical if caller wants to stack all acks into the single dequeue.
+    pub fn read_config(&self, config: &mut PacketConfig) -> Result<(), PacketConfigError> {
+
+        let mut new = PacketConfig::new();
+        // We temporarily swap the two single acks dequeue, so that when decoding the new
+        // single acks will be pushed back after existing ones. If not successful we'll
+        // revert any pushed ack using the saved start length.
+        let start_len = config.single_acks.len();
+        // Note that technically, we just want to mem::take the config dequeue, but we
+        // use swap to completly avoid any drop logic (still need to check if relevant,
+        // because drop might statically know that new.single_acks is empty!).
+        std::mem::swap(&mut config.single_acks, &mut new.single_acks);
+        // Single acks are then pushed back after existing ones.
+        match new.read(self) {
+            Ok(()) => {
+                // Just overwrite with the new config!
+                *config = new;
+                Ok(())
+            }
+            Err(e) => {
+                // Swap back and revert any change.
+                std::mem::swap(&mut config.single_acks, &mut new.single_acks);
+                config.single_acks.truncate(start_len);
+                Err(e)
+            }
+        }
+
+    }
+
+    /// Read the configuration of this packet and returns it.
+    pub fn read_config_locked_ref(&self) -> Result<PacketLockedRef<'_>, PacketConfigError> {
+        let mut config = PacketConfig::new();
+        config.read(self)?;
+        Ok(PacketLockedRef { packet: self, config })
+    }
+
+    /// Read the configuration of this packet, and lock the packet with its configuration
+    /// if successful, if not successful the packet and the error are returned.
+    pub fn read_config_locked(self) -> Result<PacketLocked, (PacketConfigError, Self)> {
+        let mut config = PacketConfig::new();
+        match config.read(&self) {
+            Ok(()) => Ok(PacketLocked { packet: self, config }),
+            Err(e) => Err((e, self))
         }
     }
 
-    /// Create a new packet instance on the heap and returns the box containing it.
-    pub fn new_boxed() -> Box<Self> {
-        Box::new(Self::new())
-    }
-
-    /// Reset this packet's length, flags and prefix.
-    #[inline]
-    pub fn reset(&mut self) {
-        self.raw.reset();
-        self.footer_offset = PACKET_MIN_LEN;
-        self.first_request_offset = 0;
-    }
-
-    /// Return a shared reference to the internal raw packet.
-    #[inline]
-    pub fn raw(&self) -> &RawPacket {
-        &self.raw
-    }
-
-    /// Return a mutable reference to the internal raw packet.
-    /// 
-    /// **You should** be really careful when manipulating the internal data and
-    /// always prefer using methods of this structure over manipulating the raw
-    /// data from external modules.
-    #[inline]
-    pub fn raw_mut(&mut self) -> &mut RawPacket {
-        &mut self.raw
-    }
-
-    /// Return the maximum content length.
-    #[inline]
-    pub fn content_max_len(&self) -> usize {
-        // Subtract length of prefix + flags + max footer.
-        self.raw.data_max_len() - PACKET_MIN_LEN - PACKET_MAX_FOOTER_LEN
-    }
-
-    /// Return the length of the content.
-    #[inline]
-    pub fn content_len(&self) -> usize {
-        self.footer_offset - PACKET_MIN_LEN
-    }
-
-    /// Return the available body length for writing elements. The rest of the
-    /// length might be used for the footer.
-    #[inline]
-    pub fn content_available_len(&self) -> usize {
-        self.content_max_len() - self.content_len()
-    }
-
-    /// Return a slice to the content of this packet. The content starts after
-    /// the flags and finish before the footer.
-    #[inline]
-    pub fn content(&self) -> &[u8] {
-        &self.raw.raw_data()[PACKET_MIN_LEN..self.footer_offset]
-    }
-
-    /// Return a mutable slice to the content of this packet. The content starts
-    /// after the flags and finish before the footer.
-    #[inline]
-    pub fn content_mut(&mut self) -> &mut [u8] {
-        &mut self.raw.raw_data_mut()[PACKET_MIN_LEN..self.footer_offset]
-    }
-
-    /// Grow this packet's content by the given size. You must ensure that there
-    /// is enough space for such size, you can obtain remaining length using the 
-    /// `content_available_len` function.
-    /// 
-    /// Note that because growing the body might overwrite the footer, this
-    /// function reset the footer to zero length. Calling `footer_len()` after
-    /// this function returns 0.
-    #[inline]
-    pub fn grow(&mut self, len: usize) -> &mut [u8] {
-        assert!(self.content_available_len() >= len, "not enough available data");
-        // Reset length to footer offset, so we overwrite the footer.
-        self.raw.set_data_len(self.footer_offset);
-        // Advance the footer by the same amount raw.grow will do.
-        self.footer_offset += len;
-        // Grow should not panic because we checked available length.
-        self.raw.grow(len)
-    }
-
-    /// Grow this packet's content by the given size and return a writer to the
-    /// location to write. See `grow` function for more information.
-    #[inline]
-    pub fn grow_write(&mut self, len: usize) -> impl Write + '_ {
-        Cursor::new(self.grow(len))
-    }
-    
-    /// Return the length of the footer. It should not exceed `PACKET_MAX_FOOTER_LEN`.
-    #[inline]
-    pub fn footer_len(&self) -> usize {
-        self.raw.data_len() - self.footer_offset
-    }
-
-    /// Return the available length remaining in the footer.
-    #[inline]
-    pub fn footer_available_len(&self) -> usize {
-        PACKET_MAX_FOOTER_LEN - self.footer_len()
-    }
-
-    /// Return the offset of the next request element in this packet. Because
-    /// this offset cannot be equal to 0 or 1 (which points to packet's flags),
-    /// such values are sentinels that fill returns `None`.
-    #[inline]
-    pub fn first_request_offset(&self) -> Option<usize> {
-        (self.first_request_offset >= PACKET_FLAGS_LEN).then_some(self.first_request_offset)
-    }
-
-    /// Set the first offset of the next request element in this packet. Refer
-    /// to `first_request_offset` function for limitations.
-    #[inline]
-    pub fn set_first_request_offset(&mut self, offset: usize) {
-        assert!(offset >= PACKET_FLAGS_LEN, "invalid request offset");
-        self.first_request_offset = offset;
-    }
-
-    /// Clear the first request offset.
-    #[inline]
-    pub fn clear_first_request_offset(&mut self) {
-        self.first_request_offset = 0;
-    }
-
-    /// Write the given configuration to this packet's flags and footer. This function 
-    /// takes a configuration that will be applied to the packet, the configuration must
-    /// be mutable because the function will try to put the maximum number of
-    /// acks in the footer, the remaining acks will be left over in the config.
+    /// Write the given configuration to this packet, the configuration is given with
+    /// a mutable reference because the configuration will try to put the maximum number
+    /// of single acks possible but it will left remaining ones inside.
     pub fn write_config(&mut self, config: &mut PacketConfig) {
-
-        // If the footer is already filled
-        if self.footer_offset < self.raw.data_len() {
-            self.raw.set_data_len(self.footer_offset);
-        }
-
-        // Note that in this function we are intentionally using the function 
-        // 'self.raw.grow[_write]'. This will cause the raw length to grow 
-        // without the footer offset, which will increase the footer length.
-
-        let mut flags = 0u16;
-
-        if config.reliable() { flags |= flags::IS_RELIABLE; }
-        if config.on_channel() { flags |= flags::ON_CHANNEL; }
-        if config.create_channel() { flags |= flags::CREATE_CHANNEL; }
-        
-        if let Some((first_num, last_num)) = config.sequence_range() {
-            flags |= flags::IS_FRAGMENT;
-            let mut cursor = self.raw.grow_write(8);
-            cursor.write_u32::<LE>(first_num).unwrap();
-            cursor.write_u32::<LE>(last_num).unwrap();
-        }
-
-        if let Some(request_offset) = self.first_request_offset() {
-            flags |= flags::HAS_REQUESTS;
-            self.raw.grow_write(2).write_u16::<LE>(request_offset as u16).unwrap();
-        }
-
-        if let Some(val) = config.unk_1000() {
-            flags |= flags::UNK_1000;
-            self.raw.grow_write(4).write_u32::<LE>(val).unwrap();
-        }
-
-        if config.reliable() || config.sequence_range().is_some() {
-            flags |= flags::HAS_SEQUENCE_NUMBER;
-            self.raw.grow_write(4).write_u32::<LE>(config.sequence_num()).unwrap();
-        }
-
-        if !config.single_acks().is_empty() {
-
-            // Compute the remaining footer length for acks.
-            let available_len = self.footer_available_len()
-                - if config.cumulative_ack().is_some() { 4 } else { 0 }
-                - if config.indexed_channel().is_some() { 8 } else { 0 }
-                - if config.has_checksum() { 4 } else { 0 }
-                - 1; // Acks count
-
-            if available_len >= 4 {
-
-                flags |= flags::HAS_ACKS;
-
-                let mut count = 0;
-                while let Some(ack) = config.single_acks_mut().pop_front() {
-                    self.raw.grow_write(4).write_u32::<LE>(ack).unwrap();
-                    count += 1;
-                    if available_len < 4 {
-                        break;
-                    }
-                }
-    
-                debug_assert!(count != 0);
-                self.raw.grow(1)[0] = count as _;
-
-            }
-
-        }
-
-        if let Some(num) = config.cumulative_ack() {
-            flags |= flags::HAS_CUMULATIVE_ACK;
-            self.raw.grow_write(4).write_u32::<LE>(num).unwrap();
-        }
-
-        if let Some((id, version)) = config.indexed_channel() {
-            flags |= flags::INDEXED_CHANNEL;
-            let mut cursor = self.raw.grow_write(8);
-            cursor.write_u32::<LE>(version.get()).unwrap();
-            cursor.write_u32::<LE>(id.get()).unwrap();
-        }
-
-        if config.has_checksum() {
-            flags |= flags::HAS_CHECKSUM;
-        }
-
-        // Finally, write flags just before computing checksum (if needed).
-        self.raw.write_flags(flags);
-
-        // If checksum enabled, compute the checksum of the whole body of the packet,
-        // which range from flags to the end of the footer. The checksum will be
-        // appended to the footer after computing the checksum.
-        if config.has_checksum() {
-            let checksum = calc_checksum(Cursor::new(self.raw.body()));
-            self.raw.grow_write(4).write_u32::<LE>(checksum).unwrap();
-        }
-
+        config.write(self);
     }
 
-    /// Read the configuration from this packet's flags and footer.
-    /// 
-    /// *Note that* the given length must account for the prefix.
-    ///
-    /// *If this function returns an error, the integrity of the configuration is not 
-    /// guaranteed.*
-    pub fn read_config(&mut self, len: usize, config: &mut PacketConfig) -> Result<(), PacketConfigError> {
-
-        // We set the length of the raw packet, it allow us to use 
-        // 'shrink_read' on it to read each footer element.
-        self.raw.set_data_len(len);
-
-        // Start by reading flags.
-        let flags = self.raw.read_flags();
-
-        // This list of flags contains all flags supported by this function.
-        const KNOWN_FLAGS: u16 =
-            flags::HAS_CHECKSUM |
-            flags::INDEXED_CHANNEL |
-            flags::HAS_CUMULATIVE_ACK |
-            flags::HAS_ACKS |
-            flags::HAS_SEQUENCE_NUMBER |
-            flags::UNK_1000 |
-            flags::HAS_REQUESTS |
-            flags::IS_FRAGMENT |
-            flags::ON_CHANNEL |
-            flags::IS_RELIABLE |
-            flags::CREATE_CHANNEL;
-
-        if flags & !KNOWN_FLAGS != 0 {
-            return Err(PacketConfigError::UnknownFlags(flags & !KNOWN_FLAGS));
-        }
-
-        if flags & flags::HAS_CHECKSUM != 0 {
-
-            // We shrink the packet to read the checksum and then compute the checksum 
-            // from the body data, which no longer contains the checksum itself!
-            let expected_checksum = self.raw.shrink_read(4).read_u32::<LE>().unwrap();
-            let computed_checksum = calc_checksum(Cursor::new(self.raw.body()));
-
-            if expected_checksum != computed_checksum {
-                return Err(PacketConfigError::InvalidChecksum)
-            }
-
-        }
-
-        if flags & flags::INDEXED_CHANNEL != 0 {
-            let mut cursor = self.raw.shrink_read(8);
-            let version = cursor.read_u32::<LE>().unwrap();
-            let id = cursor.read_u32::<LE>().unwrap();
-            if version != 0 && id != 0 {
-                config.set_indexed_channel(NonZero::new(id).unwrap(), NonZero::new(version).unwrap());
-            } else {
-                config.clear_indexed_channel();
-            }
-        } else {
-            config.clear_indexed_channel();
-        }
-
-        if flags & flags::HAS_CUMULATIVE_ACK != 0 {
-            config.set_cumulative_ack(self.raw.shrink_read(4).read_u32::<LE>().unwrap());
-        } else {
-            config.clear_cumulative_ack();
-        }
-
-        if flags & flags::HAS_ACKS != 0 {
-
-            let count = self.raw.shrink(1)[0];
-            if count == 0 {
-                return Err(PacketConfigError::Corrupted)
-            }
-
-            for _ in 0..count {
-                config.single_acks_mut().push_back(self.raw.shrink_read(4).read_u32::<LE>().unwrap());
-            }
-
-        }
-
-        // let mut has_sequence_num = false;
-        if flags & flags::HAS_SEQUENCE_NUMBER != 0 {
-            config.set_sequence_num(self.raw.shrink_read(4).read_u32::<LE>().unwrap());
-        } else {
-            config.set_sequence_num(0);
-        }
-
-        if flags & flags::UNK_1000 != 0 {
-            config.set_unk_1000(self.raw.shrink_read(4).read_u32::<LE>().unwrap());
-        } else {
-            config.clear_unk_1000();
-        }
-
-        config.set_create_channel(flags & flags::CREATE_CHANNEL != 0);
-
-        if flags & flags::HAS_REQUESTS != 0 {
-            let offset = self.raw.shrink_read(2).read_u16::<LE>().unwrap() as usize;
-            if offset < PACKET_FLAGS_LEN {
-                return Err(PacketConfigError::Corrupted)
-            } else {
-                self.set_first_request_offset(offset);
-            }
-        } else {
-            self.clear_first_request_offset();
-        }
-
-        if flags & flags::IS_FRAGMENT != 0 {
-            let mut cursor = self.raw.shrink_read(8);
-            let first_num = cursor.read_u32::<LE>().unwrap();
-            let last_num = cursor.read_u32::<LE>().unwrap();
-            if first_num >= last_num {
-                return Err(PacketConfigError::Corrupted)
-            } else {
-                config.set_sequence_range(first_num, last_num);
-            }
-        } else {
-            config.clear_sequence_range();
-        }
-
-        config.set_reliable(flags & flags::IS_RELIABLE != 0);
-        config.set_on_channel(flags & flags::ON_CHANNEL != 0);
-
-        // Now that we shrunk all the footer, set the footer offset.
-        self.footer_offset = self.raw.data_len();
-        // Rollback the length.
-        self.raw.set_data_len(len);
-
-        // Check that the footer length is coherent.
-        debug_assert!(self.footer_len() <= PACKET_MAX_FOOTER_LEN);
-
-        Ok(())
-
+    /// Write the given configuration to this packet, and then return a packet locked 
+    /// with this configuration, this is used to guarantee packet integrity. Note that
+    /// the configuration is still given as mutable because it will try to put the 
+    /// maximum number of acks into the packet, remaining ones will be left in place
+    /// and the configuration in the locked packet will be a clone without single acks.
+    pub fn write_config_locked(mut self, config: &mut PacketConfig) -> PacketLocked {
+        self.write_config(&mut *config);
+        let mut config = config.clone();
+        config.single_acks = VecDeque::new();  // Hope this will optimize out the clone.
+        PacketLocked { packet: self, config }
     }
 
 }
@@ -670,85 +295,155 @@ impl Packet {
 impl fmt::Debug for Packet {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Packet")
-            .field("content", &format_args!("{}", AsciiFmt(self.content())))
-            .field("content_len", &self.content_len())
-            .field("footer_len", &self.footer_len())
-            .field("first_request_offset", &self.first_request_offset())
+            .field("prefix", &format_args!("{:08X}", self.read_prefix()))
+            .field("flags", &format_args!("{:04X}", self.read_flags()))
+            .field("flags", &format_args!("{}", FlagsFmt(self.read_flags())))
+            .field("body", &format_args!("{}", AsciiFmt(&self.slice()[PACKET_HEADER_LEN..])))
+            .field("len", &self.inner.len)
             .finish()
     }
 }
 
 
-/// Describe a packet configuration that can be used when synchronizing data or 
-/// state of a packet.
+/// Represent a configuration for flags their footer values to write or read on/from a
+/// packet's data.
 #[derive(Debug, Clone)]
 pub struct PacketConfig {
+    /// Flags that are written or read from the packet, defining which of the following
+    /// fields are used or not, this avoids using boolean or options.
+    flags: u16,
+    /// The offset of the footer within the packet, this should be below or equal to the
+    /// packet's length. When reading configuration, it will be set to the deduced footer
+    /// offset, where the decoding ended, and when writing configuration this will be set
+    /// to the packet length before writing the footer.
+    footer_offset: u16,
+    /// The content offset of the first element (see bundle) that is also a request in 
+    /// the packet. Zero is just after flags. 
+    /// 
+    /// Used when `flags::HAS_REQUESTS` is set.
+    first_request_offset: u16,
     /// The sequence number of this packet, it is used if reliable mode is enabled
     /// **and/or** if the packet is a fragment of a chain of packet.
+    /// 
+    /// Used when `flags::IS_RELIABLE` and/or `flags::IS_FRAGMENT` is set.
     sequence_num: u32,
     /// If this packet is a fragment (defined just after), this contains the
     /// sequence number of the first packet in the chain.
     /// 
-    /// A packet is considered to be a fragment of a chain only if `seq_first < 
-    /// seq_last`.
+    /// Used when `flags::IS_FRAGMENT` is set.
     sequence_first_num: u32,
-    /// If this packet is a fragment (defined in `seq_first` doc), this contains 
-    /// the sequence number of the last packet in the chain.
-    sequence_last_num: u32,
-    /// Set to true if the sender of this packet requires an acknowledgment from
-    /// the receiver upon successful receipt of this packet.
-    reliable: bool,
-    /// Set to true when sending the first packet on a newly created channel.
-    create_channel: bool,
-    /// The cumulative ack number. This number is sent for acknowledging that
-    /// all sequence numbers up to (but excluding) this ack have been received.
+    /// If this packet is a fragment (defined in [`Self::`seq_first``]), this contains 
+    /// the sequence number of the last packet in the chain (included).
     /// 
-    /// The cumulative ack 0 is apparently used when opening a channel.
-    cumulative_ack: Option<u32>,
-    /// Individual acks to send.
+    /// Used when `flags::IS_FRAGMENT` is set.
+    sequence_last_num: u32,
+    /// The cumulative ack number. This number is sent for acknowledging that all 
+    /// sequence numbers up to (but excluding) this ack have been received. Exclusively
+    /// used on channels.
+    /// 
+    /// Used when `flags::HAS_CUMULATIVE_ACK` is set.
+    cumulative_ack: u32,
+    /// A queue of single acks to put on the packet if space allows it, there should be
+    /// at least one ack put on the packet, acks are extracted from the front of dequeue.
     single_acks: VecDeque<u32>,
-    /// Set to true when this packet is being transferred on a channel.
-    on_channel: bool,
-    /// Indexed channel is a combination of the channel id and version.
-    indexed_channel: Option<(NonZero<u32>, NonZero<u32>)>,
-    /// Enable or disable checksum.
-    has_checksum: bool,
-    /// The usage of this value and flag 0x1000 is unknown. It will be
-    /// renamed in the future if its purpose is discovered.
-    unk_1000: Option<u32>,
+    /// Channel index when indexed, never zero if so.
+    /// 
+    /// Used when `flags::INDEXED_CHANNEL` is set. 
+    channel_index: NonZero<u32>,
+    /// Channel version when indexed, never zero if so.
+    /// 
+    /// Used when `flags::INDEXED_CHANNEL` is set. 
+    channel_version: NonZero<u32>,
+    /// Value used for the unknown 0x1000 flag's value.
+    /// 
+    /// Used when `flags::UNK1000` is set.
+    unk_1000: u32,
 }
 
 impl PacketConfig {
 
-    /// Create a new packet configuration with default values.
-    #[inline]
+    /// Create a new packet config with every flag disabled, so no footer.
     pub fn new() -> Self {
         Self {
+            flags: 0,
+            footer_offset: 0,
+            first_request_offset: 0,
             sequence_num: 0,
             sequence_first_num: 0,
             sequence_last_num: 0,
-            reliable: false,
-            create_channel: false,
-            cumulative_ack: None,
+            cumulative_ack: 0,
             single_acks: VecDeque::new(),
-            on_channel: false,
-            indexed_channel: None,
-            has_checksum: false,
-            unk_1000: None,
+            channel_index: NonZero::new(1).unwrap(),
+            channel_version: NonZero::new(1).unwrap(),
+            unk_1000: 0,
         }
     }
 
-    /// Returns the sequence number of this packet. It is actually used only if
-    /// this packet is marked as reliable **and/or** if the packet is a fragment.
-    /// 
-    /// It is set to 0 by default.
+    #[inline]
+    fn has_flags(&self, flags: u16) -> bool {
+        self.flags & flags == flags
+    }
+
+    #[inline]
+    fn enable_flags(&mut self, flags: u16) {
+        self.flags |= flags;
+    }
+
+    #[inline]
+    fn disable_flags(&mut self, flags: u16) {
+        self.flags &= !flags;
+    }
+
+    #[inline]
+    fn switch_flags(&mut self, flags: u16, enabled: bool) {
+        if enabled {
+            self.enable_flags(flags);
+        } else {
+            self.disable_flags(flags);
+        }
+    }
+
+    /// The offset of the footer within the packet, this should be below or equal to the
+    /// packet's length. When reading configuration, it will be set to the deduced footer
+    /// offset, where the decoding ended, and when writing configuration this will be set
+    /// to the packet length before writing the footer.
+    #[inline]
+    pub fn footer_offset(&self) -> usize {
+        self.footer_offset as usize
+    }
+
+    /// Return the offset of the next request element in this packet. The offset returned
+    /// is relative to the packet's content space, so it starts after flags.
+    #[inline]
+    pub fn first_request_offset(&self) -> Option<usize> {
+        self.has_flags(flags::HAS_REQUESTS)
+            .then_some(self.first_request_offset as usize)
+    }
+
+    /// Set the first offset of the next request element in this packet. 
+    /// Refer to [`Self::first_request_offset`] function for limitations.
+    #[inline]
+    pub fn set_first_request_offset(&mut self, offset: usize) {
+        assert!(offset <= u16::MAX as usize);
+        self.enable_flags(flags::HAS_REQUESTS);
+        self.first_request_offset = offset as u16;
+    }
+
+    /// Clear the first request offset.
+    #[inline]
+    pub fn clear_first_request_offset(&mut self) {
+        self.disable_flags(flags::HAS_REQUESTS);
+        self.first_request_offset = 0;
+    }
+
+    /// Return the sequence number of the packet, it is used if reliable mode is enabled
+    /// and/or if the packet is a fragment of a chain of packet.
     #[inline]
     pub fn sequence_num(&self) -> u32 {
         self.sequence_num
     }
 
-    /// Set the sequence number of this packet. Read `sequence_num` doc for 
-    /// explanation of the usage of the sequence number.
+    /// See [`Self::sequence_num()`].
     #[inline]
     pub fn set_sequence_num(&mut self, num: u32) {
         self.sequence_num = num;
@@ -758,11 +453,8 @@ impl PacketConfig {
     /// of a packet chain. Both bounds are included.
     #[inline]
     pub fn sequence_range(&self) -> Option<(u32, u32)> {
-        if self.sequence_first_num < self.sequence_last_num {
-            Some((self.sequence_first_num, self.sequence_last_num))
-        } else {
-            None
-        }
+        self.has_flags(flags::IS_FRAGMENT)
+            .then_some((self.sequence_first_num, self.sequence_last_num))
     }
 
     /// Set the range of sequence number if this packet is a fragment of a
@@ -775,6 +467,7 @@ impl PacketConfig {
     #[inline]
     pub fn set_sequence_range(&mut self, first: u32, last: u32) {
         assert!(first < last, "invalid range");
+        self.enable_flags(flags::IS_FRAGMENT);
         self.sequence_first_num = first;
         self.sequence_last_num = last;
     }
@@ -783,54 +476,59 @@ impl PacketConfig {
     /// is no longer a fragment in a packet chain.
     #[inline]
     pub fn clear_sequence_range(&mut self) {
-        self.sequence_first_num = 0;
+        self.disable_flags(flags::IS_FRAGMENT);
+        self.sequence_first_num = 0; // Set zero, just for sanity.
         self.sequence_last_num = 0;
     }
 
     /// Returns true if the sender of this packet requires an acknowledgment from 
-    /// the receiver upon successful receipt of this packet.
+    /// the receiver upon successful reception of this packet. This will work both
+    /// off-channel and on-channel, this requires that the 
     #[inline]
     pub fn reliable(&self) -> bool {
-        self.reliable
+        self.has_flags(flags::IS_RELIABLE)
     }
 
-    /// Read `reliable` doc for explanation of this value.
+    /// Read [`Self::reliable()`] doc for explanation of this value.
     #[inline]
     pub fn set_reliable(&mut self, reliable: bool) {
-        self.reliable = reliable
+        self.switch_flags(flags::IS_RELIABLE, reliable);
     }
 
     /// Returns true if the create channel flag should be enabled.
     #[inline]
     pub fn create_channel(&self) -> bool {
-        self.create_channel
+        self.has_flags(flags::CREATE_CHANNEL)
     }
 
     /// Read `create_channel` doc for explanation of this value.
     #[inline]
     pub fn set_create_channel(&mut self, create_channel: bool) {
-        self.create_channel = create_channel
+        self.switch_flags(flags::CREATE_CHANNEL, create_channel);
     }
 
     /// This number is sent for acknowledging that all sequence numbers up to (but 
     /// excluding) this ack have been received.
     #[inline]
     pub fn cumulative_ack(&self) -> Option<u32> {
-        self.cumulative_ack
+        self.has_flags(flags::HAS_CUMULATIVE_ACK)
+            .then_some(self.cumulative_ack)
     }
 
     /// Set the cumulative ack if this packet. Because this value is an excluded
     /// bound, you should not set this to 0. If you want to reset the cumulative
     /// ack, use `clear_cumulative_ack` instead.
     #[inline]
-    pub fn set_cumulative_ack(&mut self, num: u32) {
-        self.cumulative_ack = Some(num);
+    pub fn set_cumulative_ack(&mut self, sequence_num: u32) {
+        self.enable_flags(flags::HAS_CUMULATIVE_ACK);
+        self.cumulative_ack = sequence_num;
     }
 
     /// Clear the cumulative ack from this packet.
     #[inline]
     pub fn clear_cumulative_ack(&mut self) {
-        self.cumulative_ack = None;
+        self.disable_flags(flags::HAS_CUMULATIVE_ACK);
+        self.cumulative_ack = 0;  // Just for sanity...
     }
 
     /// Return a reference to the internal dequeue containing single acks to add. We use
@@ -849,59 +547,343 @@ impl PacketConfig {
 
     #[inline]
     pub fn on_channel(&self) -> bool {
-        self.on_channel
+        self.has_flags(flags::ON_CHANNEL)
     }
 
     #[inline]
     pub fn set_on_channel(&mut self, on_channel: bool) {
-        self.on_channel = on_channel;
+        self.switch_flags(flags::ON_CHANNEL, on_channel);
     }
 
     /// Return the indexed channel, if existing, using tuple `(id, version)`.
     #[inline]
     pub fn indexed_channel(&self) -> Option<(NonZero<u32>, NonZero<u32>)> {
-        self.indexed_channel
+        self.has_flags(flags::INDEXED_CHANNEL)
+            .then_some((self.channel_index, self.channel_version))
     }
 
     #[inline]
     pub fn set_indexed_channel(&mut self, index: NonZero<u32>, version: NonZero<u32>) {
-        self.indexed_channel = Some((index, version))
+        self.enable_flags(flags::INDEXED_CHANNEL);
+        self.channel_index = index;
+        self.channel_version = version;
     }
 
     #[inline]
     pub fn clear_indexed_channel(&mut self) {
-        self.indexed_channel = None;
+        self.disable_flags(flags::INDEXED_CHANNEL);
     }
 
     #[inline]
     pub fn has_checksum(&self) -> bool {
-        self.has_checksum
+        self.has_flags(flags::HAS_CHECKSUM)
     }
 
     #[inline]
-    pub fn set_checksum(&mut self, enabled: bool) {
-        self.has_checksum = enabled;
+    pub fn set_has_checksum(&mut self, enabled: bool) {
+        self.switch_flags(flags::HAS_CHECKSUM, enabled);
     }
 
     /// The usage of this value and flag 0x1000 is unknown. It will be
     /// renamed in the future if its purpose is discovered.
     #[inline]
     pub fn unk_1000(&self) -> Option<u32> {
-        self.unk_1000
+        self.has_flags(flags::UNK_1000).then_some(self.unk_1000)
     }
 
     /// The usage of this value and flag 0x1000 is unknown. It will be
     /// renamed in the future if its purpose is discovered.
     #[inline]
     pub fn set_unk_1000(&mut self, val: u32) {
-        self.unk_1000 = Some(val);
+        self.enable_flags(flags::UNK_1000);
+        self.unk_1000 = val;
     }
 
     /// The usage of this value and flag 0x1000 is unknown. It will be
     /// renamed in the future if its purpose is discovered.
     #[inline]
     pub fn clear_unk_1000(&mut self) {
-        self.unk_1000 = None;
+        self.disable_flags(flags::UNK_1000);
+        self.unk_1000 = 0;
+    }
+
+    /// Read the configuration from the packet. **Be careful! If not successful, the 
+    /// state of this config is not guaranteed (single acks could not be deleted).**
+    fn read(&mut self, packet: &Packet) -> Result<(), PacketConfigError> {
+
+        // Create a new packet config that we'll push if read is successful.
+        self.flags = packet.read_flags();
+
+        // Create a cursor to read data from the end, we skip the header so that any
+        // read of before the slice is error and so return packet corrupted error.
+        let mut data = SliceCursor::new(&packet.slice()[PACKET_HEADER_LEN..]);
+
+        // This list of flags contains all flags supported by this function.
+        const KNOWN_FLAGS: u16 =
+            flags::HAS_CHECKSUM |
+            flags::INDEXED_CHANNEL |
+            flags::HAS_CUMULATIVE_ACK |
+            flags::HAS_ACKS |
+            flags::HAS_SEQUENCE_NUMBER |
+            flags::UNK_1000 |
+            flags::HAS_REQUESTS |
+            flags::IS_FRAGMENT |
+            flags::ON_CHANNEL |
+            flags::IS_RELIABLE |
+            flags::CREATE_CHANNEL;
+
+        if self.flags & !KNOWN_FLAGS != 0 {
+            return Err(PacketConfigError::UnknownFlags(self.flags & !KNOWN_FLAGS));
+        }
+
+        if self.has_flags(flags::HAS_CHECKSUM) {
+
+            // We shrink the packet to read the checksum and then compute the checksum 
+            // from the body data, which no longer contains the checksum itself!
+            let expected_checksum = data.pop_back_read(4)
+                .ok_or(PacketConfigError::Corrupted)?
+                .read_u32().unwrap();
+
+            // Compute checksum, containing flags up to, but excluding, the checksum (-4).
+            let computed_checksum = calc_checksum(Cursor::new(&packet.slice()[PACKET_PREFIX_LEN..packet.len() - 4]));
+
+            if expected_checksum != computed_checksum {
+                return Err(PacketConfigError::InvalidChecksum)
+            }
+
+        }
+
+        if self.has_flags(flags::INDEXED_CHANNEL) {
+
+            let mut cursor = data.pop_back_read(8).ok_or(PacketConfigError::Corrupted)?;
+            let version = cursor.read_u32().unwrap();
+            let index = cursor.read_u32().unwrap();
+
+            self.channel_index = NonZero::new(index).ok_or(PacketConfigError::Corrupted)?;
+            self.channel_version = NonZero::new(version).ok_or(PacketConfigError::Corrupted)?;
+
+        }
+
+        if self.has_flags(flags::HAS_CUMULATIVE_ACK) {
+            self.cumulative_ack = data.pop_back_read(4)
+                .ok_or(PacketConfigError::Corrupted)?
+                .read_u32().unwrap();
+        }
+
+        if self.has_flags(flags::HAS_ACKS) {
+            
+            let count = data.pop_back(1).ok_or(PacketConfigError::Corrupted)?[0];
+            if count == 0 {
+                return Err(PacketConfigError::Corrupted)
+            }
+
+            for _ in 0..count {
+                let ack = data.pop_back_read(4)
+                    .ok_or(PacketConfigError::Corrupted)?
+                    .read_u32().unwrap();
+                self.single_acks.push_back(ack);
+            }
+
+        }
+
+        if self.has_flags(flags::HAS_SEQUENCE_NUMBER) {
+            // NOTE: This will be really used if IS_RELIABLE or IS_FRAGMENT.
+            self.sequence_num = data.pop_back_read(4)
+                .ok_or(PacketConfigError::Corrupted)?
+                .read_u32().unwrap();
+        }
+
+        if self.has_flags(flags::UNK_1000) {
+            self.unk_1000 = data.pop_back_read(4)
+                .ok_or(PacketConfigError::Corrupted)?
+                .read_u32().unwrap();
+        }
+
+        if self.has_flags(flags::HAS_REQUESTS) {
+            
+            self.first_request_offset = data.pop_back_read(2)
+                .ok_or(PacketConfigError::Corrupted)?
+                .read_u16().unwrap();
+
+            if self.first_request_offset < PACKET_FLAGS_LEN as u16 {
+                return Err(PacketConfigError::Corrupted);
+            } else {
+                self.first_request_offset -= PACKET_FLAGS_LEN as u16;
+            }
+
+        }
+
+        if self.has_flags(flags::IS_FRAGMENT) {
+            
+            let mut cursor = data.pop_back_read(8).ok_or(PacketConfigError::Corrupted)?;
+            self.sequence_first_num = cursor.read_u32().unwrap();
+            self.sequence_last_num = cursor.read_u32().unwrap();
+            
+            if self.sequence_first_num >= self.sequence_last_num {
+                return Err(PacketConfigError::Corrupted)
+            }
+
+        }
+        
+        // Because the data don't include the header we add it to the remaining length.
+        self.footer_offset = (PACKET_HEADER_LEN + data.len()) as u16;
+
+        Ok(())
+
+    }
+
+    /// Write the current configuration to the given packet, the footers will be written
+    /// after the packet length, growing it. The free data length should also be greater
+    /// or equal to `PACKET_MIN_FOOTER_LEN`.
+    fn write(&mut self, packet: &mut Packet) {
+
+        debug_assert!(packet.len() >= PACKET_HEADER_LEN);
+        debug_assert!(packet.free() >= PACKET_RESERVED_FOOTER_LEN);
+
+        self.footer_offset = packet.len() as u16;
+
+        // Min footer += 8
+        if let Some((first_num, last_num)) = self.sequence_range() {
+            let mut cursor = packet.grow(8);
+            cursor.write_u32(first_num).unwrap();
+            cursor.write_u32(last_num).unwrap();
+        }
+
+        // Min footer += 2
+        if let Some(first_request_offset) = self.first_request_offset() {
+            packet.grow(2).write_u16((first_request_offset + PACKET_FLAGS_LEN) as u16).unwrap();
+        }
+
+        // Min footer += 4
+        if let Some(val) = self.unk_1000() {
+            packet.grow(4).write_u32(val).unwrap();
+        }
+
+        // Min footer += 4
+        if self.has_flags(flags::IS_RELIABLE) || self.has_flags(flags::IS_FRAGMENT) {
+            // This flags is not used by getters/setters so it's safe to change it here.
+            self.enable_flags(flags::HAS_SEQUENCE_NUMBER);
+            packet.grow(4).write_u32(self.sequence_num).unwrap();
+        } else {
+            self.disable_flags(flags::HAS_SEQUENCE_NUMBER);
+        }
+
+        // Min footer += 1 + 4
+        if !self.single_acks.is_empty() {
+
+            // Unused by getters/setters so it's safe here.
+            self.enable_flags(flags::HAS_ACKS);
+
+            // Compute the remaining footer length for acks (not counting the count).
+            let available_len = packet.free()
+                - if self.cumulative_ack().is_some() { 4 } else { 0 }
+                - if self.indexed_channel().is_some() { 8 } else { 0 }
+                - if self.has_checksum() { 4 } else { 0 }
+                - 1; // Acks count
+
+            // Debug assert, and cap to the max number of acks.
+            debug_assert!(available_len >= 4, "PACKET_MIN_FOOTER_LEN should ensure at least one single ack");
+            let available_len = available_len.min(u8::MAX as usize * 4);
+
+            let mut count = 0u8;
+            while let Some(ack) = self.single_acks.pop_front() {
+                count += 1;
+                packet.grow(4).write_u32(ack).unwrap();
+                if available_len < 4 {
+                    break;
+                }
+            }
+
+            debug_assert!(count != 0);
+            packet.grow(1)[0] = count;
+
+        } else {
+            self.disable_flags(flags::HAS_ACKS);
+        }
+
+        // Min footer += 4
+        if let Some(cumulative_ack) = self.cumulative_ack() {
+            packet.grow(4).write_u32(cumulative_ack).unwrap();
+        }
+
+        // Min footer += 8
+        if let Some((id, version)) = self.indexed_channel() {
+            let mut cursor = packet.grow(8);
+            cursor.write_u32(version.get()).unwrap();
+            cursor.write_u32(id.get()).unwrap();
+        }
+
+        // Write flags just before computing any checksum.
+        packet.write_flags(self.flags);
+
+        // If checksum enabled, compute the checksum of the whole body of the packet,
+        // which range from flags to the end of the footer. The checksum will be
+        // appended to the footer after computing the checksum.
+        // Min footer += 4
+        if self.has_checksum() {
+            let checksum = calc_checksum(Cursor::new(&packet.slice()[PACKET_PREFIX_LEN..]));
+            packet.grow(4).write_u32(checksum).unwrap();
+        }
+        
+    }
+
+}
+
+
+/// Represent a packet that has been read or written a configuration, both are kept in
+/// this structure in order to provide guarantee that their content is not modified, and
+/// therefore that the packet's data and the configuration are fully synchronized.
+#[derive(Debug)]
+pub struct PacketLocked {
+    /// The packet with real data.
+    packet: Packet,
+    /// The configuration, synchronized with the packet.
+    config: PacketConfig,
+}
+
+impl PacketLocked {
+
+    #[inline]
+    pub fn packet(&self) -> &Packet {
+        &self.packet
+    }
+
+    #[inline]
+    pub fn config(&self) -> &PacketConfig {
+        &self.config
+    }
+
+    #[inline]
+    pub fn destruct(self) -> (Packet, PacketConfig) {
+        (self.packet, self.config)
+    }
+
+}
+
+/// Same as [`PacketLocked`] but is borrowing the packet.
+#[derive(Debug)]
+pub struct PacketLockedRef<'a> {
+    /// The packet with real data.
+    packet: &'a Packet,
+    /// The configuration, synchronized with the packet.
+    config: PacketConfig,
+}
+
+impl<'a> PacketLockedRef<'a> {
+
+    #[inline]
+    pub fn packet(&self) -> &'a Packet {
+        self.packet
+    }
+
+    #[inline]
+    pub fn config(&self) -> &PacketConfig {
+        &self.config
+    }
+
+    #[inline]
+    pub fn destruct(self) -> (&'a Packet, PacketConfig) {
+        (self.packet, self.config)
     }
 
 }
@@ -911,7 +893,7 @@ impl PacketConfig {
 /// a given number of bytes available.
 fn calc_checksum(mut reader: impl Read) -> u32 {
     let mut checksum = 0;
-    while let Ok(num) = reader.read_u32::<LE>() {
+    while let Ok(num) = reader.read_u32() {
         checksum ^= num;
     }
     checksum
@@ -920,7 +902,7 @@ fn calc_checksum(mut reader: impl Read) -> u32 {
 
 /// Internal module defining flags for packets.
 #[allow(unused)]
-mod flags {
+pub mod flags {
     pub const HAS_REQUESTS: u16         = 0x0001;
     pub const HAS_PIGGYBACKS: u16       = 0x0002;
     pub const HAS_ACKS: u16             = 0x0004;

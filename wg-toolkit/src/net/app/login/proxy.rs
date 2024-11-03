@@ -14,8 +14,8 @@ use crate::net::bundle::{Bundle, ElementReader, ReplyElementReader, TopElementRe
 use crate::net::app::login::element::{ChallengeResponse, CuckooCycleResponse};
 use crate::net::app::proxy::{UNSPECIFIED_ADDR, RECV_TIMEOUT};
 use crate::net::channel::ChannelTracker;
-use crate::net::socket::PacketSocket;
 use crate::net::packet::Packet;
+use crate::net::socket::PacketSocket;
 
 use crate::util::thread::{ThreadPoll, ThreadPollHandle};
 
@@ -93,7 +93,7 @@ enum PeerLastRequestKind {
 #[derive(Debug)]
 struct SocketPollRet {
     /// The raw I/O result containing the packet if successful.
-    res: io::Result<(Box<Packet>, SocketAddr)>,
+    res: io::Result<(Packet, SocketAddr)>,
     /// The peer address if this is the result of a peer socket.
     peer: Option<SocketAddr>,
 }
@@ -383,12 +383,12 @@ impl Inner {
 
         if !self.bundle.is_empty() {
             self.out_channel.off_channel(peer.addr).prepare(&mut self.bundle, false);
-            for packet in self.bundle.packets_mut() {
-                if inherit_prefix {
-                    packet.raw_mut().write_prefix(self.in_channel.last_accepted_prefix());
-                }
-                // debug!(">{}: [{:08X}] {:?}", peer.addr, packet.raw().read_prefix(), packet.raw());
+            if inherit_prefix {
+                self.bundle.write_prefix(self.in_channel.last_accepted_prefix());
             }
+            // for packet in self.bundle.packets_mut() {
+            //     debug!(">{}: [{:08X}] {:?}", peer.addr, packet.raw().read_prefix(), packet.raw());
+            // }
             self.socket.send_bundle_without_encryption(&self.bundle, peer.addr)?;
         }
 

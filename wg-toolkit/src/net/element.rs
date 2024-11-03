@@ -152,7 +152,7 @@ impl ElementLength {
 
         match self {
             Self::Fixed(expected_len) => { 
-                assert_eq!(expected_len, len); 
+                assert_eq!(expected_len, len, "this element has fixed length but the actual written length is not coherent"); 
                 Ok(()) 
             }
             Self::Variable8 => writer.write_u8(len as u8),

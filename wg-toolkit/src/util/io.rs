@@ -68,9 +68,9 @@ pub trait WgReadExt: Read {
         ReadBytesExt::read_i32::<LE>(self)
     }
 
-    /// Read a packed unsigned 32 bit integer from the underlying reader.
+    /// Read a packed unsigned 24 bit integer from the underlying reader.
     #[inline]
-    fn read_packed_u32(&mut self) -> io::Result<u32> {
+    fn read_packed_u24(&mut self) -> io::Result<u32> {
         match self.read_u8()? {
             255 => self.read_u24(),
             n => Ok(n as u32)
@@ -128,7 +128,7 @@ pub trait WgReadExt: Read {
     /// Read a blob of a length that is specified with a packed u32 before the 
     /// actual vector.
     fn read_blob_variable(&mut self) -> io::Result<Vec<u8>> {
-        let len = self.read_packed_u32()? as usize;
+        let len = self.read_packed_u24()? as usize;
         let mut buf = vec![0; len];
         self.read_exact(&mut buf[..])?;
         Ok(buf)
@@ -212,7 +212,7 @@ pub trait WgReadExt: Read {
     /// reads the length of the pickle's data in the packed header.
     fn read_pickle<'de, T: serde::Deserialize<'de>>(&mut self) -> io::Result<T> {
         use serde_pickle::DeOptions;
-        let length = self.read_packed_u32()?;
+        let length = self.read_packed_u24()?;
         Ok(serde_pickle::from_reader(self.take(length as _), DeOptions::new().decode_strings()).unwrap())
     }
 
@@ -307,8 +307,8 @@ pub trait WgWriteExt: Write {
         WriteBytesExt::write_i32::<LE>(self, n)
     }
 
-    /// Writes a packed unsigned 32 bit integer to the underlying writer.
-    fn write_packed_u32(&mut self, n: u32) -> io::Result<()> {
+    /// Writes a packed unsigned 24 bit integer to the underlying writer.
+    fn write_packed_u24(&mut self, n: u32) -> io::Result<()> {
         if n >= 255 {
             self.write_u8(255)?;
             self.write_u24(n)
@@ -349,7 +349,7 @@ pub trait WgWriteExt: Write {
 
     /// Write a blob with its packed length before the actual data.
     fn write_blob_variable(&mut self, data: &[u8]) -> io::Result<()> {
-        self.write_packed_u32(data.len() as u32)?;
+        self.write_packed_u24(data.len() as u32)?;
         self.write_blob(data)
     }
 
@@ -484,6 +484,47 @@ impl<W: Write> Write for IoCounter<W> {
     #[inline]
     fn flush(&mut self) -> io::Result<()> {
         self.inner.flush()
+    }
+
+}
+
+
+#[derive(Debug)]
+pub struct SliceCursor<'a>(&'a [u8]);
+
+impl<'a> SliceCursor<'a> {
+
+    pub fn new(slice: &'a [u8]) -> Self {
+        Self(slice)
+    }
+
+    pub fn inner(&self) -> &'a [u8] {
+        self.0
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn pop_front(&mut self, len: usize) -> Option<&'a [u8]> {
+        let (ret, rest) = self.0.split_at_checked(len)?;
+        self.0 = rest;
+        Some(ret)
+    }
+
+    pub fn pop_front_read(&mut self, len: usize) -> Option<impl Read + 'a> {
+        self.pop_front(len).map(Cursor::new)
+    }
+
+    pub fn pop_back(&mut self, len: usize) -> Option<&'a [u8]> {
+        if len  > self.0.len() { return None; }
+        let (rest, ret) = self.0.split_at(self.0.len() - len);
+        self.0 = rest;
+        Some(ret)
+    }
+
+    pub fn pop_back_read(&mut self, len: usize) -> Option<impl Read + 'a> {
+        self.pop_back(len).map(Cursor::new)
     }
 
 }
