@@ -16,8 +16,9 @@ use blowfish::Blowfish;
 use tracing::level_filters::LevelFilter;
 use tracing::{info, instrument, warn};
 
-use wgtk::net::app::{login, base, proxy};
-use wgtk::net::bundle::ElementReader;
+use wgtk::net::app::proxy::{self, PacketDirection};
+use wgtk::net::bundle::{Bundle, ElementReader, TopElementReader};
+use wgtk::net::app::{login, base, client};
 
 use crate::{CliResult, WotArgs};
 
@@ -233,27 +234,89 @@ impl BaseProxyThread {
                     }
                 }
                 Event::Bundle(bundle) => {
+                    match bundle.direction {
+                        PacketDirection::Out => self.read_out_bundle(bundle.addr, bundle.bundle),
+                        PacketDirection::In => self.read_in_bundle(bundle.addr, bundle.bundle),
+                    }
+                }
+                    
+            }
+        }
 
-                    let mut reader = bundle.bundle.element_reader();
-                    while let Some(elt) = reader.next_element() {
-                        match elt {
-                            ElementReader::Top(elt) => {
-                                let elt = elt.read_simple::<()>().unwrap();
-                                info!(addr = %bundle.addr, dir = ?bundle.direction, "Top element #{}, request: {:?}", elt.id, elt.request_id);
-                            }
-                            ElementReader::Reply(elt) => {
-                                let request_id = elt.request_id();
-                                let _elt = elt.read_simple::<()>().unwrap();
-                                info!(addr = %bundle.addr, dir = ?bundle.direction, "Reply element #{request_id}");
-                            }
-                        }
+    }
+
+    fn read_out_bundle(&mut self, addr: SocketAddr, bundle: Bundle) {
+
+        let mut reader = bundle.element_reader();
+        while let Some(elt) = reader.next_element() {
+            match elt {
+                ElementReader::Top(elt) => {
+                    if !self.read_out_element(addr, elt) {
                         break;
                     }
-
+                }
+                ElementReader::Reply(elt) => {
+                    let request_id = elt.request_id();
+                    let _elt = elt.read_simple::<()>().unwrap();
+                    info!(%addr, "Out reply element #{request_id}");
+                    break;
                 }
             }
         }
 
+    }
+
+    fn read_out_element(&mut self, addr: SocketAddr, elt: TopElementReader) -> bool {
+        match elt.id() {
+            base::id::CLIENT_SESSION_KEY => {
+                let elt = elt.read_simple::<base::element::SessionKey>().unwrap();
+                assert!(elt.request_id.is_none());
+                info!(%addr, "Out session key: {}", elt.element.session_key);
+                true
+            }
+            _ => {
+                let elt = elt.read_simple::<()>().unwrap();
+                info!(%addr, "Out top element #{}, request: {:?}", elt.id, elt.request_id);
+                false
+            }
+        }
+    }
+
+    fn read_in_bundle(&mut self, addr: SocketAddr, bundle: Bundle) {
+
+        let mut reader = bundle.element_reader();
+        while let Some(elt) = reader.next_element() {
+            match elt {
+                ElementReader::Top(elt) => {
+                    if !self.read_in_element(addr, elt) {
+                        break;
+                    }
+                }
+                ElementReader::Reply(elt) => {
+                    let request_id = elt.request_id();
+                    let _elt = elt.read_simple::<()>().unwrap();
+                    info!(%addr, "In reply element #{request_id}");
+                    break;
+                }
+            }
+        }
+
+    }
+
+    fn read_in_element(&mut self, addr: SocketAddr, elt: TopElementReader) -> bool {
+        match elt.id() {
+            client::id::TICK_SYNC => {
+                let elt = elt.read_simple::<client::element::TickSync>().unwrap();
+                assert!(elt.request_id.is_none());
+                info!(%addr, "In tick sync: {}", elt.element.tick);
+                true
+            }
+            _ => {
+                let elt = elt.read_simple::<()>().unwrap();
+                info!(%addr, "In top element #{}, request: {:?}", elt.id, elt.request_id);
+                false
+            }
+        }
     }
 
 }
