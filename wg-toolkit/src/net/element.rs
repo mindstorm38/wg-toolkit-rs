@@ -1,7 +1,9 @@
 //! Definitions for elements contained in bundles (and so in packets).
 
+use std::fmt;
 use std::io::{self, Read, Write};
 
+use crate::util::BytesFmt;
 use crate::util::io::*;
 
 
@@ -196,6 +198,11 @@ impl ElementIdRange {
         Self { first, last }
     }
 
+    #[inline]
+    pub const fn contains(self, id: u8) -> bool {
+        self.first <= id && id <= self.last
+    }
+
     /// Returns the number of slots in this range.
     #[inline]
     pub const fn slots_count(self) -> u8 {
@@ -319,4 +326,163 @@ impl<E: Element> Element for Reply<E> {
 
 impl<E: Element> TopElement for Reply<E> {
     const LEN: ElementLength = ElementLength::Variable32;
+}
+
+
+/// An element of fixed sized that just buffer the data.
+#[derive(Clone)]
+pub struct DebugElementFixed<const LEN: usize> {
+    data: [u8; LEN],
+}
+
+impl<const LEN: usize> SimpleElement for DebugElementFixed<LEN> {
+
+    fn encode(&self, write: &mut impl Write) -> io::Result<()> {
+        write.write_all(&self.data)
+    }
+
+    fn decode(read: &mut impl Read, len: usize) -> io::Result<Self> {
+        debug_assert_eq!(LEN, len);
+        let mut data = [0; LEN];
+        read.read_exact(&mut data)?;
+        Ok(Self { data })
+    }
+    
+}
+
+impl<const LEN: usize> TopElement for DebugElementFixed<LEN> {
+    const LEN: ElementLength = ElementLength::Fixed(LEN as u32);
+}
+
+impl<const LEN: usize> fmt::Debug for DebugElementFixed<LEN> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("DebugElementFixed")
+            .field(&LEN)
+            .field(&format_args!("{:0X}", BytesFmt(&self.data)))
+            .finish()
+    }
+}
+
+/// An element of variable 8 size that just buffer the data.
+#[derive(Clone)]
+pub struct DebugElementVariable8 {
+    data: Vec<u8>,
+}
+
+impl SimpleElement for DebugElementVariable8 {
+
+    fn encode(&self, write: &mut impl Write) -> io::Result<()> {
+        write.write_all(&self.data)
+    }
+
+    fn decode(read: &mut impl Read, len: usize) -> io::Result<Self> {
+        Ok(Self { data: read.read_blob(len)? })
+    }
+
+}
+
+impl TopElement for DebugElementVariable8 {
+    const LEN: ElementLength = ElementLength::Variable8;
+}
+
+impl fmt::Debug for DebugElementVariable8 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("DebugElementVariable8")
+            .field(&self.data.len())
+            .field(&format_args!("{:0X}", BytesFmt(&self.data)))
+            .finish()
+    }
+}
+
+/// An element of variable 16 size that just buffer the data.
+#[derive(Clone)]
+pub struct DebugElementVariable16 {
+    data: Vec<u8>,
+}
+
+impl SimpleElement for DebugElementVariable16 {
+
+    fn encode(&self, write: &mut impl Write) -> io::Result<()> {
+        write.write_all(&self.data)
+    }
+
+    fn decode(read: &mut impl Read, len: usize) -> io::Result<Self> {
+        Ok(Self { data: read.read_blob(len)? })
+    }
+
+}
+
+impl TopElement for DebugElementVariable16 {
+    const LEN: ElementLength = ElementLength::Variable16;
+}
+
+impl fmt::Debug for DebugElementVariable16 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("DebugElementVariable16")
+            .field(&self.data.len())
+            .field(&format_args!("{:0X}", BytesFmt(&self.data)))
+            .finish()
+    }
+}
+
+/// An element of variable 24 size that just buffer the data.
+#[derive(Clone)]
+pub struct DebugElementVariable24 {
+    data: Vec<u8>,
+}
+
+impl SimpleElement for DebugElementVariable24 {
+
+    fn encode(&self, write: &mut impl Write) -> io::Result<()> {
+        write.write_all(&self.data)
+    }
+
+    fn decode(read: &mut impl Read, len: usize) -> io::Result<Self> {
+        Ok(Self { data: read.read_blob(len)? })
+    }
+
+}
+
+impl TopElement for DebugElementVariable24 {
+    const LEN: ElementLength = ElementLength::Variable24;
+}
+
+impl fmt::Debug for DebugElementVariable24 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("DebugElementVariable24")
+            .field(&self.data.len())
+            .field(&format_args!("{:0X}", BytesFmt(&self.data)))
+            .finish()
+    }
+}
+
+/// An element of variable 32 size that just buffer the data.
+#[derive(Clone)]
+pub struct DebugElementVariable32 {
+    data: Vec<u8>,
+}
+
+impl SimpleElement for DebugElementVariable32 {
+
+    fn encode(&self, write: &mut impl Write) -> io::Result<()> {
+        write.write_all(&self.data)
+    }
+
+    fn decode(read: &mut impl Read, len: usize) -> io::Result<Self> {
+        Ok(Self { data: read.read_blob(len)? })
+    }
+
+}
+
+impl TopElement for DebugElementVariable32 {
+    const LEN: ElementLength = ElementLength::Variable32;
+}
+
+impl fmt::Debug for DebugElementVariable32 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("DebugElementVariable32")
+            .field(&self.data.len())
+            .field(&format_args!("{:0X}", BytesFmt(&self.data)))
+            .finish()
+    }
 }

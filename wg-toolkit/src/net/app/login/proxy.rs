@@ -71,7 +71,7 @@ struct Peer {
     socket: PacketSocket,
     /// The address to send packets to the peer when receiving from real application.
     addr: SocketAddr,
-    /// The last instant this peer has received any packet.
+    /// Last time a paquet was received from this peer.
     last_time: Instant,
     /// Information about the last request made by the client, if any.
     last_request: Option<PeerLastRequest>,
@@ -80,6 +80,7 @@ struct Peer {
 #[derive(Debug)]
 struct PeerLastRequest {
     request_id: u32,
+    time: Instant,
     kind: PeerLastRequestKind,
 }
 
@@ -309,6 +310,7 @@ impl Inner {
 
         peer.last_request = Some(PeerLastRequest {
             request_id,
+            time: Instant::now(),
             kind: PeerLastRequestKind::Ping {  },
         });
         
@@ -335,6 +337,7 @@ impl Inner {
 
         peer.last_request = Some(PeerLastRequest {
             request_id,
+            time: Instant::now(),
             kind: PeerLastRequestKind::Login { blowfish },
         });
 
@@ -404,7 +407,7 @@ impl Inner {
         }
 
         let last_request = peer.last_request.take().unwrap();
-        let latency = peer.last_time.elapsed();
+        let latency = last_request.time.elapsed();
 
         match last_request.kind {
             PeerLastRequestKind::Ping {  } => {

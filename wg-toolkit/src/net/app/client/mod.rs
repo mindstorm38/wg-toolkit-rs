@@ -10,21 +10,86 @@ pub mod id {
 
     use crate::net::element::ElementIdRange;
 
-    pub const UPDATE_FREQUENCY_NOTIFICATION: u8 = 0x02;
-    pub const SET_GAME_TIME: u8                 = 0x03;
-    pub const RESET_ENTITIES: u8                = 0x04;
-    pub const CREATE_BASE_PLAYER: u8            = 0x05;
-    pub const CREATE_CELL_PLAYER: u8            = 0x06;
-    // TODO: 0x07: DummyPacket
-    // TODO: 0x08: SpaceProperty
-    // TODO: 0x09: AddSpaceGeometryMapping
-    // TODO: 0x0A: RemoveSpaceGeometryMapping
-    // TODO: 0x0B: CreateEntity
-    // TODO: 0x0C: CreateEntityDetailed
-    pub const TICK_SYNC: u8                     = 0x13;
-    pub const SELECT_PLAYER_ENTITY: u8          = 0x1A;
-    pub const FORCED_POSITION: u8               = 0x1B;
-
-    pub const ENTITY_METHOD: ElementIdRange     = ElementIdRange::new(0xA7, 0xFE);
+    pub const AUTHENTICATE: u8                                          = 0x00;  // FIXED 4 (1.26.1.1 handler: 143326C40)
+    pub const BANDWIDTH_NOTIFICATION: u8                                = 0x01;  // FIXED 4 (1.26.1.1 handler: 143326C58)
+    pub const UPDATE_FREQUENCY_NOTIFICATION: u8                         = 0x02;  // FIXED 7 (1.26.1.1 handler: 143326C70)
+    pub const SET_GAME_TIME: u8                                         = 0x03;  // FIXED 4 (1.26.1.1 handler: 143326C88)
+    pub const RESET_ENTITIES: u8                                        = 0x04;  // FIXED 1 (1.26.1.1 handler: 143326CA0)
+    pub const CREATE_BASE_PLAYER: u8                                    = 0x05;  // VAR 2 (1.26.1.1 handler: 143326CC0)
+    pub const CREATE_CELL_PLAYER: u8                                    = 0x06;  // VAR 2 (1.26.1.1 handler: 143326D10)
+    pub const DUMMY_PACKET: u8                                          = 0x07;  // VAR 2 (1.26.1.1 handler: 143326D60)
+    pub const SPACE_PROPERTY: u8                                        = 0x08;  // VAR 2 (1.26.1.1 handler: 143326DB0)
+    pub const ADD_SPACE_GEOMETRY_MAPPING: u8                            = 0x09;  // VAR 2 (1.26.1.1 handler: 143326E00)
+    pub const REMOVE_SPACE_GEOMETRY_MAPPING: u8                         = 0x0A;  // VAR 2 (1.26.1.1 handler: 143326E50)
+    pub const CREATE_ENTITY: u8                                         = 0x0B;  // VAR 2 (1.26.1.1 handler: 143326EA0)
+    pub const CREATE_ENTITY_DETAILED: u8                                = 0x0C;  // VAR 2 (1.26.1.1 handler: 143326EF0)
+    pub const CELL_APP_SUSPENDED: u8                                    = 0x0D;  // FIXED 0 (1.26.1.1 handler: 143326F38)
+    pub const CELL_APP_RESUMED: u8                                      = 0x0E;  // FIXED 0 (1.26.1.1 handler: 143326F50)
+    pub const CLIENT_SUSPENSION_DETECTION_ENABLED: u8                   = 0x0F;  // FIXED 4 (1.26.1.1 handler: 143326F68)
+    pub const ENTER_AOI: u8                                             = 0x10;  // FIXED 5 (1.26.1.1 handler: 143326F80)
+    pub const ENTER_AOI_ON_VEHICLE: u8                                  = 0x11;  // FIXED 9 (1.26.1.1 handler: 143326F98)
+    pub const LEAVE_AOI: u8                                             = 0x12;  // VAR 2 (1.26.1.1 handler: 143326FB0)
+    pub const TICK_SYNC: u8                                             = 0x13;  // FIXED 1 (1.26.1.1 handler: 143326FF8)
+    pub const TICK_SYNC_PERIODIC: u8                                    = 0x14;  // FIXED 2 (1.26.1.1 handler: 143327010)
+    pub const RELATIVE_POSITION_REFERENCE: u8                           = 0x15;  // FIXED 1 (1.26.1.1 handler: 143327028)
+    pub const RELATIVE_POSITION: u8                                     = 0x16;  // FIXED 12 (1.26.1.1 handler: 143327040)
+    pub const SET_VEHICLE: u8                                           = 0x17;  // FIXED 8 (1.26.1.1 handler: 143327058)
+    pub const SELECT_ALIASED_ENTITY: u8                                 = 0x18;  // FIXED 1 (1.26.1.1 handler: 143327070)
+    pub const SELECT_ENTITY: u8                                         = 0x19;  // FIXED 4 (1.26.1.1 handler: 143327088)
+    pub const SELECT_PLAYER_ENTITY: u8                                  = 0x1A;  // FIXED 0 (1.26.1.1 handler: 1433270A0)
+    pub const FORCED_POSITION: u8                                       = 0x1B;  // FIXED 38 (1.26.1.1 handler: 1433270B8)
+    pub const AVATAR_UPDATE_NO_ALIAS_DETAILED: u8                       = 0x1C;  // FIXED 29 (1.26.1.1 handler: 1433270D0)
+    pub const AVATAR_UPDATE_ALIAS_DETAILED: u8                          = 0x1D;  // FIXED 26 (1.26.1.1 handler: 1433270E8)
+    pub const AVATAR_UPDATE_PLAYER_DETAILED: u8                         = 0x1E;  // FIXED 25 (1.26.1.1 handler: 143327100)
+    pub const AVATAR_UPDATE_VOLATILE_PROPERTIES: u8                     = 0x1F;  // VAR 2 (1.26.1.1 handler: 143327120)
+    pub const CHANGE_VOLATILE_PACKER_TYPE: u8                           = 0x20;  // VAR 2 (1.26.1.1 handler: 143327170)
+    pub const NRL_CREATE_NODE: u8                                       = 0x21;  // VAR 2 (1.26.1.1 handler: 1433271C0)
+    pub const NRL_UNLINK_TREE: u8                                       = 0x22;  // VAR 2 (1.26.1.1 handler: 143327210)
+    pub const NRL_UPDATE_NODE: u8                                       = 0x23;  // VAR 2 (1.26.1.1 handler: 143327260)
+    pub const NRL_UNLINK_TREE_FLAG: u8                                  = 0x24;  // FIXED 0 (1.26.1.1 handler: 1433272A8)
+    pub const NRL_UPDATE_NODE_FLAG: u8                                  = 0x25;  // FIXED 0 (1.26.1.1 handler: 1433272C0)
+    pub const NRL_DATA: u8                                              = 0x26;  // VAR 2 (1.26.1.1 handler: 1433272E0)
+    pub const NRL_MSG_TO_CLIENT: u8                                     = 0x27;  // VAR 2 (1.26.1.1 handler: 143327330)
+    pub const NRL_UNRELIABLE_MSG_TO_CLIENT: u8                          = 0x28;  // VAR 2 (1.26.1.1 handler: 143327380)
+    pub const AVATAR_UPDATE_NO_ALIAS_FULL_POS_YAW_PITCH_ROLL: u8        = 0x29;  // CALLBACK 0 (1.26.1.1 handler: 1433273D0)
+    pub const AVATAR_UPDATE_NO_ALIAS_FULL_POS_YAW_PITCH: u8             = 0x2A;  // CALLBACK 0 (1.26.1.1 handler: 143327430)
+    pub const AVATAR_UPDATE_NO_ALIAS_FULL_POS_YAW: u8                   = 0x2B;  // CALLBACK 0 (1.26.1.1 handler: 143327490)
+    pub const AVATAR_UPDATE_NO_ALIAS_FULL_POS_NO_DIR: u8                = 0x2C;  // CALLBACK 0 (1.26.1.1 handler: 1433274F0)
+    pub const AVATAR_UPDATE_NO_ALIAS_ON_GROUND_YAW_PITCH_ROLL: u8       = 0x2D;  // CALLBACK 0 (1.26.1.1 handler: 143327550)
+    pub const AVATAR_UPDATE_NO_ALIAS_ON_GROUND_YAW_PITCH: u8            = 0x2E;  // CALLBACK 0 (1.26.1.1 handler: 1433275B0)
+    pub const AVATAR_UPDATE_NO_ALIAS_ON_GROUND_YAW: u8                  = 0x2F;  // CALLBACK 0 (1.26.1.1 handler: 143327610)
+    pub const AVATAR_UPDATE_NO_ALIAS_ON_GROUND_NO_DIR: u8               = 0x30;  // CALLBACK 0 (1.26.1.1 handler: 143327670)
+    pub const AVATAR_UPDATE_NO_ALIAS_NO_POS_YAW_PITCH_ROLL: u8          = 0x31;  // CALLBACK 0 (1.26.1.1 handler: 1433276D0)
+    pub const AVATAR_UPDATE_NO_ALIAS_NO_POS_YAW_PITCH: u8               = 0x32;  // CALLBACK 0 (1.26.1.1 handler: 143327730)
+    pub const AVATAR_UPDATE_NO_ALIAS_NO_POS_YAW: u8                     = 0x33;  // CALLBACK 0 (1.26.1.1 handler: 143327790)
+    pub const AVATAR_UPDATE_NO_ALIAS_NO_POS_NO_DIR: u8                  = 0x34;  // CALLBACK 0 (1.26.1.1 handler: 1433277F0)
+    pub const AVATAR_UPDATE_ALIAS_FULL_POS_YAW_PITCH_ROLL: u8           = 0x35;  // CALLBACK 0 (1.26.1.1 handler: 143327850)
+    pub const AVATAR_UPDATE_ALIAS_FULL_POS_YAW_PITCH: u8                = 0x36;  // CALLBACK 0 (1.26.1.1 handler: 1433278B0)
+    pub const AVATAR_UPDATE_ALIAS_FULL_POS_YAW: u8                      = 0x37;  // CALLBACK 0 (1.26.1.1 handler: 143327910)
+    pub const AVATAR_UPDATE_ALIAS_FULL_POS_NO_DIR: u8                   = 0x38;  // CALLBACK 0 (1.26.1.1 handler: 143327970)
+    pub const AVATAR_UPDATE_ALIAS_ON_GROUND_YAW_PITCH_ROLL: u8          = 0x39;  // CALLBACK 0 (1.26.1.1 handler: 1433279D0)
+    pub const AVATAR_UPDATE_ALIAS_ON_GROUND_YAW_PITCH: u8               = 0x3A;  // CALLBACK 0 (1.26.1.1 handler: 143327A30)
+    pub const AVATAR_UPDATE_ALIAS_ON_GROUND_YAW: u8                     = 0x3B;  // CALLBACK 0 (1.26.1.1 handler: 143327A90)
+    pub const AVATAR_UPDATE_ALIAS_ON_GROUND_NO_DIR: u8                  = 0x3C;  // CALLBACK 0 (1.26.1.1 handler: 143327AF0)
+    pub const AVATAR_UPDATE_ALIAS_NO_POS_YAW_PITCH_ROLL: u8             = 0x3D;  // CALLBACK 0 (1.26.1.1 handler: 143327B50)
+    pub const AVATAR_UPDATE_ALIAS_NO_POS_YAW_PITCH: u8                  = 0x3E;  // CALLBACK 0 (1.26.1.1 handler: 143327BB0)
+    pub const AVATAR_UPDATE_ALIAS_NO_POS_YAW: u8                        = 0x3F;  // CALLBACK 0 (1.26.1.1 handler: 143327C10)
+    pub const AVATAR_UPDATE_ALIAS_NO_POS_NO_DIR: u8                     = 0x40;  // CALLBACK 0 (1.26.1.1 handler: 143327C70)
+    pub const CONTROL_ENTITY: u8                                        = 0x41;  // FIXED 5 (1.26.1.1 handler: 143327CC8)
+    pub const VOICE_DATA: u8                                            = 0x42;  // VAR 2 (1.26.1.1 handler: 143327CE0)
+    pub const RESTORE_CLIENT: u8                                        = 0x43;  // VAR 2 (1.26.1.1 handler: 143327D00)
+    pub const SWITCH_BASE_APP: u8                                       = 0x44;  // FIXED 9 (1.26.1.1 handler: 143327D48)
+    pub const RESOURCE_HEADER: u8                                       = 0x45;  // VAR 2 (1.26.1.1 handler: 143327D60)
+    pub const RESOURCE_FRAGMENT: u8                                     = 0x46;  // VAR 2 (1.26.1.1 handler: 143327DB0)
+    pub const LOGGED_OFF: u8                                            = 0x47;  // FIXED 1 (1.26.1.1 handler: 143327DF8)
+    pub const DETAILED_POSITION: u8                                     = 0x48;  // FIXED 24 (1.26.1.1 handler: 143327E10)
+    pub const NESTED_ENTITY_PROPERTY: u8                                = 0x49;  // VAR 2 (1.26.1.1 handler: 143327E30)
+    pub const SLICE_ENTITY_PROPERTY: u8                                 = 0x4A;  // VAR 2 (1.26.1.1 handler: 143327E80)
+    pub const UPDATE_ENTITY: u8                                         = 0x4B;  // VAR 2 (1.26.1.1 handler: 143327ED0)
+    pub const SET_CELL_APP_EXT_ADDRESS: u8                              = 0x4C;  // VAR 2 (1.26.1.1 handler: 143327F20)
+    pub const LAST_PROXY_MESSAGE_AFTER_DIRECT_CELL_APP_CONNECTION: u8   = 0x4D;  // FIXED 0 (1.26.1.1 handler: 143327F68)
+    
+    pub const ENTITY_METHOD: ElementIdRange     = ElementIdRange::new(0x4E, 0xA6);  // CALLBACK 0 (1.26.1.1 handler: 143327F80)
+    pub const ENTITY_PROPERTY: ElementIdRange   = ElementIdRange::new(0xA7, 0xFE);  // CALLBACK 0 (1.26.1.1 handler: 143327FA8)
 
 }

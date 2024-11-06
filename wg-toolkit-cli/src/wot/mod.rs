@@ -258,7 +258,7 @@ impl BaseProxyThread {
                 ElementReader::Reply(elt) => {
                     let request_id = elt.request_id();
                     let _elt = elt.read_simple::<()>().unwrap();
-                    info!(%addr, "Out reply element #{request_id}");
+                    warn!(%addr, "-> Reply element #{request_id}");
                     break;
                 }
             }
@@ -271,12 +271,12 @@ impl BaseProxyThread {
             base::id::CLIENT_SESSION_KEY => {
                 let elt = elt.read_simple::<base::element::SessionKey>().unwrap();
                 assert!(elt.request_id.is_none());
-                info!(%addr, "Out session key: {}", elt.element.session_key);
+                info!(%addr, "-> Session key: 0x{:08X}", elt.element.session_key);
                 true
             }
             _ => {
                 let elt = elt.read_simple::<()>().unwrap();
-                info!(%addr, "Out top element #{}, request: {:?}", elt.id, elt.request_id);
+                warn!(%addr, "-> Top element #{}, request: {:?}", elt.id, elt.request_id);
                 false
             }
         }
@@ -295,7 +295,7 @@ impl BaseProxyThread {
                 ElementReader::Reply(elt) => {
                     let request_id = elt.request_id();
                     let _elt = elt.read_simple::<()>().unwrap();
-                    info!(%addr, "In reply element #{request_id}");
+                    warn!(%addr, "<- Reply element #{request_id}");
                     break;
                 }
             }
@@ -305,15 +305,67 @@ impl BaseProxyThread {
 
     fn read_in_element(&mut self, addr: SocketAddr, elt: TopElementReader) -> bool {
         match elt.id() {
+            client::id::UPDATE_FREQUENCY_NOTIFICATION => {
+                let elt = elt.read_simple::<client::element::UpdateFrequencyNotification>().unwrap();
+                assert!(elt.request_id.is_none());
+                info!(%addr, "<- Update frequency: {} Hz, game time: {}", elt.element.frequency, elt.element.game_time);
+                true
+            }
             client::id::TICK_SYNC => {
                 let elt = elt.read_simple::<client::element::TickSync>().unwrap();
                 assert!(elt.request_id.is_none());
-                info!(%addr, "In tick sync: {}", elt.element.tick);
+                info!(%addr, "<- Tick sync: {}", elt.element.tick);
                 true
+            }
+            client::id::RESET_ENTITIES => {
+                let elt = elt.read_simple::<client::element::ResetEntities>().unwrap();
+                assert!(elt.request_id.is_none());
+                info!(%addr, "<- Reset entities, keep player on base: {}", elt.element.keep_player_on_base);
+                true
+            }
+            client::id::CREATE_BASE_PLAYER => {
+                let elt = elt.read_simple::<client::element::CreateBasePlayer>().unwrap();
+                assert!(elt.request_id.is_none());
+                warn!(%addr, "<- Create base player: {:?}", elt.element);
+                true
+            }
+            client::id::CREATE_CELL_PLAYER => {
+                let elt = elt.read_simple::<client::element::CreateCellPlayer>().unwrap();
+                assert!(elt.request_id.is_none());
+                warn!(%addr, "<- Create cell player: {:?}", elt.element);
+                true
+            }
+            client::id::SELECT_PLAYER_ENTITY => {
+                let elt = elt.read_simple::<client::element::SelectPlayerEntity>().unwrap();
+                assert!(elt.request_id.is_none());
+                info!(%addr, "<- Select player entity");
+                true
+            }
+            client::id::RESOURCE_HEADER => {
+                let elt = elt.read_simple::<client::element::ResourceHeader>().unwrap();
+                assert!(elt.request_id.is_none());
+                info!(%addr, "<- Resource header: {:?}", elt.element);
+                true
+            }
+            client::id::RESOURCE_FRAGMENT => {
+                let elt = elt.read_simple::<client::element::ResourceFragment>().unwrap();
+                assert!(elt.request_id.is_none());
+                info!(%addr, "<- Resource fragment: {:?}", elt.element);
+                true
+            }
+            id if client::id::ENTITY_METHOD.contains(id) => {
+                let elt = elt.read_simple::<()>().unwrap();
+                warn!(%addr, "<- Entity method: {id} (request: {:?})", elt.request_id);
+                false
+            }
+            id if client::id::ENTITY_PROPERTY.contains(id) => {
+                let elt = elt.read_simple::<()>().unwrap();
+                warn!(%addr, "<- Entity property: {id} (request: {:?})", elt.request_id);
+                false
             }
             _ => {
                 let elt = elt.read_simple::<()>().unwrap();
-                info!(%addr, "In top element #{}, request: {:?}", elt.id, elt.request_id);
+                warn!(%addr, "<- Top element #{}, request: {:?}", elt.id, elt.request_id);
                 false
             }
         }
