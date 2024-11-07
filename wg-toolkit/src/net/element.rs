@@ -10,6 +10,7 @@ use crate::util::io::*;
 /// The element id for reply.
 pub const REPLY_ID: u8 = 0xFF;
 
+
 /// A trait to be implemented on a structure that can be interpreted as
 /// bundle's elements. Elements are slices of data in a bundle of packets. 
 /// If a bundle contains multiple elements they are written contiguously.
@@ -27,35 +28,38 @@ pub trait Element: Sized {
     /// Type of the element's config that is being encoded and decoded.
     type Config;
 
-    /// Encode the element with the given writer and the given configuration.
-    fn encode(&self, write: &mut impl Write, config: &Self::Config) -> io::Result<()>;
+    /// The type of length that prefixes the element's content and describe how much 
+    /// space is taken by the element, this value can be left undef for non-top-elements.
+    const LEN: ElementLength;
 
-    /// Decode the element from the given reader and the given configuration.
+    /// Encode the element with the given writer and the given configuration. On success
+    /// this function must return the element's numeric ID that will be used to identify
+    /// it, note that this value is ignored for non-top-elements (in replies).
+    fn encode(&self, write: &mut impl Write, config: &Self::Config) -> io::Result<u8>;
+
+    /// Decode the element from the given reader and the given configuration. The id the
+    /// element is being decoded for is also given. This ID should be ignored for
+    /// non-top-elements (in replies).
     /// 
     /// The total length that is available in the reader is also given. **Note
     /// that** the given length will be equal to zero if the element's length
-    /// is set to [`ElementLength::Unknown`] (relevant for top elements).
-    fn decode(read: &mut impl Read, len: usize, config: &Self::Config) -> io::Result<Self>;
+    /// is set to [`ElementLength::Undefined`] (relevant for top elements).
+    fn decode(read: &mut impl Read, len: usize, config: &Self::Config, id: u8) -> io::Result<Self>;
 
 }
 
-/// A "top element" extends the behavior of a regular [`Element`] by providing
-/// a length that describes how to encode and decode the length of this element.
-/// Only top elements can be directly written and read from a bundle, non-top 
-/// elements are however useful when embedded in other (top) elements, such as
-/// reply element.
-pub trait TopElement: Element {
-
-    /// The type of length that prefixes the element's content and describe
-    /// how much space is taken by the element.
-    const LEN: ElementLength;
-
-}
-
-/// This trait provides an easier implementation of [`Element`] with not config value as
+/// This trait provides an easier implementation of [`Element`] without config value as
 /// opposed to regular elements, therefore both traits cannot be implemented at the same 
 /// time.
 pub trait SimpleElement: Sized {
+
+    /// The numeric ID for this element, you can use any value if this element is not
+    /// made to be a top element.
+    const ID: u8;
+
+    /// The type of length that prefixes the element's content and describe how much 
+    /// space is taken by the element, this value can be left undef for non-top-elements.
+    const LEN: ElementLength;
 
     /// Encode the element with the given writer.
     fn encode(&self, write: &mut impl Write) -> io::Result<()>;
@@ -64,7 +68,7 @@ pub trait SimpleElement: Sized {
     /// 
     /// The total length that is available in the reader is also given. **Note
     /// that** the given length will be equal to zero if the element's length
-    /// is set to [`ElementLength::Unknown`] (relevant for top elements).
+    /// is set to [`ElementLength::Undefined`] (relevant for top elements).
     fn decode(read: &mut impl Read, len: usize) -> io::Result<Self>;
 
 }
@@ -72,25 +76,38 @@ pub trait SimpleElement: Sized {
 impl<E: SimpleElement> Element for E {
 
     type Config = ();
+    const LEN: ElementLength = <E as SimpleElement>::LEN;
 
     #[inline]
-    fn encode(&self, write: &mut impl Write, _config: &Self::Config) -> io::Result<()> {
-        SimpleElement::encode(self, write)
+    fn encode(&self, write: &mut impl Write, _config: &Self::Config) -> io::Result<u8> {
+        SimpleElement::encode(self, write).map(|()| Self::ID)
     }
 
     #[inline]
-    fn decode(read: &mut impl Read, len: usize, _config: &Self::Config) -> io::Result<Self> {
+    fn decode(read: &mut impl Read, len: usize, _config: &Self::Config, id: u8) -> io::Result<Self> {
+        debug_assert_eq!(id, Self::ID);
         SimpleElement::decode(read, len)
     }
 
 }
 
-/// An alternative trait to both [`Element`] that automatically implements 
-/// nothing for encode and provides the default value on decoding without 
-/// actually reading.
-pub trait NoopElement: Default {}
+/// A trait even simple than [`SimpleElement`] that provides a default 
+pub trait EmptyElement: Default {
 
-impl<E: NoopElement> SimpleElement for E {
+    /// The numeric ID for this element, you can use any value if this element is not
+    /// made to be a top element.
+    const ID: u8;
+
+    /// The type of length that prefixes the element's content and describe how much 
+    /// space is taken by the element, this value can be left undef for non-top-elements.
+    const LEN: ElementLength;
+
+}
+
+impl<E: EmptyElement> SimpleElement for E {
+
+    const ID: u8 = <E as EmptyElement>::ID;
+    const LEN: ElementLength = <E as EmptyElement>::LEN;
 
     fn encode(&self, _write: &mut impl Write) -> io::Result<()> {
         Ok(())
@@ -102,11 +119,11 @@ impl<E: NoopElement> SimpleElement for E {
     
 }
 
-/// The empty tuple is considered an empty element. This can sometime
-/// be useful for default generic types.
-impl NoopElement for () { }
-impl TopElement for () {
-    const LEN: ElementLength = ElementLength::Fixed(0);
+/// Blank implementation for (), should not be used as a top-element because it's length
+/// is undefined and it's numeric id is set to 0x00.
+impl EmptyElement for () {
+    const ID: u8 = 0x00;
+    const LEN: ElementLength = ElementLength::Undefined;
 }
 
 /// Type of length used by a specific message codec.
@@ -123,20 +140,22 @@ pub enum ElementLength {
     Variable24,
     /// The length is encoded on 32 bits in the element's header.
     Variable32,
-    /// The real length of the element is queried dynamically with a callback,
-    /// given the element's identifier.
-    Callback(fn(id: u8) -> ElementLength),
+    /// The length is not known in advance, and so it's up to the element encoding and
+    /// decoding functions to manage the length of the element. In this case, the writer
+    /// or reader of given to those functions are not length-limited, and the length 
+    /// given to the decode function will be zero.
+    Undefined,
 }
 
 impl ElementLength {
 
     /// Read the length from a given reader.
-    pub fn read(mut self, mut reader: impl Read, id: u8) -> std::io::Result<u32> {
+    pub fn read(self, mut reader: impl Read) -> std::io::Result<u32> {
 
-        // If the length is a callback, get the real length from the message id.
-        if let Self::Callback(cb) = self {
-            self = cb(id);
-        }
+        // // If the length is a callback, get the real length from the message id.
+        // if let Self::Callback(cb) = self {
+        //     self = cb(id);
+        // }
 
         match self {
             Self::Fixed(len) => Ok(len),
@@ -144,7 +163,8 @@ impl ElementLength {
             Self::Variable16 => reader.read_u16().map(|n| n as u32),
             Self::Variable24 => reader.read_u24().map(|n| n),
             Self::Variable32 => reader.read_u32().map(|n| n),
-            Self::Callback(_) => panic!("cyclic callback")
+            Self::Undefined => Ok(0),
+            // Self::Callback(_) => panic!("cyclic callback")
         }
 
     }
@@ -161,7 +181,8 @@ impl ElementLength {
             Self::Variable16 => writer.write_u16(len as u16),
             Self::Variable24 => writer.write_u24(len),
             Self::Variable32 => writer.write_u32(len),
-            Self::Callback(_) => Ok(())
+            Self::Undefined => Ok(()),
+            // Self::Callback(_) => Ok(())
         }
 
     }
@@ -174,8 +195,14 @@ impl ElementLength {
             Self::Variable16 => 2,
             Self::Variable24 => 3,
             Self::Variable32 => 4,
-            Self::Callback(_) => 0,
+            Self::Undefined => 0,
+            // Self::Callback(_) => 0,
         }
+    }
+
+    #[inline]
+    pub fn is_undefined(&self) -> bool {
+        matches!(self, Self::Undefined)
     }
 
 }
@@ -309,33 +336,35 @@ impl<E> Reply<E> {
 impl<E: Element> Element for Reply<E> {
 
     type Config = E::Config;
+    const LEN: ElementLength = ElementLength::Variable32;
 
-    fn encode(&self, write: &mut impl Write, config: &Self::Config) -> io::Result<()> {
+    fn encode(&self, write: &mut impl Write, config: &Self::Config) -> io::Result<u8> {
         write.write_u32(self.request_id)?;
-        self.element.encode(write, config)
+        self.element.encode(write, config)?;
+        Ok(REPLY_ID)
     }
 
-    fn decode(read: &mut impl Read, len: usize, config: &Self::Config) -> io::Result<Self> {
+    fn decode(read: &mut impl Read, len: usize, config: &Self::Config, id: u8) -> io::Result<Self> {
+        debug_assert_eq!(id, REPLY_ID);
         Ok(Self {
             request_id: read.read_u32()?,
-            element: E::decode(read, len - 4, config)?,
+            element: E::decode(read, len - 4, config, id)?,
         })
     }
 
 }
 
-impl<E: Element> TopElement for Reply<E> {
-    const LEN: ElementLength = ElementLength::Variable32;
-}
-
 
 /// An element of fixed sized that just buffer the data.
 #[derive(Clone)]
-pub struct DebugElementFixed<const LEN: usize> {
+pub struct DebugElementFixed<const ID: u8, const LEN: usize> {
     data: [u8; LEN],
 }
 
-impl<const LEN: usize> SimpleElement for DebugElementFixed<LEN> {
+impl<const ID: u8, const LEN: usize> SimpleElement for DebugElementFixed<ID, LEN> {
+    
+    const ID: u8 = ID;
+    const LEN: ElementLength = ElementLength::Fixed(LEN as u32);
 
     fn encode(&self, write: &mut impl Write) -> io::Result<()> {
         write.write_all(&self.data)
@@ -350,13 +379,10 @@ impl<const LEN: usize> SimpleElement for DebugElementFixed<LEN> {
     
 }
 
-impl<const LEN: usize> TopElement for DebugElementFixed<LEN> {
-    const LEN: ElementLength = ElementLength::Fixed(LEN as u32);
-}
-
-impl<const LEN: usize> fmt::Debug for DebugElementFixed<LEN> {
+impl<const ID: u8, const LEN: usize> fmt::Debug for DebugElementFixed<ID, LEN> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_tuple("DebugElementFixed")
+            .field(&ID)
             .field(&LEN)
             .field(&format_args!("{:0X}", BytesFmt(&self.data)))
             .finish()
@@ -365,11 +391,14 @@ impl<const LEN: usize> fmt::Debug for DebugElementFixed<LEN> {
 
 /// An element of variable 8 size that just buffer the data.
 #[derive(Clone)]
-pub struct DebugElementVariable8 {
+pub struct DebugElementVariable8<const ID: u8> {
     data: Vec<u8>,
 }
 
-impl SimpleElement for DebugElementVariable8 {
+impl<const ID: u8> SimpleElement for DebugElementVariable8<ID> {
+    
+    const ID: u8 = ID;
+    const LEN: ElementLength = ElementLength::Variable8;
 
     fn encode(&self, write: &mut impl Write) -> io::Result<()> {
         write.write_all(&self.data)
@@ -381,13 +410,10 @@ impl SimpleElement for DebugElementVariable8 {
 
 }
 
-impl TopElement for DebugElementVariable8 {
-    const LEN: ElementLength = ElementLength::Variable8;
-}
-
-impl fmt::Debug for DebugElementVariable8 {
+impl<const ID: u8> fmt::Debug for DebugElementVariable8<ID> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_tuple("DebugElementVariable8")
+            .field(&ID)
             .field(&self.data.len())
             .field(&format_args!("{:0X}", BytesFmt(&self.data)))
             .finish()
@@ -396,11 +422,14 @@ impl fmt::Debug for DebugElementVariable8 {
 
 /// An element of variable 16 size that just buffer the data.
 #[derive(Clone)]
-pub struct DebugElementVariable16 {
+pub struct DebugElementVariable16<const ID: u8> {
     data: Vec<u8>,
 }
 
-impl SimpleElement for DebugElementVariable16 {
+impl<const ID: u8> SimpleElement for DebugElementVariable16<ID> {
+    
+    const ID: u8 = ID;
+    const LEN: ElementLength = ElementLength::Variable16;
 
     fn encode(&self, write: &mut impl Write) -> io::Result<()> {
         write.write_all(&self.data)
@@ -412,13 +441,10 @@ impl SimpleElement for DebugElementVariable16 {
 
 }
 
-impl TopElement for DebugElementVariable16 {
-    const LEN: ElementLength = ElementLength::Variable16;
-}
-
-impl fmt::Debug for DebugElementVariable16 {
+impl<const ID: u8> fmt::Debug for DebugElementVariable16<ID> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_tuple("DebugElementVariable16")
+            .field(&ID)
             .field(&self.data.len())
             .field(&format_args!("{:0X}", BytesFmt(&self.data)))
             .finish()
@@ -427,11 +453,14 @@ impl fmt::Debug for DebugElementVariable16 {
 
 /// An element of variable 24 size that just buffer the data.
 #[derive(Clone)]
-pub struct DebugElementVariable24 {
+pub struct DebugElementVariable24<const ID: u8> {
     data: Vec<u8>,
 }
 
-impl SimpleElement for DebugElementVariable24 {
+impl<const ID: u8> SimpleElement for DebugElementVariable24<ID> {
+    
+    const ID: u8 = ID;
+    const LEN: ElementLength = ElementLength::Variable24;
 
     fn encode(&self, write: &mut impl Write) -> io::Result<()> {
         write.write_all(&self.data)
@@ -443,11 +472,7 @@ impl SimpleElement for DebugElementVariable24 {
 
 }
 
-impl TopElement for DebugElementVariable24 {
-    const LEN: ElementLength = ElementLength::Variable24;
-}
-
-impl fmt::Debug for DebugElementVariable24 {
+impl<const ID: u8> fmt::Debug for DebugElementVariable24<ID> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_tuple("DebugElementVariable24")
             .field(&self.data.len())
@@ -458,11 +483,14 @@ impl fmt::Debug for DebugElementVariable24 {
 
 /// An element of variable 32 size that just buffer the data.
 #[derive(Clone)]
-pub struct DebugElementVariable32 {
+pub struct DebugElementVariable32<const ID: u8> {
     data: Vec<u8>,
 }
 
-impl SimpleElement for DebugElementVariable32 {
+impl<const ID: u8> SimpleElement for DebugElementVariable32<ID> {
+    
+    const ID: u8 = ID;
+    const LEN: ElementLength = ElementLength::Variable32;
 
     fn encode(&self, write: &mut impl Write) -> io::Result<()> {
         write.write_all(&self.data)
@@ -474,11 +502,7 @@ impl SimpleElement for DebugElementVariable32 {
 
 }
 
-impl TopElement for DebugElementVariable32 {
-    const LEN: ElementLength = ElementLength::Variable32;
-}
-
-impl fmt::Debug for DebugElementVariable32 {
+impl<const ID: u8> fmt::Debug for DebugElementVariable32<ID> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_tuple("DebugElementVariable32")
             .field(&self.data.len())

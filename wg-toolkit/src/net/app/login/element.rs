@@ -16,8 +16,16 @@ use rsa::{RsaPrivateKey, RsaPublicKey};
 use blowfish::Blowfish;
 
 use crate::net::filter::{RsaWriter, RsaReader, BlowfishWriter, BlowfishReader};
-use crate::net::element::{Element, SimpleElement, TopElement, ElementLength};
+use crate::net::element::{Element, SimpleElement, ElementLength};
 use crate::util::io::*;
+
+
+/// Internal module containing all raw elements numerical ids.
+pub mod id {
+    pub const LOGIN_REQUEST: u8         = 0x00;
+    pub const PING: u8                  = 0x02;
+    pub const CHALLENGE_RESPONSE: u8    = 0x03;
+}
 
 
 /// A ping sent from the client to the login app or replied from the
@@ -31,6 +39,9 @@ pub struct Ping {
 
 impl SimpleElement for Ping {
 
+    const ID: u8 = id::PING;
+    const LEN: ElementLength = ElementLength::Fixed(1);
+
     fn encode(&self, write: &mut impl Write) -> io::Result<()> {
         write.write_u8(self.num)
     }
@@ -39,10 +50,6 @@ impl SimpleElement for Ping {
         Ok(Self { num: read.read_u8()? })
     }
 
-}
-
-impl TopElement for Ping {
-    const LEN: ElementLength = ElementLength::Fixed(1);
 }
 
 
@@ -77,26 +84,33 @@ pub enum LoginRequestEncryption {
     Server(Arc<RsaPrivateKey>),
 }
 
+impl LoginRequest {
+    pub const ID: u8 = id::LOGIN_REQUEST;
+}
+
 impl Element for LoginRequest {
 
     type Config = LoginRequestEncryption;
+    const LEN: ElementLength = ElementLength::Variable16;
 
-    fn encode(&self, write: &mut impl Write, config: &Self::Config) -> io::Result<()> {
+    fn encode(&self, write: &mut impl Write, config: &Self::Config) -> io::Result<u8> {
         write.write_u32(self.protocol)?;
         match config {
             LoginRequestEncryption::Clear => {
                 write.write_u8(0)?;
-                encode_login_params(write, self)
+                encode_login_params(write, self)?;
             }
             LoginRequestEncryption::Client(key) => {
                 write.write_u8(1)?;
-                encode_login_params(RsaWriter::new(write, &key), self)
+                encode_login_params(RsaWriter::new(write, &key), self)?;
             }
             LoginRequestEncryption::Server(_) => panic!("missing client public encryption key to encode the login request"),
         }
+        Ok(Self::ID)
     }
 
-    fn decode(read: &mut impl Read, _len: usize, config: &Self::Config) -> io::Result<Self> {
+    fn decode(read: &mut impl Read, _len: usize, config: &Self::Config, id: u8) -> io::Result<Self> {
+        debug_assert_eq!(id, Self::ID);
         let protocol = read.read_u32()?;
         if read.read_u8()? != 0 {
             if let LoginRequestEncryption::Server(key) = config {
@@ -109,10 +123,6 @@ impl Element for LoginRequest {
         }
     }
 
-}
-
-impl TopElement for LoginRequest {
-    const LEN: ElementLength = ElementLength::Variable16;
 }
 
 fn encode_login_params(mut write: impl Write, input: &LoginRequest) -> io::Result<()> {
@@ -243,8 +253,9 @@ const CHALLENGE_CUCKOO_CYCLE: &'static str = "cuckoo_cycle";
 impl Element for LoginResponse {
 
     type Config = LoginResponseEncryption;
+    const LEN: ElementLength = ElementLength::Undefined;  // It's a reply.
 
-    fn encode(&self, write: &mut impl Write, config: &Self::Config) -> io::Result<()> {
+    fn encode(&self, write: &mut impl Write, config: &Self::Config) -> io::Result<u8> {
         
         match self {
             Self::Success(success) => {
@@ -278,11 +289,11 @@ impl Element for LoginResponse {
             Self::Unknown(code) => write.write_u8(*code)?
         }
 
-        Ok(())
+        Ok(0)
 
     }
 
-    fn decode(read: &mut impl Read, _len: usize, config: &Self::Config) -> io::Result<Self> {
+    fn decode(read: &mut impl Read, _len: usize, config: &Self::Config, _id: u8) -> io::Result<Self> {
         
         let error = match read.read_u8()? {
             1 => {
@@ -385,26 +396,26 @@ pub struct CuckooCycleResponse {
 impl<E: Element> Element for ChallengeResponse<E> {
 
     type Config = E::Config;
+    const LEN: ElementLength = ElementLength::Variable16;
 
-    fn encode(&self, write: &mut impl Write, config: &Self::Config) -> io::Result<()> {
+    fn encode(&self, write: &mut impl Write, config: &Self::Config) -> io::Result<u8> {
         write.write_f32(self.duration.as_secs_f32())?;
         self.data.encode(write, config)
     }
 
-    fn decode(read: &mut impl Read, len: usize, config: &Self::Config) -> io::Result<Self> {
+    fn decode(read: &mut impl Read, len: usize, config: &Self::Config, id: u8) -> io::Result<Self> {
         Ok(ChallengeResponse { 
             duration: Duration::from_secs_f32(read.read_f32()?), 
-            data: E::decode(read, len - 4, config)?
+            data: E::decode(read, len - 4, config, id)?
         })
     }
 
 }
 
-impl<E: Element> TopElement for ChallengeResponse<E> {
-    const LEN: ElementLength = ElementLength::Variable16;
-}
-
 impl SimpleElement for CuckooCycleResponse {
+    
+    const ID: u8 = id::CHALLENGE_RESPONSE;
+    const LEN: ElementLength = ElementLength::Undefined;
 
     fn encode(&self, write: &mut impl Write) -> io::Result<()> {
         write.write_blob_variable(&self.key)?;

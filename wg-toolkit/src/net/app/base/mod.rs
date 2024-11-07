@@ -12,27 +12,14 @@ use blowfish::Blowfish;
 
 use crate::net::bundle::{Bundle, ElementReader, TopElementReader};
 use crate::net::channel::ChannelTracker;
-// use crate::net::element::ElementIdRange;
+use crate::net::element::SimpleElement;
 use crate::net::socket::PacketSocket;
 
-use super::common::element::{Entity, Method};
+use super::common::element::Entity;
 use super::io_invalid_data;
 
-use element::ClientAuth;
+use element::{ClientAuth, ClientSessionKey};
 
-
-/// This modules defines numerical identifiers for base app elements.
-pub mod id {
-
-    // use super::ElementIdRange;
-
-    pub const CLIENT_AUTH: u8           = 0x00;
-    pub const CLIENT_SESSION_KEY: u8    = 0x01;
-
-    // pub const CELL_ENTITY_METHOD: ElementIdRange = ElementIdRange::new(0x0F, 0x87);
-    // pub const BASE_ENTITY_METHOD: ElementIdRange = ElementIdRange::new(0x88, 0xFE);
-
-}
 
 /// The base application.
 #[derive(Debug)]
@@ -111,8 +98,8 @@ impl App {
     /// Handle an element read from the given address.
     fn handle_element(&mut self, addr: SocketAddr, reader: TopElementReader) -> io::Result<()> {
         match reader.id() {
-            id::CLIENT_AUTH => self.handle_client_auth(addr, reader),
-            id::CLIENT_SESSION_KEY => self.handle_client_session_key(addr, reader),
+            ClientAuth::ID => self.handle_client_auth(addr, reader),
+            ClientSessionKey::ID => self.handle_client_session_key(addr, reader),
             id => Err(io_invalid_data(format_args!("unexpected element #{id}"))),
         }
     }
@@ -144,9 +131,9 @@ impl App {
     /// blowfish key that will be used for encryption.
     /// 
     /// This returns true if the client hasn't been answered yet.
-    pub fn answer_login_success(&mut self, addr: SocketAddr, blowfish: Arc<Blowfish>) -> bool {
+    pub fn answer_login_success(&mut self, addr: SocketAddr, _blowfish: Arc<Blowfish>) -> bool {
         
-        let Some(request_id) = self.pending_clients.remove(&addr) else {
+        let Some(_request_id) = self.pending_clients.remove(&addr) else {
             return false;
         };
 
@@ -155,11 +142,11 @@ impl App {
 
     }
 
-    pub fn create_entity<E: Entity>(&mut self, addr: SocketAddr, entity: E) -> Handle<E> {
+    pub fn create_entity<E: Entity>(&mut self, _addr: SocketAddr, _entity: E) -> Handle<E> {
         todo!()
     }
 
-    pub fn call_method<E: Entity>(&mut self, addr: SocketAddr, handle: Handle<E>, method: E::ClientMethod) {
+    pub fn call_method<E: Entity>(&mut self, _addr: SocketAddr, _handle: Handle<E>, _method: E::ClientMethod) {
         todo!()
     }
 

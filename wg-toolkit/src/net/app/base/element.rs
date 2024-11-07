@@ -5,8 +5,20 @@
 
 use std::io::{self, Read, Write};
 
-use crate::net::element::{SimpleElement, TopElement, ElementLength};
+use crate::net::element::{SimpleElement, ElementLength};
 use crate::util::io::*;
+
+
+/// Internal module containing all raw elements numerical ids.
+pub mod id {
+
+    pub const CLIENT_AUTH: u8           = 0x00;
+    pub const CLIENT_SESSION_KEY: u8    = 0x01;
+
+    // pub const CELL_ENTITY_METHOD: ElementIdRange = ElementIdRange::new(0x0F, 0x87);
+    // pub const BASE_ENTITY_METHOD: ElementIdRange = ElementIdRange::new(0x88, 0xFE);
+
+}
 
 
 /// Sent by the client to the server without encryption in order to authenticate,
@@ -28,6 +40,9 @@ pub struct ClientAuth {
 
 impl SimpleElement for ClientAuth {
 
+    const ID: u8 = id::CLIENT_AUTH;
+    const LEN: ElementLength = ElementLength::Fixed(7);
+    
     fn encode(&self, write: &mut impl Write) -> io::Result<()> {
         write.write_u32(self.login_key)?;
         write.write_u8(self.attempt_num)?;
@@ -41,11 +56,8 @@ impl SimpleElement for ClientAuth {
             unk: read.read_u16()?,
         })
     }
+    
 
-}
-
-impl TopElement for ClientAuth {
-    const LEN: ElementLength = ElementLength::Fixed(7);
 }
 
 
@@ -55,13 +67,16 @@ impl TopElement for ClientAuth {
 /// - Sent by the client on login (and apparently randomly after login) to return 
 ///   the session key that was sent by the server in the initial reply (first case).
 #[derive(Debug, Clone)]
-pub struct SessionKey {
+pub struct ClientSessionKey {
     /// The server session key
     pub session_key: u32,
 }
 
-impl SimpleElement for SessionKey {
+impl SimpleElement for ClientSessionKey {
 
+    const ID: u8 = id::CLIENT_SESSION_KEY;
+    const LEN: ElementLength = ElementLength::Fixed(4);
+    
     fn encode(&self, write: &mut impl Write) -> io::Result<()> {
         write.write_u32(self.session_key)
     }
@@ -70,10 +85,6 @@ impl SimpleElement for SessionKey {
         Ok(Self { session_key: read.read_u32()? })
     }
 
-}
-
-impl TopElement for SessionKey {
-    const LEN: ElementLength = ElementLength::Fixed(4);
 }
 
 

@@ -21,6 +21,7 @@ use tracing::trace;
 
 use crate::net::bundle::{Bundle, ElementReader, TopElementReader};
 use crate::net::channel::ChannelTracker;
+use crate::net::element::SimpleElement;
 use crate::util::cuckoo::CuckooContext;
 use crate::net::socket::PacketSocket;
 use super::io_invalid_data;
@@ -32,14 +33,6 @@ use element::{
     LoginSuccess, LoginError,
     ChallengeResponse, CuckooCycleResponse,
 };
-
-
-/// This modules defines numerical identifiers for login app elements.
-pub mod id {
-    pub const LOGIN_REQUEST: u8         = 0x00;
-    pub const PING: u8                  = 0x02;
-    pub const CHALLENGE_RESPONSE: u8    = 0x03;
-}
 
 
 /// The login application.
@@ -155,9 +148,9 @@ impl App {
     /// Handle an element read from the given address.
     fn handle_element(&mut self, addr: SocketAddr, reader: TopElementReader) -> io::Result<()> {
         match reader.id() {
-            id::PING => self.handle_ping(addr, reader),
-            id::LOGIN_REQUEST => self.handle_login_request(addr, reader),
-            id::CHALLENGE_RESPONSE => self.handle_challenge_response(addr, reader),
+            Ping::ID => self.handle_ping(addr, reader),
+            LoginRequest::ID => self.handle_login_request(addr, reader),
+            CuckooCycleResponse::ID => self.handle_challenge_response(addr, reader),
             id => Err(io_invalid_data(format_args!("unexpected element #{id}"))),
         }
     }

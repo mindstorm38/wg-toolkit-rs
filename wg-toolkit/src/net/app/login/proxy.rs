@@ -14,14 +14,14 @@ use crate::net::bundle::{Bundle, ElementReader, ReplyElementReader, TopElementRe
 use crate::net::app::login::element::{ChallengeResponse, CuckooCycleResponse};
 use crate::net::app::proxy::{UNSPECIFIED_ADDR, RECV_TIMEOUT};
 use crate::net::channel::ChannelTracker;
-use crate::net::packet::Packet;
+use crate::net::element::SimpleElement;
 use crate::net::socket::PacketSocket;
+use crate::net::packet::Packet;
 
 use crate::util::thread::{ThreadPoll, ThreadPollHandle};
 
 use super::element::{LoginError, LoginRequest, LoginRequestEncryption, LoginResponse, LoginResponseEncryption, Ping};
 use super::io_invalid_data;
-use super::id;
 
 
 const DEAD_PEER_TIMEOUT: Duration = Duration::from_secs(10);
@@ -294,9 +294,9 @@ impl Inner {
 
     fn handle_out_element(&mut self, reader: TopElementReader, peer: &mut Peer) -> io::Result<()> {
         match reader.id() {
-            id::PING => self.handle_out_ping(reader, peer),
-            id::LOGIN_REQUEST => self.handle_login_request(reader, peer),
-            id::CHALLENGE_RESPONSE => self.handle_challenge_response(reader, peer),
+            Ping::ID => self.handle_out_ping(reader, peer),
+            LoginRequest::ID => self.handle_login_request(reader, peer),
+            CuckooCycleResponse::ID => self.handle_challenge_response(reader, peer),
             id => Err(io_invalid_data(format_args!("unexpected element #{id}"))),
         }
     }
@@ -314,7 +314,7 @@ impl Inner {
             kind: PeerLastRequestKind::Ping {  },
         });
         
-        self.bundle.element_writer().write_simple_request(id::PING, ping.element, request_id);
+        self.bundle.element_writer().write_simple_request(ping.element, request_id);
 
         Ok(())
 
@@ -345,7 +345,7 @@ impl Inner {
             .map(|key| LoginRequestEncryption::Client(Arc::clone(&key)))
             .unwrap_or(LoginRequestEncryption::Clear);
 
-        self.bundle.element_writer().write_request(id::LOGIN_REQUEST, login.element.clone(), &send_encryption, request_id);
+        self.bundle.element_writer().write_request(login.element.clone(), &send_encryption, request_id);
 
         Ok(())
 
@@ -353,7 +353,7 @@ impl Inner {
 
     fn handle_challenge_response(&mut self, elt: TopElementReader, _peer: &mut Peer) -> io::Result<()> {
         let challenge = elt.read_simple::<ChallengeResponse<CuckooCycleResponse>>()?;
-        self.bundle.element_writer().write_simple(id::CHALLENGE_RESPONSE, challenge.element);
+        self.bundle.element_writer().write_simple(challenge.element);
         Ok(())
     }
 

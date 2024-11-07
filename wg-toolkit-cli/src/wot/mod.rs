@@ -14,11 +14,12 @@ use rsa::{RsaPrivateKey, RsaPublicKey};
 use blowfish::Blowfish;
 
 use tracing::level_filters::LevelFilter;
-use tracing::{info, instrument, warn};
+use tracing::{error, info, instrument, warn};
 
-use wgtk::net::app::proxy::{self, PacketDirection};
 use wgtk::net::bundle::{Bundle, ElementReader, TopElementReader};
+use wgtk::net::app::proxy::{self, PacketDirection};
 use wgtk::net::app::{login, base, client};
+use wgtk::net::element::SimpleElement;
 
 use crate::{CliResult, WotArgs};
 
@@ -267,19 +268,23 @@ impl BaseProxyThread {
     }
 
     fn read_out_element(&mut self, addr: SocketAddr, elt: TopElementReader) -> bool {
+        
+        use base::element::*;
+
         match elt.id() {
-            base::id::CLIENT_SESSION_KEY => {
-                let elt = elt.read_simple::<base::element::SessionKey>().unwrap();
+            ClientSessionKey::ID => {
+                let elt = elt.read_simple::<ClientSessionKey>().unwrap();
                 assert!(elt.request_id.is_none());
                 info!(%addr, "-> Session key: 0x{:08X}", elt.element.session_key);
                 true
             }
-            _ => {
+            id => {
                 let elt = elt.read_simple::<()>().unwrap();
-                warn!(%addr, "-> Top element #{}, request: {:?}", elt.id, elt.request_id);
+                warn!(%addr, "-> Top element #{id}, request: {:?}", elt.request_id);
                 false
             }
         }
+
     }
 
     fn read_in_bundle(&mut self, addr: SocketAddr, bundle: Bundle) {
@@ -304,68 +309,71 @@ impl BaseProxyThread {
     }
 
     fn read_in_element(&mut self, addr: SocketAddr, elt: TopElementReader) -> bool {
+
+        use client::element::*;
+
         match elt.id() {
-            client::id::UPDATE_FREQUENCY_NOTIFICATION => {
-                let elt = elt.read_simple::<client::element::UpdateFrequencyNotification>().unwrap();
+            UpdateFrequencyNotification::ID => {
+                let elt = elt.read_simple::<UpdateFrequencyNotification>().unwrap();
                 assert!(elt.request_id.is_none());
                 info!(%addr, "<- Update frequency: {} Hz, game time: {}", elt.element.frequency, elt.element.game_time);
                 true
             }
-            client::id::TICK_SYNC => {
-                let elt = elt.read_simple::<client::element::TickSync>().unwrap();
+            TickSync::ID => {
+                let elt = elt.read_simple::<TickSync>().unwrap();
                 assert!(elt.request_id.is_none());
                 info!(%addr, "<- Tick sync: {}", elt.element.tick);
                 true
             }
-            client::id::RESET_ENTITIES => {
-                let elt = elt.read_simple::<client::element::ResetEntities>().unwrap();
+            ResetEntities::ID => {
+                let elt = elt.read_simple::<ResetEntities>().unwrap();
                 assert!(elt.request_id.is_none());
                 info!(%addr, "<- Reset entities, keep player on base: {}", elt.element.keep_player_on_base);
                 true
             }
-            client::id::CREATE_BASE_PLAYER => {
-                let elt = elt.read_simple::<client::element::CreateBasePlayer>().unwrap();
+            CreateBasePlayer::ID => {
+                let elt = elt.read_simple::<CreateBasePlayer>().unwrap();
                 assert!(elt.request_id.is_none());
                 warn!(%addr, "<- Create base player: {:?}", elt.element);
                 true
             }
-            client::id::CREATE_CELL_PLAYER => {
-                let elt = elt.read_simple::<client::element::CreateCellPlayer>().unwrap();
+            CreateCellPlayer::ID => {
+                let elt = elt.read_simple::<CreateCellPlayer>().unwrap();
                 assert!(elt.request_id.is_none());
                 warn!(%addr, "<- Create cell player: {:?}", elt.element);
                 true
             }
-            client::id::SELECT_PLAYER_ENTITY => {
-                let elt = elt.read_simple::<client::element::SelectPlayerEntity>().unwrap();
+            SelectPlayerEntity::ID => {
+                let elt = elt.read_simple::<SelectPlayerEntity>().unwrap();
                 assert!(elt.request_id.is_none());
                 info!(%addr, "<- Select player entity");
                 true
             }
-            client::id::RESOURCE_HEADER => {
-                let elt = elt.read_simple::<client::element::ResourceHeader>().unwrap();
+            ResourceHeader::ID => {
+                let elt = elt.read_simple::<ResourceHeader>().unwrap();
                 assert!(elt.request_id.is_none());
                 info!(%addr, "<- Resource header: {:?}", elt.element);
                 true
             }
-            client::id::RESOURCE_FRAGMENT => {
-                let elt = elt.read_simple::<client::element::ResourceFragment>().unwrap();
+            ResourceFragment::ID => {
+                let elt = elt.read_simple::<ResourceFragment>().unwrap();
                 assert!(elt.request_id.is_none());
                 info!(%addr, "<- Resource fragment: {:?}", elt.element);
                 true
             }
-            id if client::id::ENTITY_METHOD.contains(id) => {
+            id if id::ENTITY_METHOD.contains(id) => {
                 let elt = elt.read_simple::<()>().unwrap();
                 warn!(%addr, "<- Entity method: {id} (request: {:?})", elt.request_id);
                 false
             }
-            id if client::id::ENTITY_PROPERTY.contains(id) => {
+            id if id::ENTITY_PROPERTY.contains(id) => {
                 let elt = elt.read_simple::<()>().unwrap();
                 warn!(%addr, "<- Entity property: {id} (request: {:?})", elt.request_id);
                 false
             }
-            _ => {
+            id => {
                 let elt = elt.read_simple::<()>().unwrap();
-                warn!(%addr, "<- Top element #{}, request: {:?}", elt.id, elt.request_id);
+                error!(%addr, "<- Top element #{id}, request: {:?}", elt.request_id);
                 false
             }
         }
