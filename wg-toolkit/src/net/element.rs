@@ -28,22 +28,22 @@ pub trait Element: Sized {
     /// Type of the element's config that is being encoded and decoded.
     type Config;
 
-    /// The type of length that prefixes the element's content and describe how much 
-    /// space is taken by the element, this value can be left undef for non-top-elements.
-    const LEN: ElementLength;
+    /// Get the length to use when encoding the element, this can return any value for 
+    /// non-top-elements (replies), like [`ElementLength::ZERO`].
+    fn encode_length(&self, config: &Self::Config) -> ElementLength;
 
     /// Encode the element with the given writer and the given configuration. On success
     /// this function must return the element's numeric ID that will be used to identify
     /// it, note that this value is ignored for non-top-elements (in replies).
     fn encode(&self, write: &mut impl Write, config: &Self::Config) -> io::Result<u8>;
 
+    /// Get the length to use when decoding the element, given the id, this can return 
+    /// any value for non-top-elements (replies), like [`ElementLength::ZERO`].
+    fn decode_length(config: &Self::Config, id: u8) -> ElementLength;
+
     /// Decode the element from the given reader and the given configuration. The id the
     /// element is being decoded for is also given. This ID should be ignored for
     /// non-top-elements (in replies).
-    /// 
-    /// The total length that is available in the reader is also given. **Note
-    /// that** the given length will be equal to zero if the element's length
-    /// is set to [`ElementLength::Undefined`] (relevant for top elements).
     fn decode(read: &mut impl Read, len: usize, config: &Self::Config, id: u8) -> io::Result<Self>;
 
 }
@@ -76,11 +76,20 @@ pub trait SimpleElement: Sized {
 impl<E: SimpleElement> Element for E {
 
     type Config = ();
-    const LEN: ElementLength = <E as SimpleElement>::LEN;
 
+    #[inline]
+    fn encode_length(&self, _config: &Self::Config) -> ElementLength {
+        Self::LEN
+    }
+    
     #[inline]
     fn encode(&self, write: &mut impl Write, _config: &Self::Config) -> io::Result<u8> {
         SimpleElement::encode(self, write).map(|()| Self::ID)
+    }
+
+    #[inline]
+    fn decode_length(_config: &Self::Config, _id: u8) -> ElementLength {
+        Self::LEN
     }
 
     #[inline]
@@ -120,10 +129,10 @@ impl<E: EmptyElement> SimpleElement for E {
 }
 
 /// Blank implementation for (), should not be used as a top-element because it's length
-/// is undefined and it's numeric id is set to 0x00.
+/// is zero and it's numeric id is set to 0x00.
 impl EmptyElement for () {
     const ID: u8 = 0x00;
-    const LEN: ElementLength = ElementLength::Undefined;
+    const LEN: ElementLength = ElementLength::ZERO;
 }
 
 /// Type of length used by a specific message codec.
@@ -140,22 +149,15 @@ pub enum ElementLength {
     Variable24,
     /// The length is encoded on 32 bits in the element's header.
     Variable32,
-    /// The length is not known in advance, and so it's up to the element encoding and
-    /// decoding functions to manage the length of the element. In this case, the writer
-    /// or reader of given to those functions are not length-limited, and the length 
-    /// given to the decode function will be zero.
-    Undefined,
 }
 
 impl ElementLength {
 
+    /// Constant for fixed zero-length message length.
+    pub const ZERO: Self = Self::Fixed(0);
+
     /// Read the length from a given reader.
     pub fn read(self, mut reader: impl Read) -> std::io::Result<u32> {
-
-        // // If the length is a callback, get the real length from the message id.
-        // if let Self::Callback(cb) = self {
-        //     self = cb(id);
-        // }
 
         match self {
             Self::Fixed(len) => Ok(len),
@@ -163,8 +165,6 @@ impl ElementLength {
             Self::Variable16 => reader.read_u16().map(|n| n as u32),
             Self::Variable24 => reader.read_u24().map(|n| n),
             Self::Variable32 => reader.read_u32().map(|n| n),
-            Self::Undefined => Ok(0),
-            // Self::Callback(_) => panic!("cyclic callback")
         }
 
     }
@@ -181,8 +181,6 @@ impl ElementLength {
             Self::Variable16 => writer.write_u16(len as u16),
             Self::Variable24 => writer.write_u24(len),
             Self::Variable32 => writer.write_u32(len),
-            Self::Undefined => Ok(()),
-            // Self::Callback(_) => Ok(())
         }
 
     }
@@ -195,121 +193,7 @@ impl ElementLength {
             Self::Variable16 => 2,
             Self::Variable24 => 3,
             Self::Variable32 => 4,
-            Self::Undefined => 0,
-            // Self::Callback(_) => 0,
         }
-    }
-
-    #[inline]
-    pub fn is_undefined(&self) -> bool {
-        matches!(self, Self::Undefined)
-    }
-
-}
-
-/// An utility structure for storing ranges of element's ids. It provides way
-/// of converting between **element id** (with optional **sub-id**) and 
-/// **exposed id**.
-/// 
-/// This structure is small and therefore can be copied.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ElementIdRange {
-    pub first: u8,
-    pub last: u8,
-}
-
-impl ElementIdRange {
-
-    /// Create a new id range, with first and last ids, both included.
-    pub const fn new(first: u8, last: u8) -> Self {
-        Self { first, last }
-    }
-
-    #[inline]
-    pub const fn contains(self, id: u8) -> bool {
-        self.first <= id && id <= self.last
-    }
-
-    /// Returns the number of slots in this range.
-    #[inline]
-    pub const fn slots_count(self) -> u8 {
-        self.last - self.first + 1
-    }
-
-    /// Returns the number of slots that requires a sub-id. These slots are 
-    /// starting from the end of the range. For example, if this function
-    /// returns 1, this means that the last slot (`.last`), if used, will be
-    /// followed by a sub-id.
-    /// 
-    /// You must give the total number of exposed ids, because the presence
-    /// of sub-id depends on how exposed ids can fit in the id range.
-    #[inline]
-    pub const fn sub_slots_count(self, exposed_count: u16) -> u8 {
-        // Calculate the number of excess exposed ids, compared to slots count.
-        let excess_count = exposed_count.saturating_sub(self.slots_count() as u16);
-        // If the are excess slots, calculate how much additional bytes are 
-        // required to represent such number.
-        if excess_count > 0 {
-            (excess_count / 255 + 1) as u8
-        } else {
-            0
-        }
-    }
-    
-    /// Returns the number of full slots that don't require a sub-id. This
-    /// is the opposite of `sub_slots_count`, read its documentation.
-    #[inline]
-    pub const fn full_slots_count(self, exposed_count: u16) -> u8 {
-        self.slots_count() - self.sub_slots_count(exposed_count)
-    }
-
-    /// Get the element's id and optional sub-id from the given exposed id
-    /// and total count of exposed ids.
-    pub fn from_exposed_id(self, exposed_count: u16, exposed_id: u16) -> (u8, Option<u8>) {
-
-        let full_slots = self.full_slots_count(exposed_count);
-
-        if exposed_id < full_slots as u16 {
-            // If the exposed id fits in the full slots.
-            (self.first + exposed_id as u8, None)
-        } else {
-            // If the given exposed id require to be put in a sub-slot.
-            // First we get how much offset the given exposed id is from the first
-            // sub slot (full_slots represent the first sub slot).
-            let overflow = exposed_id - full_slots as u16;
-            let first_sub_slot = self.first + full_slots;
-            // Casts are safe.
-            ((first_sub_slot as u16 + overflow / 256) as u8, Some((overflow % 256) as u8))
-        }
-
-    }
-
-    /// Get the exposed id from an element, but only return some exposed id if
-    /// it fits into 
-    pub fn to_exposed_id_checked(self, exposed_count: u16, element_id: u8) -> Option<u16> {
-        let raw_exposed_id = element_id - self.first;
-        (raw_exposed_id < self.full_slots_count(exposed_count)).then_some(raw_exposed_id as u16)
-    }
-
-    /// Get the exposed id from an element id and optionally a sub-id, which 
-    /// should be lazily provided with a closure.
-    pub fn to_exposed_id(self, exposed_count: u16, element_id: u8, sub_id_getter: impl FnOnce() -> u8) -> u16 {
-        
-        // This is the raw exposed id, it will be used, with full_slots to determine
-        // if a sub-id is needed.
-        let exposed_id = element_id - self.first;
-        let full_slots = self.full_slots_count(exposed_count);
-        
-        if exposed_id < full_slots {
-            exposed_id as u16
-        } else {
-            // Calculate of the sub-slot offset within sub-slots.
-            let offset_id = exposed_id - full_slots;
-            let sub_id = sub_id_getter();
-            // Calculate the final exposed id from the sub-id and offset.
-            full_slots as u16 + 256 * offset_id as u16 + sub_id as u16
-        }
-        
     }
 
 }
@@ -336,12 +220,19 @@ impl<E> Reply<E> {
 impl<E: Element> Element for Reply<E> {
 
     type Config = E::Config;
-    const LEN: ElementLength = ElementLength::Variable32;
+
+    fn encode_length(&self, _config: &Self::Config) -> ElementLength {
+        ElementLength::Variable32
+    }
 
     fn encode(&self, write: &mut impl Write, config: &Self::Config) -> io::Result<u8> {
         write.write_u32(self.request_id)?;
         self.element.encode(write, config)?;
         Ok(REPLY_ID)
+    }
+
+    fn decode_length(_config: &Self::Config, _id: u8) -> ElementLength {
+        ElementLength::Variable32
     }
 
     fn decode(read: &mut impl Read, len: usize, config: &Self::Config, id: u8) -> io::Result<Self> {
@@ -509,4 +400,111 @@ impl<const ID: u8> fmt::Debug for DebugElementVariable32<ID> {
             .field(&format_args!("{:0X}", BytesFmt(&self.data)))
             .finish()
     }
+}
+
+/// An utility structure for storing ranges of element's ids. It provides way
+/// of converting between **element id** (with optional **sub-id**) and 
+/// **exposed id**.
+/// 
+/// This structure is small and therefore can be copied.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ElementIdRange {
+    pub first: u8,
+    pub last: u8,
+}
+
+impl ElementIdRange {
+
+    /// Create a new id range, with first and last ids, both included.
+    pub const fn new(first: u8, last: u8) -> Self {
+        Self { first, last }
+    }
+
+    #[inline]
+    pub const fn contains(self, id: u8) -> bool {
+        self.first <= id && id <= self.last
+    }
+
+    /// Returns the number of slots in this range.
+    #[inline]
+    pub const fn slots_count(self) -> u8 {
+        self.last - self.first + 1
+    }
+
+    /// Returns the number of slots that requires a sub-id. These slots are 
+    /// starting from the end of the range. For example, if this function
+    /// returns 1, this means that the last slot (`.last`), if used, will be
+    /// followed by a sub-id.
+    /// 
+    /// You must give the total number of exposed ids, because the presence
+    /// of sub-id depends on how exposed ids can fit in the id range.
+    #[inline]
+    pub const fn sub_slots_count(self, exposed_count: u16) -> u8 {
+        // Calculate the number of excess exposed ids, compared to slots count.
+        let excess_count = exposed_count.saturating_sub(self.slots_count() as u16);
+        // If the are excess slots, calculate how much additional bytes are 
+        // required to represent such number.
+        if excess_count > 0 {
+            (excess_count / 255 + 1) as u8
+        } else {
+            0
+        }
+    }
+    
+    /// Returns the number of full slots that don't require a sub-id. This
+    /// is the opposite of `sub_slots_count`, read its documentation.
+    #[inline]
+    pub const fn full_slots_count(self, exposed_count: u16) -> u8 {
+        self.slots_count() - self.sub_slots_count(exposed_count)
+    }
+
+    /// Get the element's id and optional sub-id from the given exposed id
+    /// and total count of exposed ids.
+    pub fn from_exposed_id(self, exposed_count: u16, exposed_id: u16) -> (u8, Option<u8>) {
+
+        let full_slots = self.full_slots_count(exposed_count);
+
+        if exposed_id < full_slots as u16 {
+            // If the exposed id fits in the full slots.
+            (self.first + exposed_id as u8, None)
+        } else {
+            // If the given exposed id require to be put in a sub-slot.
+            // First we get how much offset the given exposed id is from the first
+            // sub slot (full_slots represent the first sub slot).
+            let overflow = exposed_id - full_slots as u16;
+            let first_sub_slot = self.first + full_slots;
+            // Casts are safe.
+            ((first_sub_slot as u16 + overflow / 256) as u8, Some((overflow % 256) as u8))
+        }
+
+    }
+
+    /// Get the exposed id from an element, but only return some exposed id if
+    /// it fits into 
+    pub fn to_exposed_id_checked(self, exposed_count: u16, element_id: u8) -> Option<u16> {
+        let raw_exposed_id = element_id - self.first;
+        (raw_exposed_id < self.full_slots_count(exposed_count)).then_some(raw_exposed_id as u16)
+    }
+
+    /// Get the exposed id from an element id and optionally a sub-id, which 
+    /// should be lazily provided with a closure.
+    pub fn to_exposed_id(self, exposed_count: u16, element_id: u8, sub_id_getter: impl FnOnce() -> u8) -> u16 {
+        
+        // This is the raw exposed id, it will be used, with full_slots to determine
+        // if a sub-id is needed.
+        let exposed_id = element_id - self.first;
+        let full_slots = self.full_slots_count(exposed_count);
+        
+        if exposed_id < full_slots {
+            exposed_id as u16
+        } else {
+            // Calculate of the sub-slot offset within sub-slots.
+            let offset_id = exposed_id - full_slots;
+            let sub_id = sub_id_getter();
+            // Calculate the final exposed id from the sub-id and offset.
+            full_slots as u16 + 256 * offset_id as u16 + sub_id as u16
+        }
+        
+    }
+
 }

@@ -6,7 +6,7 @@ use std::fmt;
 use tracing::warn;
 
 use super::packet::{self, PacketConfig, PacketLocked, Packet};
-use super::element::{Element, ElementLength, Reply, REPLY_ID};
+use super::element::{Element, Reply, REPLY_ID};
 
 use crate::util::io::{WgReadExt, WgWriteExt, IoCounter};
 
@@ -524,9 +524,11 @@ impl<'a> BundleElementWriter<'a> {
     /// element and its config. With an optional request ID.
     pub fn write_raw<E: Element>(&mut self, element: BundleElement<E>, config: &E::Config) {
 
+        let elt_len_kind = element.element.encode_length(config);
+
         // Allocate element's header, +1 for element's ID, +6 reply_id and link offset.
         // Using reserve exact so all the header is contiguous.
-        let header_len = 1 + E::LEN.len() + if element.request_id.is_some() { REQUEST_HEADER_LEN } else { 0 };
+        let header_len = 1 + elt_len_kind.len() + if element.request_id.is_some() { REQUEST_HEADER_LEN } else { 0 };
         let header_slice = self.bundle.reserve_exact(header_len);
         // header_slice[0] = element.id;
 
@@ -568,7 +570,7 @@ impl<'a> BundleElementWriter<'a> {
         // Finally write id and length, we can unwrap because we know that enough length is available.
         let header_len_slice = &mut self.bundle.packets[cur_packet_idx].slice_mut()[cur_packet_elt_offset..];
         header_len_slice[0] = elt_id;
-        E::LEN.write(&mut header_len_slice[1..], elt_len).unwrap();
+        elt_len_kind.write(&mut header_len_slice[1..], elt_len).unwrap();
 
     }
 
@@ -650,9 +652,13 @@ impl<'a> BundleElementReader<'a> {
         let offset = self.bundle_reader.content_offset();
         let request = self.next_request_offset == Some(offset);
 
+        // Get the element id ahead of time because we need to get the element length.
+        let elt_id = slice[0];  // Slice should not be empty.
+        let elt_len_kind = E::decode_length(config, elt_id);
+
         // Compute the required contiguous length of the header, add request header 
         // length if that element is a request.
-        let header_len = 1 + E::LEN.len() + if request { REQUEST_HEADER_LEN } else { 0 };
+        let header_len = 1 + elt_len_kind.len() + if request { REQUEST_HEADER_LEN } else { 0 };
         
         // We requires that the element's header is written contiguous in a single packet.
         if slice.len() < header_len {
@@ -664,7 +670,7 @@ impl<'a> BundleElementReader<'a> {
 
         // After length has been checked, we can read all this for sure, so we unwrap.
         let elt_id = self.bundle_reader.read_u8().unwrap();
-        let elt_len = E::LEN.read(&mut self.bundle_reader).unwrap();
+        let elt_len = elt_len_kind.read(&mut self.bundle_reader).unwrap();
 
         // If the element is a request, we read the next request offset, if that offset
         // is 0 (or 1 but that value is never used) then there is no next request.
@@ -677,12 +683,8 @@ impl<'a> BundleElementReader<'a> {
             None
         };
 
-        // The take limited length is u64::MAX with undefined length, so that the read
-        // isn't limited, and it avoids having a branch with or without Read::take!
-        let take_len = if E::LEN == ElementLength::Undefined { u64::MAX } else { elt_len as u64 };
-
         // Use ::take to limit the number of byte read from the reader.
-        let mut elt_reader = Read::take(&mut self.bundle_reader, take_len);
+        let mut elt_reader = Read::take(&mut self.bundle_reader, elt_len as u64);
         let element = match E::decode(&mut elt_reader, elt_len as usize, config, elt_id) {
             Ok(ret) => ret,
             Err(e) => {
@@ -692,22 +694,18 @@ impl<'a> BundleElementReader<'a> {
         };
 
         if next {
-            // If the length is undefined, do nothing and don't advance, because we rely
-            // on the element's decoding to have taken the right amount of data.
-            if !E::LEN.is_undefined() {
 
-                // Just a warning because the decoding process didn't read all the data. This
-                // warning is just enabled when going next, it avoids getting the error when
-                // reading the reply header for example.
-                let unread_len = elt_reader.limit() as usize;
-                if unread_len != 0 {
-                    warn!("remaining data while reading element of type '{}'", std::any::type_name::<E>());
-                }
-
-                // We advance the reader by the amount that has not been read.
-                self.bundle_reader.advance(unread_len);
-
+            // Just a warning because the decoding process didn't read all the data. This
+            // warning is just enabled when going next, it avoids getting the error when
+            // reading the reply header for example.
+            let unread_len = elt_reader.limit() as usize;
+            if unread_len != 0 {
+                warn!("remaining data while reading element of type '{}'", std::any::type_name::<E>());
             }
+
+            // We advance the reader by the amount that has not been read.
+            self.bundle_reader.advance(unread_len);
+
         } else {
             // Not going next, only rollback the internal reader.
             self.bundle_reader = reader_save;

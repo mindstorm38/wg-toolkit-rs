@@ -91,7 +91,10 @@ impl LoginRequest {
 impl Element for LoginRequest {
 
     type Config = LoginRequestEncryption;
-    const LEN: ElementLength = ElementLength::Variable16;
+
+    fn encode_length(&self, _config: &Self::Config) -> ElementLength {
+        ElementLength::Variable16
+    }
 
     fn encode(&self, write: &mut impl Write, config: &Self::Config) -> io::Result<u8> {
         write.write_u32(self.protocol)?;
@@ -107,6 +110,10 @@ impl Element for LoginRequest {
             LoginRequestEncryption::Server(_) => panic!("missing client public encryption key to encode the login request"),
         }
         Ok(Self::ID)
+    }
+
+    fn decode_length(_config: &Self::Config, _id: u8) -> ElementLength {
+        ElementLength::Variable16
     }
 
     fn decode(read: &mut impl Read, _len: usize, config: &Self::Config, id: u8) -> io::Result<Self> {
@@ -253,7 +260,10 @@ const CHALLENGE_CUCKOO_CYCLE: &'static str = "cuckoo_cycle";
 impl Element for LoginResponse {
 
     type Config = LoginResponseEncryption;
-    const LEN: ElementLength = ElementLength::Undefined;  // It's a reply.
+
+    fn encode_length(&self, _config: &Self::Config) -> ElementLength {
+        ElementLength::ZERO
+    }
 
     fn encode(&self, write: &mut impl Write, config: &Self::Config) -> io::Result<u8> {
         
@@ -291,6 +301,10 @@ impl Element for LoginResponse {
 
         Ok(0)
 
+    }
+
+    fn decode_length(_config: &Self::Config, _id: u8) -> ElementLength {
+        ElementLength::ZERO
     }
 
     fn decode(read: &mut impl Read, _len: usize, config: &Self::Config, _id: u8) -> io::Result<Self> {
@@ -396,11 +410,18 @@ pub struct CuckooCycleResponse {
 impl<E: Element> Element for ChallengeResponse<E> {
 
     type Config = E::Config;
-    const LEN: ElementLength = ElementLength::Variable16;
+
+    fn encode_length(&self, _config: &Self::Config) -> ElementLength {
+        ElementLength::Variable16
+    }
 
     fn encode(&self, write: &mut impl Write, config: &Self::Config) -> io::Result<u8> {
         write.write_f32(self.duration.as_secs_f32())?;
         self.data.encode(write, config)
+    }
+
+    fn decode_length(_config: &Self::Config, _id: u8) -> ElementLength {
+        ElementLength::Variable16
     }
 
     fn decode(read: &mut impl Read, len: usize, config: &Self::Config, id: u8) -> io::Result<Self> {
@@ -415,7 +436,7 @@ impl<E: Element> Element for ChallengeResponse<E> {
 impl SimpleElement for CuckooCycleResponse {
     
     const ID: u8 = id::CHALLENGE_RESPONSE;
-    const LEN: ElementLength = ElementLength::Undefined;
+    const LEN: ElementLength = ElementLength::ZERO;  // Not used by ChallengeResponse<E>
 
     fn encode(&self, write: &mut impl Write) -> io::Result<()> {
         write.write_blob_variable(&self.key)?;
