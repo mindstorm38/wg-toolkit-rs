@@ -1,7 +1,7 @@
-use std::cmp::Ordering;
 use std::io::{self, Write, BufWriter};
 use std::collections::HashSet;
 use std::fs::{self, File};
+use std::cmp::Ordering;
 use std::borrow::Cow;
 use std::path::Path;
 
@@ -29,7 +29,8 @@ pub fn cmd_bootstrap(args: BootstrapArgs) -> CliResult<()> {
     let model = load(fs)
         .map_err(|e| format!("Failed to load model, reason: {e}"))?;
     
-    generate(&args.dest, &model)
+    let mut state = State::default();
+    generate(&args.dest, &model, &mut state)
         .map_err(|e| format!("Failed to generate model, reason: {e}"))?;
 
     Ok(())
@@ -82,11 +83,11 @@ fn load(fs: ResFilesystem) -> io::Result<Model> {
 
 }
 
-fn generate(dest_dir: &Path, model: &Model) -> io::Result<()> {
-    generate_mod(dest_dir, model)
+fn generate(dest_dir: &Path, model: &Model, state: &mut State) -> io::Result<()> {
+    generate_mod(dest_dir, model, state)
 }
 
-fn generate_mod(mod_dir: &Path, model: &Model) -> io::Result<()> {
+fn generate_mod(mod_dir: &Path, model: &Model, state: &mut State) -> io::Result<()> {
 
     fs::create_dir_all(&mod_dir)?;
 
@@ -102,17 +103,17 @@ fn generate_mod(mod_dir: &Path, model: &Model) -> io::Result<()> {
 
     generate_alias(mod_dir, model)?;
 
-    for app in APPS {
+    for app in &APPS {
         writeln!(writer, "pub mod {};", app.mod_name)?;
         let app_mod_dir = mod_dir.join(app.mod_name);
-        generate_app_mod(&app_mod_dir, app, model)?;
+        generate_app_mod(&app_mod_dir, app, model, &mut *state)?;
     }
 
     writeln!(writer)?;
     writeln!(writer, "pub mod interface;")?;
     writeln!(writer, "pub mod entity;")?;
-    generate_interfaces(mod_dir, model)?;
-    generate_entities(mod_dir, model)?;
+    generate_interfaces(mod_dir, model, &mut *state)?;
+    generate_entities(mod_dir, model, &mut *state)?;
 
     Ok(())
 
@@ -148,6 +149,7 @@ fn generate_alias(mod_dir: &Path, model: &Model) -> io::Result<()> {
             TyKind::Dict(ty_dict) => {
                 prev_dict = true;
                 writeln!(writer)?;
+                writeln!(writer, "#[derive(Debug)]")?;
                 writeln!(writer, "pub struct {identifier} {{")?;
                 for prop in &ty_dict.properties {
                     let prop_identifier = generate_rust_identifier(&prop.name);
@@ -212,7 +214,7 @@ fn generate_rust_identifier(name: &str) -> Cow<'_, str> {
     }
 }
 
-fn generate_app_mod(mod_dir: &Path, app: &App, model: &Model) -> io::Result<()> {
+fn generate_app_mod(mod_dir: &Path, app: &'static App, model: &Model, state: &mut State) -> io::Result<()> {
 
     fs::create_dir_all(&mod_dir)?;
     
@@ -223,14 +225,14 @@ fn generate_app_mod(mod_dir: &Path, app: &App, model: &Model) -> io::Result<()> 
     writeln!(writer, "pub mod interface;")?;
     writeln!(writer, "pub mod entity;")?;
 
-    generate_app_interfaces(mod_dir, app, model)?;
-    generate_app_entities(mod_dir, app, model)?;
+    generate_app_interfaces(mod_dir, app, model, &mut *state)?;
+    generate_app_entities(mod_dir, app, model, &mut *state)?;
 
     Ok(())
 
 }
 
-fn generate_app_interfaces(mod_dir: &Path, app: &App, model: &Model) -> io::Result<()> {
+fn generate_app_interfaces(mod_dir: &Path, app: &'static App, model: &Model, state: &mut State) -> io::Result<()> {
     
     println!(" = Writing {} interfaces...", app.mod_name);
     let interface_file = mod_dir.join("interface.rs");
@@ -240,14 +242,14 @@ fn generate_app_interfaces(mod_dir: &Path, app: &App, model: &Model) -> io::Resu
     writeln!(writer)?;
 
     for interface in &model.interfaces {
-        generate_app_interface(&mut writer, app, model, interface)?;
+        generate_app_interface(&mut writer, app, model, interface, &mut *state)?;
     }
 
     Ok(())
 
 }
 
-fn generate_app_entities(mod_dir: &Path, app: &App, model: &Model) -> io::Result<()> {
+fn generate_app_entities(mod_dir: &Path, app: &'static App, model: &Model, state: &mut State) -> io::Result<()> {
 
     println!(" = Writing {} entities...", app.mod_name);
     let entity_file = mod_dir.join("entity.rs");
@@ -260,7 +262,7 @@ fn generate_app_entities(mod_dir: &Path, app: &App, model: &Model) -> io::Result
     writeln!(writer)?;
 
     for entity in &model.entities {
-        generate_app_entity(&mut writer, app, model, entity)?;
+        generate_app_entity(&mut writer, app, model, entity, &mut *state)?;
     }
 
     Ok(())
@@ -269,12 +271,14 @@ fn generate_app_entities(mod_dir: &Path, app: &App, model: &Model) -> io::Result
 
 fn generate_app_entity(
     mut writer: impl Write, 
-    app: &App,
+    app: &'static App,
     model: &Model, 
     entity: &Entity,
+    state: &mut State,
 ) -> io::Result<()> {
     
-    generate_app_interface(&mut writer, app, model, &entity.interface)?;
+    writeln!(writer, "/// Entity 0x{:02X}", entity.id)?;
+    generate_app_interface(&mut writer, app, model, &entity.interface, state)?;
 
     /// This method recursively register all methods for the entity in order to sort them
     /// later depending on their arguments' size and then compute there exposed id for
@@ -349,19 +353,21 @@ fn generate_app_entity(
 
 fn generate_app_interface(
     writer: impl Write, 
-    app: &App,
+    app: &'static App,
     model: &Model, 
     interface: &Interface,
+    state: &mut State,
 ) -> io::Result<()> {
-    generate_app_interface_methods(writer, app, model, interface)?;
+    generate_app_interface_methods(writer, app, model, interface, state)?;
     Ok(())
 }
 
 fn generate_app_interface_methods(
     mut writer: impl Write, 
-    app: &App,
+    app: &'static App,
     model: &Model, 
     interface: &Interface,
+    state: &mut State,
 ) -> io::Result<()> {
 
     let methods = (app.interface_methods)(interface);
@@ -370,7 +376,9 @@ fn generate_app_interface_methods(
     writeln!(writer, "pub enum {}Method {{ ", interface.name)?;
 
     for interface_name in &interface.implements {
-        writeln!(writer, "    {interface_name}({interface_name}Method),")?;
+        if !(app.empty_method_interfaces)(&mut *state).contains(interface_name) {
+            writeln!(writer, "    {interface_name}({interface_name}Method),")?;
+        }
     }
 
     let mut unique_names = HashSet::new();
@@ -384,7 +392,7 @@ fn generate_app_interface_methods(
         }
 
         if !unique_names.insert(method.name.as_str()) {
-            continue;
+            panic!("function name present multiple times: {}", method.name);
         }
 
         write!(writer, "    {}(", method.name)?;
@@ -400,6 +408,11 @@ fn generate_app_interface_methods(
         
     }
 
+    if unique_names.is_empty() {
+        // Note: It's safe to get this reference as a ptr because it lives for 'static.
+        (app.empty_method_interfaces)(&mut *state).insert(interface.name.clone());
+    }
+
     writeln!(writer, "}}")?;
     writeln!(writer)?;
 
@@ -407,7 +420,7 @@ fn generate_app_interface_methods(
 
 }
 
-fn generate_interfaces(mod_dir: &Path, model: &Model) -> io::Result<()> {
+fn generate_interfaces(mod_dir: &Path, model: &Model, state: &mut State) -> io::Result<()> {
 
     println!("== Writing interfaces...");
     let interface_file = mod_dir.join("interface.rs");
@@ -418,14 +431,14 @@ fn generate_interfaces(mod_dir: &Path, model: &Model) -> io::Result<()> {
     writeln!(writer)?;
 
     for interface in &model.interfaces {
-        generate_interface(&mut writer, model, interface)?;
+        generate_interface(&mut writer, model, interface, &mut *state)?;
     }
 
     Ok(())
 
 }
 
-fn generate_entities(mod_dir: &Path, model: &Model) -> io::Result<()> {
+fn generate_entities(mod_dir: &Path, model: &Model, state: &mut State) -> io::Result<()> {
 
     println!("== Writing entities...");
     let entity_file = mod_dir.join("entity.rs");
@@ -439,7 +452,7 @@ fn generate_entities(mod_dir: &Path, model: &Model) -> io::Result<()> {
     writeln!(writer)?;
 
     for entity in &model.entities {
-        generate_entity(&mut writer, model, entity)?;
+        generate_entity(&mut writer, model, entity, &mut *state)?;
     }
 
     Ok(())
@@ -450,9 +463,11 @@ fn generate_entity(
     mut writer: impl Write, 
     model: &Model, 
     entity: &Entity,
+    state: &mut State,
 ) -> io::Result<()> {
 
-    generate_interface(&mut writer, model, &entity.interface)?;
+    writeln!(writer, "/// Entity 0x{:02X}", entity.id)?;
+    generate_interface(&mut writer, model, &entity.interface, state)?;
 
     // TODO:
     // writeln!(writer, "impl Entity for {} {{", entity.interface.name)?;
@@ -469,19 +484,33 @@ fn generate_entity(
 
 fn generate_interface(
     mut writer: impl Write, 
-    model: &Model, 
+    _model: &Model, 
     interface: &Interface,
+    state: &mut State,
 ) -> io::Result<()> {
     
     writeln!(writer, "/// Interface {}", interface.name)?;
-    writeln!(writer, "#[derive(Debug, Default)]")?;
+    writeln!(writer, "#[derive(Debug)]")?;
     writeln!(writer, "pub struct {} {{", interface.name)?;
     
     for interface_name in &interface.implements {
-        writeln!(writer, "    pub i_{interface_name}: {interface_name},")?;
+        if !state.empty_interfaces.contains(interface_name) {
+            writeln!(writer, "    pub i_{interface_name}: {interface_name},")?;
+        }
     }
 
-    // TODO: client-side fields
+    // TODO: client-side fields... (continue)
+    let mut count = 0;
+    for property in &interface.properties {
+        if matches!(property.flags, PropertyFlags::AllClients | PropertyFlags::OwnClient | PropertyFlags::BaseAndClient) {
+            writeln!(writer, "    pub {}: {},", property.name, generate_type_ref(&property.ty))?;
+            count += 1;
+        }
+    }
+
+    if count == 0 {
+        state.empty_interfaces.insert(interface.name.clone());
+    }
 
     writeln!(writer, "}}")?;
     writeln!(writer)?;
@@ -564,26 +593,37 @@ fn compute_method_stream_size(method: &Method) -> StreamSize {
 struct App {
     mod_name: &'static str,
     interface_methods: fn(&Interface) -> &[Method],
-    check_property_flags: fn(PropertyFlags) -> bool,
+    empty_method_interfaces: fn(&mut State) -> &mut HashSet<String>,
 }
 
-const APPS: &[App] = &[
+static APPS: [App; 3] = [
     App {
         mod_name: "client",
         interface_methods: |i| &i.client_methods,
-        check_property_flags: |p| matches!(p, PropertyFlags::AllClients | PropertyFlags::BaseAndClient | PropertyFlags::OwnClient),
+        empty_method_interfaces: |s| &mut s.empty_client_methods_interfaces,
     },
     App {
         mod_name: "base",
         interface_methods: |i| &i.base_methods,
-        check_property_flags: |p| matches!(p, PropertyFlags::Base | PropertyFlags::BaseAndClient),
+        empty_method_interfaces: |s| &mut s.empty_base_methods_interfaces,
     },
     App {
         mod_name: "cell",
         interface_methods: |i| &i.cell_methods,
-        check_property_flags: |p| matches!(p, PropertyFlags::CellPrivate | PropertyFlags::CellPublic),
+        empty_method_interfaces: |s| &mut s.empty_cell_methods_interfaces,
     },
 ];
+
+/// Internal state when bootstrapping.
+#[derive(Debug, Default)]
+struct State {
+    /// A set of interfaces without any fields (sizeof=0) for which it's useless to 
+    /// generate variants.
+    empty_interfaces: HashSet<String>,
+    empty_client_methods_interfaces: HashSet<String>,
+    empty_base_methods_interfaces: HashSet<String>,
+    empty_cell_methods_interfaces: HashSet<String>,
+}
 
 /// An exposed method for the network protocol, this is used to list all exposed methods
 /// on an entity and then compute the methods' exposed ids.

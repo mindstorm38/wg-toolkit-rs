@@ -3,41 +3,14 @@ use wgtk::net::app::common::element::Method;
 use super::super::alias::*;
 use super::interface::*;
 
+/// Entity 0x01
 /// Methods for Account on client component
 pub enum AccountMethod { 
     Chat(ChatMethod),
     PlayerMessenger_chat2(PlayerMessenger_chat2Method),
-    AccountEditor(AccountEditorMethod),
-    TransactionUser(TransactionUserMethod),
-    InterclusterSender(InterclusterSenderMethod),
     ClientCommandsPort(ClientCommandsPortMethod),
-    AccountAdmin(AccountAdminMethod),
-    AccountAvatar(AccountAvatarMethod),
-    AccountClan(AccountClanMethod),
-    AccountAuthTokenProvider(AccountAuthTokenProviderMethod),
     AccountAuthTokenProviderClient(AccountAuthTokenProviderClientMethod),
-    BattleResultProcessor(BattleResultProcessorMethod),
-    Invitations(InvitationsMethod),
     InvitationsClient(InvitationsClientMethod),
-    Invoicing(InvoicingMethod),
-    AccountPrebattle(AccountPrebattleMethod),
-    AccountSpaProcessor(AccountSpaProcessorMethod),
-    AccountIGRProcessing(AccountIGRProcessingMethod),
-    SessionTracker(SessionTrackerMethod),
-    AccountGlobalMapConnector(AccountGlobalMapConnectorMethod),
-    AccountSysMessenger(AccountSysMessengerMethod),
-    AccountUnit(AccountUnitMethod),
-    AccountUnitClient(AccountUnitClientMethod),
-    AccountUnitRemote(AccountUnitRemoteMethod),
-    AccountUnitAssembler(AccountUnitAssemblerMethod),
-    AccountUnitBrowser(AccountUnitBrowserMethod),
-    AccountDebugger(AccountDebuggerMethod),
-    QuestProcessor(QuestProcessorMethod),
-    AvatarCreator(AvatarCreatorMethod),
-    AccountVersion(AccountVersionMethod),
-    PlayLimits(PlayLimitsMethod),
-    ServerSideReplays(ServerSideReplaysMethod),
-    EventTokensController(EventTokensControllerMethod),
     onKickedFromServer(String, u8, u32), // idx(0)
     onEnqueued(u8), // idx(1)
     onEnqueueFailure(u8, u8, String), // idx(2)
@@ -109,6 +82,7 @@ pub enum AccountMethod {
 // 35: processInvitations [Variable(Variable8)] @ ["InvitationsClient"]
 // 36: showGUI [Variable(Variable16)] @ []
 
+/// Entity 0x02
 /// Methods for Avatar on client component
 pub enum AvatarMethod { 
     Chat(ChatMethod),
@@ -116,11 +90,8 @@ pub enum AvatarMethod {
     ClientCommandsPort(ClientCommandsPortMethod),
     InvitationsClient(InvitationsClientMethod),
     AccountAuthTokenProviderClient(AccountAuthTokenProviderClientMethod),
-    AvatarObserver(AvatarObserverMethod),
     TeamHealthBar_Avatar(TeamHealthBar_AvatarMethod),
-    ProtectionZoneController_Avatar(ProtectionZoneController_AvatarMethod),
     RecoveryMechanic_Avatar(RecoveryMechanic_AvatarMethod),
-    DestructibleEntity_Avatar(DestructibleEntity_AvatarMethod),
     RespawnController_Avatar(RespawnController_AvatarMethod),
     VehiclesSpawnListStorage_Avatar(VehiclesSpawnListStorage_AvatarMethod),
     VehicleRemovalController_Avatar(VehicleRemovalController_AvatarMethod),
@@ -152,7 +123,7 @@ pub enum AvatarMethod {
     onBattleEvents(Vec<BATTLE_EVENT>), // idx(22)
     battleEventsSummary(BATTLE_EVENTS_SUMMARY), // idx(23)
     updateArena(u8, String), // idx(24)
-    updatePositions(Vec<u8>, Vec<i16>), // idx(25)
+    updatePositions(Vec<u16>, Vec<i16>), // idx(25)
     receivePhysicsDebugInfo(String), // idx(26)
     updateCarriedFlagPositions(Vec<u8>, Vec<i16>), // idx(27)
     receiveNotification(String), // idx(28)
@@ -192,9 +163,9 @@ pub enum AvatarMethod {
 // 17: onSectorBaseAction [Fixed(6)] @ ["AvatarEpic"]
 // 18: updateVehicleHealth [Fixed(9)] @ []
 // 19: updateVehicleSetting [Fixed(9)] @ []
-// 20: onVehicleHealthChanged [Fixed(11)] @ ["VehicleHealthBroadcastListenerComponent_Avatar"]
-// 21: onStepRepairPointAction [Fixed(11)] @ ["AvatarEpic"]
-// 22: enemySPGHit [Fixed(12)] @ []
+// 20: onStepRepairPointAction [Fixed(11)] @ ["AvatarEpic"]
+// 21: enemySPGHit [Fixed(12)] @ []
+// 22: onVehicleHealthChanged [Fixed(12)] @ ["VehicleHealthBroadcastListenerComponent_Avatar"]
 // 23: welcomeToSector [Fixed(12)] @ ["AvatarEpic"]
 // 24: updateState [Fixed(13)] @ ["RecoveryMechanic_Avatar"]
 // 25: onCrewRoleFactorAndRankUpdate [Fixed(13)] @ ["AvatarEpic"]
@@ -207,9 +178,9 @@ pub enum AvatarMethod {
 // 32: updateVehicleAmmo [Fixed(18)] @ []
 // 33: showOwnVehicleHitDirection [Fixed(21)] @ []
 // 34: enemySPGShotSound [Fixed(24)] @ []
-// 35: battleEventsSummary [Fixed(33)] @ []
-// 36: showHittingArea [Fixed(34)] @ []
-// 37: showCarpetBombing [Fixed(34)] @ []
+// 35: showHittingArea [Fixed(34)] @ []
+// 36: showCarpetBombing [Fixed(34)] @ []
+// 37: battleEventsSummary [Fixed(34)] @ []
 // 38: updateTargetingInfo [Fixed(36)] @ []
 // 39: showTracer [Fixed(43)] @ []
 // 40: update [Variable(Variable8)] @ []
@@ -250,49 +221,35 @@ pub enum AvatarMethod {
 // 75: showDestructibleShotResults [Variable(Variable8)] @ ["AvatarEpic"]
 // 76: updateSpawnList [Variable(Variable16)] @ ["VehiclesSpawnListStorage_Avatar"]
 
+/// Entity 0x03
 /// Methods for ArenaInfo on client component
 pub enum ArenaInfoMethod { 
-    PlaneTrajectoryArenaInfo(PlaneTrajectoryArenaInfoMethod),
     showCarpetBombing(u16, Vec3, Vec3, f32), // idx(0)
 }
 
 // 0: showCarpetBombing [Fixed(30)] @ []
 
+/// Entity 0x04
 /// Methods for ClientSelectableObject on client component
 pub enum ClientSelectableObjectMethod { 
 }
 
 
+/// Entity 0x05
 /// Methods for HangarVehicle on client component
 pub enum HangarVehicleMethod { 
 }
 
 
+/// Entity 0x06
 /// Methods for Vehicle on client component
 pub enum VehicleMethod { 
-    VehicleAIProxy(VehicleAIProxyMethod),
-    TeamBase_Vehicle(TeamBase_VehicleMethod),
-    SectorBase_Vehicle(SectorBase_VehicleMethod),
-    RepairBase_Vehicle(RepairBase_VehicleMethod),
-    VehicleObserver(VehicleObserverMethod),
-    BattleFeedback(BattleFeedbackMethod),
-    Harm(HarmMethod),
-    Sector_Vehicle(Sector_VehicleMethod),
-    ProtectionZone_Vehicle(ProtectionZone_VehicleMethod),
-    StepRepairPoint_Vehicle(StepRepairPoint_VehicleMethod),
-    DestructibleEntity_Vehicle(DestructibleEntity_VehicleMethod),
-    DefenderBonusController_Vehicle(DefenderBonusController_VehicleMethod),
-    RecoveryMechanic_Vehicle(RecoveryMechanic_VehicleMethod),
-    RespawnController_Vehicle(RespawnController_VehicleMethod),
-    SmokeController_Vehicle(SmokeController_VehicleMethod),
-    Wheels(WheelsMethod),
-    Perks_Vehicle(Perks_VehicleMethod),
     onExtraHitted(i16, Vec3), // idx(0)
-    onHealthChanged(i16, i16, OBJECT_ID, u8), // idx(1)
+    onHealthChanged(i16, i16, OBJECT_ID, u8, i8), // idx(1)
     showShooting(u8, i8), // idx(2)
     updateLaserSight(OBJECT_ID, BOOL, String), // idx(3)
-    showDamageFromShot(OBJECT_ID, Vec<u64>, u8, i32, u8, BOOL, f32), // idx(4)
-    showDamageFromExplosion(OBJECT_ID, Vec3, u8, i32, u8, f32), // idx(5)
+    showDamageFromShot(OBJECT_ID, Vec<u64>, u8, i32, u8, BOOL), // idx(4)
+    showDamageFromExplosion(OBJECT_ID, Vec3, u8, i32, u8), // idx(5)
     showAmmoBayEffect(u8, f32, f32), // idx(6)
     onPushed(f32, f32), // idx(7)
     onStaticCollision(f32, Vec3, Vec3, u8, f32, i8, u16), // idx(8)
@@ -301,35 +258,40 @@ pub enum VehicleMethod {
 
 // 0: showShooting [Fixed(2)] @ []
 // 1: onPushed [Fixed(8)] @ []
-// 2: onHealthChanged [Fixed(9)] @ []
-// 3: showAmmoBayEffect [Fixed(9)] @ []
+// 2: showAmmoBayEffect [Fixed(9)] @ []
+// 3: onHealthChanged [Fixed(10)] @ []
 // 4: onExtraHitted [Fixed(14)] @ []
 // 5: showRammingEffect [Fixed(16)] @ []
-// 6: showDamageFromExplosion [Fixed(26)] @ []
+// 6: showDamageFromExplosion [Fixed(22)] @ []
 // 7: onStaticCollision [Fixed(36)] @ []
 // 8: updateLaserSight [Variable(Variable8)] @ []
 // 9: showDamageFromShot [Variable(Variable8)] @ []
 
+/// Entity 0x07
 /// Methods for AreaDestructibles on client component
 pub enum AreaDestructiblesMethod { 
 }
 
 
+/// Entity 0x08
 /// Methods for OfflineEntity on client component
 pub enum OfflineEntityMethod { 
 }
 
 
+/// Entity 0x09
 /// Methods for Flock on client component
 pub enum FlockMethod { 
 }
 
 
+/// Entity 0x0A
 /// Methods for FlockExotic on client component
 pub enum FlockExoticMethod { 
 }
 
 
+/// Entity 0x0B
 /// Methods for Login on client component
 pub enum LoginMethod { 
     onKickedFromServer(i32), // idx(0)
@@ -341,6 +303,7 @@ pub enum LoginMethod {
 // 1: receiveLoginQueueNumber [Fixed(8)] @ []
 // 2: setPeripheryRoutingGroup [Variable(Variable8)] @ []
 
+/// Entity 0x0C
 /// Methods for DetachedTurret on client component
 pub enum DetachedTurretMethod { 
     onStaticCollision(f32, Vec3, Vec3), // idx(0)
@@ -350,62 +313,73 @@ pub enum DetachedTurretMethod {
 // 0: onStaticCollision [Fixed(28)] @ []
 // 1: showDamageFromShot [Variable(Variable8)] @ []
 
+/// Entity 0x0D
 /// Methods for DebugDrawEntity on client component
 pub enum DebugDrawEntityMethod { 
 }
 
 
+/// Entity 0x0E
 /// Methods for ClientSelectableCameraObject on client component
 pub enum ClientSelectableCameraObjectMethod { 
 }
 
 
+/// Entity 0x0F
 /// Methods for ClientSelectableCameraVehicle on client component
 pub enum ClientSelectableCameraVehicleMethod { 
 }
 
 
+/// Entity 0x10
 /// Methods for ClientSelectableWebLinksOpener on client component
 pub enum ClientSelectableWebLinksOpenerMethod { 
 }
 
 
+/// Entity 0x11
 /// Methods for ClientSelectableEasterEgg on client component
 pub enum ClientSelectableEasterEggMethod { 
 }
 
 
+/// Entity 0x12
 /// Methods for EmptyEntity on client component
 pub enum EmptyEntityMethod { 
 }
 
 
+/// Entity 0x13
 /// Methods for LimitedVisibilityEntity on client component
 pub enum LimitedVisibilityEntityMethod { 
 }
 
 
+/// Entity 0x14
 /// Methods for HeroTank on client component
 pub enum HeroTankMethod { 
 }
 
 
+/// Entity 0x15
 /// Methods for PlatoonTank on client component
 pub enum PlatoonTankMethod { 
 }
 
 
+/// Entity 0x16
 /// Methods for PlatoonLighting on client component
 pub enum PlatoonLightingMethod { 
 }
 
 
+/// Entity 0x17
 /// Methods for SectorBase on client component
 pub enum SectorBaseMethod { 
-    EntityTrap(EntityTrapMethod),
 }
 
 
+/// Entity 0x18
 /// Methods for Sector on client component
 pub enum SectorMethod { 
     showBomb(Vec3), // idx(0)
@@ -413,9 +387,9 @@ pub enum SectorMethod {
 
 // 0: showBomb [Fixed(12)] @ []
 
+/// Entity 0x19
 /// Methods for DestructibleEntity on client component
 pub enum DestructibleEntityMethod { 
-    Destructible(DestructibleMethod),
     onHealthChanged(i16, OBJECT_ID, u8, i32), // idx(0)
     showDamageFromShot(OBJECT_ID, u8, i32), // idx(1)
     showDamageFromExplosion(OBJECT_ID, i32), // idx(2)
@@ -425,24 +399,27 @@ pub enum DestructibleEntityMethod {
 // 1: showDamageFromShot [Fixed(9)] @ []
 // 2: onHealthChanged [Fixed(11)] @ []
 
+/// Entity 0x1A
 /// Methods for StepRepairPoint on client component
 pub enum StepRepairPointMethod { 
 }
 
 
+/// Entity 0x1B
 /// Methods for ProtectionZone on client component
 pub enum ProtectionZoneMethod { 
 }
 
 
+/// Entity 0x1C
 /// Methods for HangarPoster on client component
 pub enum HangarPosterMethod { 
 }
 
 
+/// Entity 0x1D
 /// Methods for TeamInfo on client component
 pub enum TeamInfoMethod { 
-    ThrottledMethods(ThrottledMethodsMethod),
     onCombatEquipmentUsed(OBJECT_ID, OBJECT_ID), // idx(0)
     showHittingArea(u16, Vec3, Vec3, f64), // idx(1)
 }
@@ -450,16 +427,19 @@ pub enum TeamInfoMethod {
 // 0: onCombatEquipmentUsed [Fixed(8)] @ []
 // 1: showHittingArea [Fixed(34)] @ []
 
+/// Entity 0x1E
 /// Methods for AvatarInfo on client component
 pub enum AvatarInfoMethod { 
 }
 
 
+/// Entity 0x1F
 /// Methods for ArenaObserverInfo on client component
 pub enum ArenaObserverInfoMethod { 
 }
 
 
+/// Entity 0x20
 /// Methods for AreaOfEffect on client component
 pub enum AreaOfEffectMethod { 
     playEffect(String, Vec3, f32), // idx(0)
@@ -467,36 +447,43 @@ pub enum AreaOfEffectMethod {
 
 // 0: playEffect [Variable(Variable8)] @ []
 
+/// Entity 0x21
 /// Methods for AttackBomber on client component
 pub enum AttackBomberMethod { 
 }
 
 
+/// Entity 0x22
 /// Methods for AttackArtilleryFort on client component
 pub enum AttackArtilleryFortMethod { 
 }
 
 
+/// Entity 0x23
 /// Methods for PersonalDeathZone on client component
 pub enum PersonalDeathZoneMethod { 
 }
 
 
+/// Entity 0x24
 /// Methods for ClientSelectableRankedObject on client component
 pub enum ClientSelectableRankedObjectMethod { 
 }
 
 
+/// Entity 0x25
 /// Methods for SimulatedVehicle on client component
 pub enum SimulatedVehicleMethod { 
 }
 
 
+/// Entity 0x26
 /// Methods for ClientSelectableHangarsSwitcher on client component
 pub enum ClientSelectableHangarsSwitcherMethod { 
 }
 
 
+/// Entity 0x27
 /// Methods for StaticDeathZone on client component
 pub enum StaticDeathZoneMethod { 
     onDeathZoneDamage(OBJECT_ID, String), // idx(0)
@@ -510,16 +497,19 @@ pub enum StaticDeathZoneMethod {
 // 2: onDeathZoneNotification [Fixed(13)] @ []
 // 3: onDeathZoneDamage [Variable(Variable8)] @ []
 
+/// Entity 0x28
 /// Methods for BasicMine on client component
 pub enum BasicMineMethod { 
 }
 
 
+/// Entity 0x29
 /// Methods for ApplicationPoint on client component
 pub enum ApplicationPointMethod { 
 }
 
 
+/// Entity 0x2A
 /// Methods for NetworkEntity on client component
 pub enum NetworkEntityMethod { 
     activateGameObject(), // idx(0)
@@ -539,23 +529,9 @@ pub enum NetworkEntityMethod {
 // 5: removeGameObject [Fixed(0)] @ []
 // 6: removeGameObjectUnique [Fixed(0)] @ []
 
+/// Entity 0x2B
 /// Methods for Comp7Lighting on client component
 pub enum Comp7LightingMethod { 
-}
-
-
-/// Methods for EventVehicle on client component
-pub enum EventVehicleMethod { 
-}
-
-
-/// Methods for EventShowcaseVehicle on client component
-pub enum EventShowcaseVehicleMethod { 
-}
-
-
-/// Methods for EventPortal on client component
-pub enum EventPortalMethod { 
 }
 
 

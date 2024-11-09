@@ -3,41 +3,19 @@ use wgtk::net::app::common::element::Method;
 use super::super::alias::*;
 use super::interface::*;
 
+/// Entity 0x01
 /// Methods for Account on base component
 pub enum AccountMethod { 
     Chat(ChatMethod),
     PlayerMessenger_chat2(PlayerMessenger_chat2Method),
-    AccountEditor(AccountEditorMethod),
-    TransactionUser(TransactionUserMethod),
-    InterclusterSender(InterclusterSenderMethod),
     ClientCommandsPort(ClientCommandsPortMethod),
-    AccountAdmin(AccountAdminMethod),
     AccountAvatar(AccountAvatarMethod),
-    AccountClan(AccountClanMethod),
     AccountAuthTokenProvider(AccountAuthTokenProviderMethod),
-    AccountAuthTokenProviderClient(AccountAuthTokenProviderClientMethod),
-    BattleResultProcessor(BattleResultProcessorMethod),
-    Invitations(InvitationsMethod),
-    InvitationsClient(InvitationsClientMethod),
-    Invoicing(InvoicingMethod),
     AccountPrebattle(AccountPrebattleMethod),
-    AccountSpaProcessor(AccountSpaProcessorMethod),
-    AccountIGRProcessing(AccountIGRProcessingMethod),
-    SessionTracker(SessionTrackerMethod),
     AccountGlobalMapConnector(AccountGlobalMapConnectorMethod),
-    AccountSysMessenger(AccountSysMessengerMethod),
-    AccountUnit(AccountUnitMethod),
     AccountUnitClient(AccountUnitClientMethod),
-    AccountUnitRemote(AccountUnitRemoteMethod),
-    AccountUnitAssembler(AccountUnitAssemblerMethod),
     AccountUnitBrowser(AccountUnitBrowserMethod),
     AccountDebugger(AccountDebuggerMethod),
-    QuestProcessor(QuestProcessorMethod),
-    AvatarCreator(AvatarCreatorMethod),
-    AccountVersion(AccountVersionMethod),
-    PlayLimits(PlayLimitsMethod),
-    ServerSideReplays(ServerSideReplaysMethod),
-    EventTokensController(EventTokensControllerMethod),
     makeDenunciation(DB_ID, i32, i8), // idx(24)
     banUnbanUser(DB_ID, u8, u32, String, i8), // idx(25)
     requestToken(u16, u8), // idx(26)
@@ -86,23 +64,13 @@ pub enum AccountMethod {
 // 38: accountUnitClient_setRosterSlots [Variable(Variable8)] @ ["AccountUnitClient"]
 // 39: accountDebugger_sendDebugTaskResultChunk [Variable(Variable8)] @ ["AccountDebugger"]
 
+/// Entity 0x02
 /// Methods for Avatar on base component
 pub enum AvatarMethod { 
     Chat(ChatMethod),
     PlayerMessenger_chat2(PlayerMessenger_chat2Method),
     ClientCommandsPort(ClientCommandsPortMethod),
-    InvitationsClient(InvitationsClientMethod),
-    AccountAuthTokenProviderClient(AccountAuthTokenProviderClientMethod),
-    AvatarObserver(AvatarObserverMethod),
-    TeamHealthBar_Avatar(TeamHealthBar_AvatarMethod),
-    ProtectionZoneController_Avatar(ProtectionZoneController_AvatarMethod),
-    RecoveryMechanic_Avatar(RecoveryMechanic_AvatarMethod),
-    DestructibleEntity_Avatar(DestructibleEntity_AvatarMethod),
     RespawnController_Avatar(RespawnController_AvatarMethod),
-    VehiclesSpawnListStorage_Avatar(VehiclesSpawnListStorage_AvatarMethod),
-    VehicleRemovalController_Avatar(VehicleRemovalController_AvatarMethod),
-    VehicleHealthBroadcastListenerComponent_Avatar(VehicleHealthBroadcastListenerComponent_AvatarMethod),
-    TriggersController_Avatar(TriggersController_AvatarMethod),
     AvatarEpic(AvatarEpicMethod),
     logLag(), // idx(0)
     setClientReady(), // idx(2)
@@ -163,244 +131,249 @@ pub enum AvatarMethod {
 // 38: doCmdIntArrStrArr [Variable(Variable8)] @ ["ClientCommandsPort"]
 // 39: doCmdStrArr [Variable(Variable8)] @ ["ClientCommandsPort"]
 
+/// Entity 0x03
 /// Methods for ArenaInfo on base component
 pub enum ArenaInfoMethod { 
-    PlaneTrajectoryArenaInfo(PlaneTrajectoryArenaInfoMethod),
 }
 
 
+/// Entity 0x04
 /// Methods for ClientSelectableObject on base component
 pub enum ClientSelectableObjectMethod { 
 }
 
 
+/// Entity 0x05
 /// Methods for HangarVehicle on base component
 pub enum HangarVehicleMethod { 
 }
 
 
+/// Entity 0x06
 /// Methods for Vehicle on base component
 pub enum VehicleMethod { 
-    VehicleAIProxy(VehicleAIProxyMethod),
-    TeamBase_Vehicle(TeamBase_VehicleMethod),
-    SectorBase_Vehicle(SectorBase_VehicleMethod),
-    RepairBase_Vehicle(RepairBase_VehicleMethod),
-    VehicleObserver(VehicleObserverMethod),
-    BattleFeedback(BattleFeedbackMethod),
-    Harm(HarmMethod),
-    Sector_Vehicle(Sector_VehicleMethod),
-    ProtectionZone_Vehicle(ProtectionZone_VehicleMethod),
-    StepRepairPoint_Vehicle(StepRepairPoint_VehicleMethod),
-    DestructibleEntity_Vehicle(DestructibleEntity_VehicleMethod),
-    DefenderBonusController_Vehicle(DefenderBonusController_VehicleMethod),
-    RecoveryMechanic_Vehicle(RecoveryMechanic_VehicleMethod),
-    RespawnController_Vehicle(RespawnController_VehicleMethod),
-    SmokeController_Vehicle(SmokeController_VehicleMethod),
-    Wheels(WheelsMethod),
-    Perks_Vehicle(Perks_VehicleMethod),
 }
 
 
+/// Entity 0x07
 /// Methods for AreaDestructibles on base component
 pub enum AreaDestructiblesMethod { 
 }
 
 
+/// Entity 0x08
 /// Methods for OfflineEntity on base component
 pub enum OfflineEntityMethod { 
 }
 
 
+/// Entity 0x09
 /// Methods for Flock on base component
 pub enum FlockMethod { 
 }
 
 
+/// Entity 0x0A
 /// Methods for FlockExotic on base component
 pub enum FlockExoticMethod { 
 }
 
 
+/// Entity 0x0B
 /// Methods for Login on base component
 pub enum LoginMethod { 
 }
 
 
+/// Entity 0x0C
 /// Methods for DetachedTurret on base component
 pub enum DetachedTurretMethod { 
 }
 
 
+/// Entity 0x0D
 /// Methods for DebugDrawEntity on base component
 pub enum DebugDrawEntityMethod { 
 }
 
 
+/// Entity 0x0E
 /// Methods for ClientSelectableCameraObject on base component
 pub enum ClientSelectableCameraObjectMethod { 
 }
 
 
+/// Entity 0x0F
 /// Methods for ClientSelectableCameraVehicle on base component
 pub enum ClientSelectableCameraVehicleMethod { 
 }
 
 
+/// Entity 0x10
 /// Methods for ClientSelectableWebLinksOpener on base component
 pub enum ClientSelectableWebLinksOpenerMethod { 
 }
 
 
+/// Entity 0x11
 /// Methods for ClientSelectableEasterEgg on base component
 pub enum ClientSelectableEasterEggMethod { 
 }
 
 
+/// Entity 0x12
 /// Methods for EmptyEntity on base component
 pub enum EmptyEntityMethod { 
 }
 
 
+/// Entity 0x13
 /// Methods for LimitedVisibilityEntity on base component
 pub enum LimitedVisibilityEntityMethod { 
 }
 
 
+/// Entity 0x14
 /// Methods for HeroTank on base component
 pub enum HeroTankMethod { 
 }
 
 
+/// Entity 0x15
 /// Methods for PlatoonTank on base component
 pub enum PlatoonTankMethod { 
 }
 
 
+/// Entity 0x16
 /// Methods for PlatoonLighting on base component
 pub enum PlatoonLightingMethod { 
 }
 
 
+/// Entity 0x17
 /// Methods for SectorBase on base component
 pub enum SectorBaseMethod { 
-    EntityTrap(EntityTrapMethod),
 }
 
 
+/// Entity 0x18
 /// Methods for Sector on base component
 pub enum SectorMethod { 
 }
 
 
+/// Entity 0x19
 /// Methods for DestructibleEntity on base component
 pub enum DestructibleEntityMethod { 
-    Destructible(DestructibleMethod),
 }
 
 
+/// Entity 0x1A
 /// Methods for StepRepairPoint on base component
 pub enum StepRepairPointMethod { 
 }
 
 
+/// Entity 0x1B
 /// Methods for ProtectionZone on base component
 pub enum ProtectionZoneMethod { 
 }
 
 
+/// Entity 0x1C
 /// Methods for HangarPoster on base component
 pub enum HangarPosterMethod { 
 }
 
 
+/// Entity 0x1D
 /// Methods for TeamInfo on base component
 pub enum TeamInfoMethod { 
-    ThrottledMethods(ThrottledMethodsMethod),
 }
 
 
+/// Entity 0x1E
 /// Methods for AvatarInfo on base component
 pub enum AvatarInfoMethod { 
 }
 
 
+/// Entity 0x1F
 /// Methods for ArenaObserverInfo on base component
 pub enum ArenaObserverInfoMethod { 
 }
 
 
+/// Entity 0x20
 /// Methods for AreaOfEffect on base component
 pub enum AreaOfEffectMethod { 
 }
 
 
+/// Entity 0x21
 /// Methods for AttackBomber on base component
 pub enum AttackBomberMethod { 
 }
 
 
+/// Entity 0x22
 /// Methods for AttackArtilleryFort on base component
 pub enum AttackArtilleryFortMethod { 
 }
 
 
+/// Entity 0x23
 /// Methods for PersonalDeathZone on base component
 pub enum PersonalDeathZoneMethod { 
 }
 
 
+/// Entity 0x24
 /// Methods for ClientSelectableRankedObject on base component
 pub enum ClientSelectableRankedObjectMethod { 
 }
 
 
+/// Entity 0x25
 /// Methods for SimulatedVehicle on base component
 pub enum SimulatedVehicleMethod { 
 }
 
 
+/// Entity 0x26
 /// Methods for ClientSelectableHangarsSwitcher on base component
 pub enum ClientSelectableHangarsSwitcherMethod { 
 }
 
 
+/// Entity 0x27
 /// Methods for StaticDeathZone on base component
 pub enum StaticDeathZoneMethod { 
 }
 
 
+/// Entity 0x28
 /// Methods for BasicMine on base component
 pub enum BasicMineMethod { 
 }
 
 
+/// Entity 0x29
 /// Methods for ApplicationPoint on base component
 pub enum ApplicationPointMethod { 
 }
 
 
+/// Entity 0x2A
 /// Methods for NetworkEntity on base component
 pub enum NetworkEntityMethod { 
 }
 
 
+/// Entity 0x2B
 /// Methods for Comp7Lighting on base component
 pub enum Comp7LightingMethod { 
-}
-
-
-/// Methods for EventVehicle on base component
-pub enum EventVehicleMethod { 
-}
-
-
-/// Methods for EventShowcaseVehicle on base component
-pub enum EventShowcaseVehicleMethod { 
-}
-
-
-/// Methods for EventPortal on base component
-pub enum EventPortalMethod { 
 }
 
 

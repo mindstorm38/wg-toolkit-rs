@@ -363,12 +363,12 @@ impl BaseProxyThread {
             }
             id if id::ENTITY_METHOD.contains(id) => {
                 let elt = elt.read_simple::<DebugElementUndefined<0>>().unwrap();
-                warn!(%addr, "<- Entity method: [{id}] {:?} (request: {:?})", elt.element, elt.request_id);
+                warn!(%addr, "<- Entity method: msg#{} {:?} (request: {:?})", id - id::ENTITY_METHOD.first, elt.element, elt.request_id);
                 false
             }
             id if id::ENTITY_PROPERTY.contains(id) => {
                 let elt = elt.read_simple::<DebugElementUndefined<0>>().unwrap();
-                warn!(%addr, "<- Entity property: [{id}] {:?} (request: {:?})", elt.element, elt.request_id);
+                warn!(%addr, "<- Entity property: msg#{} {:?} (request: {:?})", id - id::ENTITY_PROPERTY.first, elt.element, elt.request_id);
                 false
             }
             id => {

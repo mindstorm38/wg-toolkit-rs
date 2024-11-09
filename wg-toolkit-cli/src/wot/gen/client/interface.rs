@@ -20,7 +20,7 @@ pub enum VehicleObserverMethod {
 
 /// Methods for VehicleHealthBroadcastListenerComponent_Avatar on client component
 pub enum VehicleHealthBroadcastListenerComponent_AvatarMethod { 
-    onVehicleHealthChanged(OBJECT_ID, i16, OBJECT_ID, u8), // idx(0)
+    onVehicleHealthChanged(OBJECT_ID, i16, OBJECT_ID, u8, i8), // idx(0)
 }
 
 /// Methods for VehicleAIProxy on client component
@@ -152,10 +152,6 @@ pub enum InterclusterSenderMethod {
 pub enum HarmMethod { 
 }
 
-/// Methods for EventTokensController on client component
-pub enum EventTokensControllerMethod { 
-}
-
 /// Methods for EntityTrap on client component
 pub enum EntityTrapMethod { 
 }
@@ -178,7 +174,6 @@ pub enum DefenderBonusController_VehicleMethod {
 
 /// Methods for ControlPoint on client component
 pub enum ControlPointMethod { 
-    EntityTrap(EntityTrapMethod),
 }
 
 /// Methods for ClientCommandsPort on client component

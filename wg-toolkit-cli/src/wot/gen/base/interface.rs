@@ -142,10 +142,6 @@ pub enum InterclusterSenderMethod {
 pub enum HarmMethod { 
 }
 
-/// Methods for EventTokensController on base component
-pub enum EventTokensControllerMethod { 
-}
-
 /// Methods for EntityTrap on base component
 pub enum EntityTrapMethod { 
 }
@@ -168,7 +164,6 @@ pub enum DefenderBonusController_VehicleMethod {
 
 /// Methods for ControlPoint on base component
 pub enum ControlPointMethod { 
-    EntityTrap(EntityTrapMethod),
 }
 
 /// Methods for ClientCommandsPort on base component

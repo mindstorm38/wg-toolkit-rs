@@ -10,6 +10,7 @@ pub type DB_ID = i64;
 pub type EXTRA_ID = u8;
 pub type VEH_TYPE_CD = u32;
 
+#[derive(Debug)]
 pub struct SERVER_STATISTICS {
     pub clusterCCU: u32,
     pub regionCCU: u32,
@@ -17,19 +18,23 @@ pub struct SERVER_STATISTICS {
 
 pub type QUEUE_INFO = Python;
 
+#[derive(Debug)]
 pub struct DEFAULT_QUEUE_INFO {
     pub classes: Vec<u32>,
     pub players: u32,
 }
 
+#[derive(Debug)]
 pub struct MAPS_TRAINING_QUEUE_INFO {
     pub queues: Python,
 }
 
+#[derive(Debug)]
 pub struct FUN_RANDOM_QUEUE_INFO {
     pub events: Python,
 }
 
+#[derive(Debug)]
 pub struct PUBLIC_ARENA_INFO {
     pub id: OBJECT_ID,
     pub typeID: i32,
@@ -37,6 +42,7 @@ pub struct PUBLIC_ARENA_INFO {
     pub roundStart: f32,
 }
 
+#[derive(Debug)]
 pub struct ATTACK_RESULTS {
     pub targetID: OBJECT_ID,
     pub targetVehicleIndex: u8,
@@ -80,6 +86,7 @@ pub struct ATTACK_RESULTS {
     pub attackerType: u8,
 }
 
+#[derive(Debug)]
 pub struct PREBATTLE_INVITE {
     pub createTime: u32,
     pub r#type: u16,
@@ -91,6 +98,7 @@ pub struct PREBATTLE_INVITE {
     pub extraData: Python,
 }
 
+#[derive(Debug)]
 pub struct PREBATTLE_RESULTS {
     pub winner: u8,
     pub finishReason: u8,
@@ -98,6 +106,7 @@ pub struct PREBATTLE_RESULTS {
     pub extendedResults: Python,
 }
 
+#[derive(Debug)]
 pub struct PUBLIC_CHAT_CHANNEL_INFO {
     pub id: OBJECT_ID,
     pub channelName: String,
@@ -106,12 +115,14 @@ pub struct PUBLIC_CHAT_CHANNEL_INFO {
     pub flags: u8,
 }
 
+#[derive(Debug)]
 pub struct PUBLIC_USERS_ROSTER_MEMBER_INFO {
     pub id: DB_ID,
     pub nickName: String,
     pub accessFlags: u8,
 }
 
+#[derive(Debug)]
 pub struct CHAT_ACTION_DATA {
     pub requestID: i64,
     pub action: u8,
@@ -126,6 +137,7 @@ pub struct CHAT_ACTION_DATA {
     pub flags: u8,
 }
 
+#[derive(Debug)]
 pub struct GENERIC_MESSENGER_ARGS_chat2 {
     pub int32Arg1: i32,
     pub int64Arg1: i64,
@@ -134,38 +146,45 @@ pub struct GENERIC_MESSENGER_ARGS_chat2 {
     pub strArg2: String,
 }
 
+#[derive(Debug)]
 pub struct DISCLOSE_EVENT {
     pub vehicleID: OBJECT_ID,
     pub playerName: BOOL,
     pub vehicleType: BOOL,
 }
 
+#[derive(Debug)]
 pub struct DOG_TAG_COMPONENT {
     pub id: i32,
     pub progress: f32,
     pub grade: i8,
 }
 
+#[derive(Debug)]
 pub struct DOG_TAG {
     pub components: Vec<DOG_TAG_COMPONENT>,
 }
 
+#[derive(Debug)]
 pub struct BATTLE_DOG_TAG {
     pub dogTag: DOG_TAG,
     pub defaultDogTag: DOG_TAG,
     pub showDogTagToKiller: BOOL,
 }
 
+#[derive(Debug)]
 pub struct VEHICLE_DOG_TAG {
     pub vehicleId: OBJECT_ID,
     pub dogTag: DOG_TAG,
 }
 
+#[derive(Debug)]
 pub struct DOG_TAG_SETTINGS {
     pub showVictimsDogTag: BOOL,
     pub showDogTagToKiller: BOOL,
 }
 
+#[derive(Debug)]
 pub struct PUBLIC_VEHICLE_INFO {
     pub name: String,
     pub compDescr: String,
@@ -179,6 +198,7 @@ pub struct PUBLIC_VEHICLE_INFO {
     pub maxHealth: u16,
 }
 
+#[derive(Debug)]
 pub struct ARENA_VEH_INFO {
     pub vehInvID: i32,
     pub vehCompDescr: String,
@@ -205,6 +225,7 @@ pub struct ARENA_VEH_INFO {
     pub prestigeGradeMarkID: i32,
 }
 
+#[derive(Debug)]
 pub struct USER_EXTRA_SETTINGS {
     pub hideNonHistoric: u8,
     pub dogTagsUserSettings: DOG_TAG_SETTINGS,
@@ -223,6 +244,7 @@ pub struct USER_EXTRA_SETTINGS {
     pub postmortemMode: u8,
 }
 
+#[derive(Debug)]
 pub struct ARENA_ADDPLAYER_INFO {
     pub name: String,
     pub attrs: u64,
@@ -261,6 +283,7 @@ pub struct ARENA_ADDPLAYER_INFO {
     pub componentsData: Python,
 }
 
+#[derive(Debug)]
 pub struct AVATAR_VEHICLE_ROSTER {
     pub vehicleID: OBJECT_ID,
     pub prebattleID: OBJECT_ID,
@@ -268,6 +291,7 @@ pub struct AVATAR_VEHICLE_ROSTER {
     pub observer: BOOL,
 }
 
+#[derive(Debug)]
 pub struct ATTACKER_INFO {
     pub baseMB: Mailbox,
     pub receiveAttackResultsMB: Mailbox,
@@ -294,12 +318,14 @@ pub struct ATTACKER_INFO {
     pub attackerDualAccuracyState: i8,
 }
 
+#[derive(Debug)]
 pub struct DESTRUCTIBLE_ATTACK_INFO {
     pub hitPoint: Vec3,
     pub shotID: i32,
     pub attacker: ATTACKER_INFO,
 }
 
+#[derive(Debug)]
 pub struct CLIENT_STATUS_STATISTICS {
     pub ping_lt_50: f32,
     pub ping_51_100: f32,
@@ -309,6 +335,7 @@ pub struct CLIENT_STATUS_STATISTICS {
     pub lag: f32,
 }
 
+#[derive(Debug)]
 pub struct VEHICLE_SPATIAL_INFO {
     pub vehicleID: OBJECT_ID,
     pub team: u8,
@@ -318,38 +345,44 @@ pub struct VEHICLE_SPATIAL_INFO {
     pub prebattleID: OBJECT_ID,
 }
 
+#[derive(Debug)]
 pub struct VEHICLE_SYNC_ATTRS {
     pub circularVisionRadius: u16,
     pub gunPiercing: f32,
     pub gunShotsSpeed: f32,
-    pub gunCanShoot: BOOL,
 }
 
+#[derive(Debug)]
 pub struct IS_OBSERVED_BY_ENEMY {
     pub endTime: f32,
 }
 
+#[derive(Debug)]
 pub struct SIEGE_STATE_STATUS {
     pub status: u8,
     pub endTime: f32,
     pub timeLeft: f32,
 }
 
+#[derive(Debug)]
 pub struct BURNOUT_WARNING {
     pub status: u8,
 }
 
+#[derive(Debug)]
 pub struct DUAL_GUN_STATUS_TIMES {
     pub baseTime: f32,
     pub timeLeft: f32,
     pub endTime: f32,
 }
 
+#[derive(Debug)]
 pub struct DUAL_GUN_STATUS {
     pub status: u8,
     pub times: DUAL_GUN_STATUS_TIMES,
 }
 
+#[derive(Debug)]
 pub struct DESTROYED_DEVICE_IS_REPAIRING {
     pub extraIndex: u8,
     pub progress: u8,
@@ -358,19 +391,23 @@ pub struct DESTROYED_DEVICE_IS_REPAIRING {
     pub repairMode: u8,
 }
 
+#[derive(Debug)]
 pub struct IS_OTHER_VEHICLE_DAMAGED_DEVICES_VISIBLE {
     pub status: u8,
 }
 
+#[derive(Debug)]
 pub struct BURNOUT_UNAVAILABLE {
     pub status: BOOL,
 }
 
+#[derive(Debug)]
 pub struct OVERTURN_LEVEL {
     pub level: u8,
     pub times: Vec<f64>,
 }
 
+#[derive(Debug)]
 pub struct IN_AOE_ZONE_STATUS {
     pub zoneID: OBJECT_ID,
     pub equipmentID: u16,
@@ -379,11 +416,13 @@ pub struct IN_AOE_ZONE_STATUS {
     pub endTime: f64,
 }
 
+#[derive(Debug)]
 pub struct DROWN_LEVEL {
     pub level: u8,
     pub times: Vec<f64>,
 }
 
+#[derive(Debug)]
 pub struct BATTLE_EVENT {
     pub eventType: u8,
     pub targetID: OBJECT_ID,
@@ -391,6 +430,7 @@ pub struct BATTLE_EVENT {
     pub count: u16,
 }
 
+#[derive(Debug)]
 pub struct BATTLE_EVENTS_SUMMARY {
     pub damage: u32,
     pub trackAssist: u32,
@@ -401,8 +441,10 @@ pub struct BATTLE_EVENTS_SUMMARY {
     pub tankings: u32,
     pub lastKillerID: OBJECT_ID,
     pub lastDeathReasonID: u8,
+    pub attackReasonExtID: i8,
 }
 
+#[derive(Debug)]
 pub struct REMOTE_CAMERA_DATA {
     pub time: f64,
     pub shotPoint: Vec3,
@@ -412,6 +454,7 @@ pub struct REMOTE_CAMERA_DATA {
 
 pub type STUN_INFO = f64;
 
+#[derive(Debug)]
 pub struct FRONT_LINE_DATA {
     pub columnWidth: f32,
     pub frontDropPerColumn: f32,
@@ -426,16 +469,19 @@ pub struct FRONT_LINE_DATA {
     pub frontLineMainDirVecs: Vec<Vec2>,
 }
 
+#[derive(Debug)]
 pub struct AVATAR_AMMO_VIEWS {
     pub vehTypeCompDescrs: Vec<i32>,
     pub compDescrs: Vec<Vec<i32>>,
 }
 
+#[derive(Debug)]
 pub struct AVATAR_AMMO_FOR_CELL {
     pub abilitiesIDs: Python,
     pub purchasedAbilities: Vec<i8>,
 }
 
+#[derive(Debug)]
 pub struct POST_PROGRESSION_SETUPS {
     pub devicesSetups: Vec<Vec<u32>>,
     pub eqsSetups: Vec<Vec<u32>>,
@@ -443,6 +489,7 @@ pub struct POST_PROGRESSION_SETUPS {
     pub boostersSetups: Vec<Vec<u32>>,
 }
 
+#[derive(Debug)]
 pub struct RESPAWN_AVAILABLE_VEHICLE {
     pub compDescr: String,
     pub crewCompactDescrs: Vec<String>,
@@ -454,16 +501,19 @@ pub struct RESPAWN_AVAILABLE_VEHICLE {
     pub vehDisabledSetupSwitches: Vec<u8>,
 }
 
+#[derive(Debug)]
 pub struct RESPAWN_COOLDOWN_ITEM {
     pub vehTypeCompDescr: VEH_TYPE_CD,
     pub endOfCooldownPiT: f32,
 }
 
+#[derive(Debug)]
 pub struct RESPAWN_ZONE {
     pub position: Vec3,
     pub isEnemyNear: BOOL,
 }
 
+#[derive(Debug)]
 pub struct RESPAWN_INFO {
     pub compDescr: String,
     pub respawnType: u8,
@@ -474,11 +524,13 @@ pub struct RESPAWN_INFO {
     pub vehSetupsIndexes: Vec<u8>,
 }
 
+#[derive(Debug)]
 pub struct RESPAWN_LIMITED_VEHICLES {
     pub group: u8,
     pub vehTypeCompDescrs: Vec<VEH_TYPE_CD>,
 }
 
+#[derive(Debug)]
 pub struct RESPAWN_INFO_VEHICLE {
     pub compDescr: String,
     pub crewCompactDescrs: Vec<String>,
@@ -503,6 +555,7 @@ pub struct RESPAWN_INFO_VEHICLE {
     pub prestigeGradeMarkID: i32,
 }
 
+#[derive(Debug)]
 pub struct BUFF_EFFECT {
     pub radius: f32,
     pub startTime: f64,
@@ -510,6 +563,7 @@ pub struct BUFF_EFFECT {
     pub inactivationDelay: f32,
 }
 
+#[derive(Debug)]
 pub struct DOT_EFFECT {
     pub endTime: f64,
     pub period: f32,
@@ -517,6 +571,7 @@ pub struct DOT_EFFECT {
     pub attackReasonID: u8,
 }
 
+#[derive(Debug)]
 pub struct BUFF_EFFECT_INACTIVATION {
     pub senderKey: String,
     pub startTime: f64,
@@ -525,6 +580,7 @@ pub struct BUFF_EFFECT_INACTIVATION {
     pub inactivationEndTime: f64,
 }
 
+#[derive(Debug)]
 pub struct HOT_EFFECT {
     pub senderKey: String,
     pub startTime: f64,
@@ -534,6 +590,7 @@ pub struct HOT_EFFECT {
     pub isInfluenceZone: BOOL,
 }
 
+#[derive(Debug)]
 pub struct INSPIRED_EFFECT {
     pub primary: BOOL,
     pub startTime: f64,
@@ -544,6 +601,7 @@ pub struct INSPIRED_EFFECT {
     pub equipmentID: u16,
 }
 
+#[derive(Debug)]
 pub struct SMOKE_INFO {
     pub smokeID: f64,
     pub equipmentID: u16,
@@ -552,6 +610,7 @@ pub struct SMOKE_INFO {
     pub expiring: BOOL,
 }
 
+#[derive(Debug)]
 pub struct VEHICLE_DETECTOR_INFO {
     pub detectorID: u16,
     pub point: Vec3,
@@ -559,6 +618,7 @@ pub struct VEHICLE_DETECTOR_INFO {
     pub aliveOnly: BOOL,
 }
 
+#[derive(Debug)]
 pub struct COOLDOWN_INFO {
     pub id: u8,
     pub endTime: f32,
@@ -566,6 +626,7 @@ pub struct COOLDOWN_INFO {
     pub leftTime: f32,
 }
 
+#[derive(Debug)]
 pub struct CLIENT_VEHICLE_PUBLIC_INFO {
     pub vehID: OBJECT_ID,
     pub name: String,
@@ -600,6 +661,7 @@ pub struct CLIENT_VEHICLE_PUBLIC_INFO {
     pub prestigeGradeMarkID: i32,
 }
 
+#[derive(Debug)]
 pub struct PLAY_LIMITS {
     pub curfew: i32,
     pub weeklyPlayLimit: i32,
@@ -607,18 +669,27 @@ pub struct PLAY_LIMITS {
     pub sessionLimit: i32,
 }
 
+#[derive(Debug)]
+pub struct BATTLE_CHAT_RESTRICTION {
+    pub isBattleChatDisabled: BOOL,
+    pub restrictionReasonID: i8,
+}
+
+#[derive(Debug)]
 pub struct VEHICLE_IN_DEATHZONE {
     pub vehicleId: OBJECT_ID,
     pub nextStrikeTime: f32,
     pub waveDuration: f32,
 }
 
+#[derive(Debug)]
 pub struct TIME_WITH_REASON {
     pub endTime: i32,
     pub totalTime: i32,
     pub reason: u8,
 }
 
+#[derive(Debug)]
 pub struct PERK_INFO_HUD {
     pub perkID: OBJECT_ID,
     pub state: u8,
@@ -626,11 +697,13 @@ pub struct PERK_INFO_HUD {
     pub lifeTime: f64,
 }
 
+#[derive(Debug)]
 pub struct PERK_INFO_RIBBON {
     pub perkID: OBJECT_ID,
     pub endTime: f64,
 }
 
+#[derive(Debug)]
 pub struct TOURNAMEMT_PARTICIPANT {
     pub databaseID: DB_ID,
     pub name: String,
@@ -639,6 +712,7 @@ pub struct TOURNAMEMT_PARTICIPANT {
     pub typeCD: i32,
 }
 
+#[derive(Debug)]
 pub struct STEALTH_RADAR_INFO {
     pub equipmentID: u16,
     pub isActive: BOOL,
@@ -646,26 +720,31 @@ pub struct STEALTH_RADAR_INFO {
     pub endTime: f32,
 }
 
+#[derive(Debug)]
 pub struct REGENERATION_KIT_INFO {
     pub isActive: BOOL,
     pub duration: f32,
     pub endTime: f32,
 }
 
+#[derive(Debug)]
 pub struct VEHICLE_HEALTH_INFO {
     pub id: OBJECT_ID,
     pub health: i16,
     pub deathReasonID: i8,
     pub isCrewActive: BOOL,
     pub isRespawnActive: BOOL,
+    pub deathReasonExtID: i8,
 }
 
+#[derive(Debug)]
 pub struct GUN_MARKER {
     pub gunPosition: Vec3,
     pub shotVector: Vec3,
     pub dispersion: f32,
 }
 
+#[derive(Debug)]
 pub struct KILL_CAM_ATTACKER_SPOTTED {
     pub position: Vec3,
     pub rotation: Vec3,
@@ -674,17 +753,20 @@ pub struct KILL_CAM_ATTACKER_SPOTTED {
     pub angVelocity: Vec3,
 }
 
+#[derive(Debug)]
 pub struct KILL_CAM_ATTACKER_UNSPOTTED {
     pub health: u16,
     pub vehicleType: String,
 }
 
+#[derive(Debug)]
 pub struct KILL_CAM_ATTACKER {
     pub attackerID: OBJECT_ID,
     pub spottedData: KILL_CAM_ATTACKER_SPOTTED,
     pub unspottedData: KILL_CAM_ATTACKER_UNSPOTTED,
 }
 
+#[derive(Debug)]
 pub struct KILL_CAM_VICTIM {
     pub position: Vec3,
     pub rotation: Vec3,
@@ -696,6 +778,7 @@ pub struct KILL_CAM_VICTIM {
     pub causeOfDeath: String,
 }
 
+#[derive(Debug)]
 pub struct KILL_CAM_PROJECTILE_UNSPOTTED {
     pub shotID: SHOT_ID,
     pub trajectoryData: Vec<Box<[Vec3; 2]>>,
@@ -730,16 +813,19 @@ pub struct KILL_CAM_PROJECTILE_UNSPOTTED {
     pub hasDistanceFalloff: BOOL,
 }
 
+#[derive(Debug)]
 pub struct KILL_CAM_PROJECTILE_SPOTTED {
     pub distanceOfShot: f32,
     pub damageDistanceModifier: f32,
 }
 
+#[derive(Debug)]
 pub struct KILL_CAM_PROJECTILE {
     pub unspottedData: KILL_CAM_PROJECTILE_UNSPOTTED,
     pub spottedData: KILL_CAM_PROJECTILE_SPOTTED,
 }
 
+#[derive(Debug)]
 pub struct KILL_CAM_DATA {
     pub attacker: KILL_CAM_ATTACKER,
     pub victim: KILL_CAM_VICTIM,
@@ -747,12 +833,14 @@ pub struct KILL_CAM_DATA {
     pub statusCode: u8,
 }
 
+#[derive(Debug)]
 pub struct TRACK_STATE {
     pub isBroken: BOOL,
     pub hitPoint: Vec3,
     pub isDebris: BOOL,
 }
 
+#[derive(Debug)]
 pub struct VEHICLE_HIT_DIRECTION {
     pub hitDirYaw: f32,
     pub attackerID: OBJECT_ID,
@@ -764,6 +852,7 @@ pub struct VEHICLE_HIT_DIRECTION {
     pub attackReasonID: i8,
 }
 
+#[derive(Debug)]
 pub struct VEHICLE_CLIP_RELOAD_TIME {
     pub endTime: f32,
     pub baseTime: f32,
@@ -771,14 +860,18 @@ pub struct VEHICLE_CLIP_RELOAD_TIME {
     pub firstTime: f32,
     pub stunned: BOOL,
     pub isBoostApplicable: BOOL,
+    pub clipTime: f32,
 }
 
+#[derive(Debug)]
 pub struct VEHICLE_GUN_RELOAD_TIME {
     pub endTime: f32,
     pub baseTime: f32,
     pub timeLeft: f32,
+    pub clipTime: f32,
 }
 
+#[derive(Debug)]
 pub struct OWN_VEHICLE_POSITION {
     pub position: Vec3,
     pub direction: Vec3,
@@ -786,16 +879,19 @@ pub struct OWN_VEHICLE_POSITION {
     pub rotationSpeed: f32,
 }
 
+#[derive(Debug)]
 pub struct TARGET_VEHICLE_ID {
     pub targetID: OBJECT_ID,
 }
 
+#[derive(Debug)]
 pub struct DUAL_GUN_STATE {
     pub activeGun: u8,
     pub gunStates: Vec<u8>,
     pub cooldowns: Vec<COOLDOWN_INFO>,
 }
 
+#[derive(Debug)]
 pub struct VEHICLE_AMMO {
     pub compactDescr: i32,
     pub quantity: u16,
@@ -806,24 +902,29 @@ pub struct VEHICLE_AMMO {
     pub index: u8,
 }
 
+#[derive(Debug)]
 pub struct VEHICLE_DAMAGE_INFO {
     pub extraIndex: EXTRA_ID,
     pub damageIndex: u8,
     pub entityID: OBJECT_ID,
     pub equipmentID: u16,
+    pub damageExtIndex: i8,
 }
 
+#[derive(Debug)]
 pub struct VEHICLE_OPTIONAL_DEVICE_STATUS {
     pub deviceID: u8,
     pub isOn: u8,
 }
 
+#[derive(Debug)]
 pub struct VEHICLE_SETTING {
     pub vehicleID: OBJECT_ID,
     pub code: u8,
     pub value: i32,
 }
 
+#[derive(Debug)]
 pub struct TARGETING_INFO {
     pub turretYaw: f32,
     pub gunPitch: f32,
@@ -836,11 +937,13 @@ pub struct TARGETING_INFO {
     pub aimingTime: f32,
 }
 
+#[derive(Debug)]
 pub struct BATTLE_EVENTS {
     pub events: Vec<BATTLE_EVENT>,
     pub endTime: f32,
 }
 
+#[derive(Debug)]
 pub struct WELCOME_TO_SECTOR {
     pub sectorID: u8,
     pub groupID: u8,
@@ -850,10 +953,12 @@ pub struct WELCOME_TO_SECTOR {
     pub actionDuration: f32,
 }
 
+#[derive(Debug)]
 pub struct SECTOR_SHOOTING {
     pub sectorID: u8,
 }
 
+#[derive(Debug)]
 pub struct PLANE_TRAJECTORY {
     pub equipmentID: u16,
     pub team: u8,
@@ -866,6 +971,7 @@ pub struct PLANE_TRAJECTORY {
     pub isEndOfFlight: BOOL,
 }
 
+#[derive(Debug)]
 pub struct FIRE_INFO {
     pub deviceExtraIndex: EXTRA_ID,
     pub notificationIndex: u8,
@@ -874,27 +980,13 @@ pub struct FIRE_INFO {
     pub startTime: f64,
 }
 
+#[derive(Debug)]
 pub struct DEBUFF_INFO {
     pub attackReasonID: u16,
     pub finishTime: f32,
 }
 
-pub struct TIMER_INFO {
-    pub factor: f32,
-    pub left: f32,
-    pub endTime: f32,
-}
-
-pub struct HEALTH_INFO {
-    pub vehicleID: OBJECT_ID,
-    pub health: u16,
-}
-
-pub struct UDO_INFO {
-    pub guid: String,
-    pub position: Vec2,
-}
-
+#[derive(Debug)]
 pub struct ROCKET_ACCELERATION_STATE_STATUS {
     pub status: u8,
     pub endTime: f32,
@@ -902,6 +994,7 @@ pub struct ROCKET_ACCELERATION_STATE_STATUS {
     pub reuseCount: i8,
 }
 
+#[derive(Debug)]
 pub struct AUTO_SHOOT_GUN_STATE_STATUS {
     pub state: u8,
     pub stateActivationTime: f32,
@@ -911,12 +1004,14 @@ pub struct AUTO_SHOOT_GUN_STATE_STATUS {
     pub maxShotDispersion: f32,
 }
 
+#[derive(Debug)]
 pub struct GOODIE_RESOURCE {
     pub r#type: u8,
     pub value: u16,
     pub isPercentage: BOOL,
 }
 
+#[derive(Debug)]
 pub struct GOODIE_STATE_INFO {
     pub state: u8,
     pub finishTime: f64,
@@ -924,6 +1019,7 @@ pub struct GOODIE_STATE_INFO {
     pub expirations: Python,
 }
 
+#[derive(Debug)]
 pub struct BATTLE_GOODIE_RECORD {
     pub goodieID: u32,
     pub lifetime: u16,
@@ -932,41 +1028,47 @@ pub struct BATTLE_GOODIE_RECORD {
     pub stateInfo: GOODIE_STATE_INFO,
 }
 
+#[derive(Debug)]
 pub struct ROLE_EQUIPMENT_STATE {
     pub level: u8,
     pub progress: f32,
 }
 
+#[derive(Debug)]
 pub struct STATUS_WITH_TIME_INTERVAL {
     pub statusID: u8,
     pub startTime: f32,
     pub endTime: f32,
 }
 
+#[derive(Debug)]
 pub struct TIME_INTERVAL {
     pub startTime: f32,
     pub endTime: f32,
 }
 
+#[derive(Debug)]
 pub struct STATE_WITH_TIME_INTERVAL {
     pub stateID: u8,
     pub timeInterval: TIME_INTERVAL,
     pub isSourceVehicle: BOOL,
 }
 
+#[derive(Debug)]
 pub struct VISUAL_SCRIPT_EQUIPMENT_STATE {
     pub quantity: i32,
     pub endTime: f32,
     pub totalTime: f32,
     pub prevStage: u8,
     pub stage: u8,
-    pub locked: BOOL,
 }
 
+#[derive(Debug)]
 pub struct VISUAL_SCRIPT_EQUIPMENT_PUBLIC_STATE {
     pub stage: u8,
 }
 
+#[derive(Debug)]
 pub struct SPAWN_AVAILABLE_VEHICLE {
     pub compDescr: String,
     pub settings: u16,
@@ -974,33 +1076,39 @@ pub struct SPAWN_AVAILABLE_VEHICLE {
     pub isElite: BOOL,
 }
 
+#[derive(Debug)]
 pub struct SPAWN_POINT_INFO {
     pub vehicleID: OBJECT_ID,
     pub number: i8,
 }
 
+#[derive(Debug)]
 pub struct SPAWN_KEY_POINT {
     pub guid: String,
     pub position: Vec2,
 }
 
+#[derive(Debug)]
 pub struct TEAM_SPAWN_KEY_POINT {
     pub vehID: OBJECT_ID,
     pub guid: String,
     pub placed: BOOL,
 }
 
+#[derive(Debug)]
 pub struct GAME_OBJECT_STATE {
     pub id: String,
     pub state: BOOL,
 }
 
+#[derive(Debug)]
 pub struct GAME_OBJECT_ACTIVATION {
     pub id: String,
     pub start: f32,
     pub end: f32,
 }
 
+#[derive(Debug)]
 pub struct POLYGON_TRIGGER_PARAMS {
     pub step: u16,
     pub origin: Vec3,
@@ -1009,11 +1117,13 @@ pub struct POLYGON_TRIGGER_PARAMS {
     pub segments: Vec<Vec<u16>>,
 }
 
+#[derive(Debug)]
 pub struct SPAWNGROUP_INFO {
     pub name: String,
     pub position: Vec2,
 }
 
+#[derive(Debug)]
 pub struct TEAM_LIVES {
     pub vehicleID: OBJECT_ID,
     pub lives: i8,
@@ -1021,6 +1131,7 @@ pub struct TEAM_LIVES {
     pub lockedLives: i8,
 }
 
+#[derive(Debug)]
 pub struct DEATH_INFO {
     pub victimID: OBJECT_ID,
     pub killerID: OBJECT_ID,
@@ -1029,6 +1140,7 @@ pub struct DEATH_INFO {
     pub numVehiclesAffected: i16,
 }
 
+#[derive(Debug)]
 pub struct VEHICLES_INFO {
     pub vehicleID: OBJECT_ID,
     pub isAlive: BOOL,
@@ -1064,11 +1176,13 @@ pub struct VEHICLES_INFO {
     pub __generation: u32,
 }
 
+#[derive(Debug)]
 pub struct PVE_MINIMAP_DATA {
     pub minimapBorders: Box<[Vec2; 2]>,
     pub zoomLevel: f32,
 }
 
+#[derive(Debug)]
 pub struct PVE_TARGET_MARKER {
     pub settingId: i16,
     pub targetId: i32,
@@ -1077,54 +1191,138 @@ pub struct PVE_TARGET_MARKER {
     pub lastVisiblePosition: Vec3,
 }
 
-pub struct RESPAWN_TIME_INFO {
+#[derive(Debug)]
+pub struct COMP7_PLAYER_STATS {
+    pub damageDone: i16,
+    pub damageBlocked: i16,
+    pub damageAssisted: i16,
+    pub spottedCount: i16,
+    pub shotCount: i16,
+    pub hitCount: i16,
+    pub killCount: i16,
+}
+
+#[derive(Debug)]
+pub struct COMP7_EQUIPMENT {
+    pub name: String,
+    pub compactDescr: i32,
+    pub stage: u8,
+    pub endTime: f64,
+    pub totalTime: f64,
+    pub level: u8,
+    pub progress: f32,
+}
+
+#[derive(Debug)]
+pub struct GUN_RELOAD_INFO {
+    pub activeGun: u8,
+    pub clipSize: u16,
+    pub clipLeft: u16,
+    pub reloadEndTime: f64,
+    pub reloadTotalTime: f64,
+    pub switchEndTime: f64,
+    pub switchTotalTime: f64,
+}
+
+#[derive(Debug)]
+pub struct COMP7_VEHICLE_INFO {
     pub vehicleID: OBJECT_ID,
-    pub spawnTime: f32,
-    pub delay: f32,
-}
-
-pub struct CIRCUIT_OVERLOAD_INFO {
-    pub notificationIndex: u8,
-    pub prefabPath: String,
-}
-
-pub struct IMPACT_AREA_INFO {
-    pub timeBeforeDamage: f32,
+    pub accountDBID: u64,
+    pub name: String,
+    pub fakeName: String,
+    pub team: i8,
+    pub clanDBID: DB_ID,
+    pub clanAbbrev: String,
+    pub outfitCD: String,
+    pub compDescr: String,
+    pub maxHealth: i16,
+    pub curHealth: i16,
+    pub isAlive: BOOL,
+    pub deathInfo: DEATH_INFO,
+    pub gunReloadInfo: GUN_RELOAD_INFO,
+    pub criticalDevices: Vec<String>,
+    pub destroyedDevices: Vec<String>,
+    pub injuredTankmen: Vec<String>,
+    pub vehicleAmmoList: Vec<VEHICLE_AMMO>,
+    pub consumableEquipment: Vec<COMP7_EQUIPMENT>,
+    pub deviceEquipment: Vec<COMP7_EQUIPMENT>,
+    pub boosterEquipment: Vec<COMP7_EQUIPMENT>,
+    pub poiEquipment: Vec<COMP7_EQUIPMENT>,
+    pub roleEquipment: COMP7_EQUIPMENT,
+    pub isInspired: BOOL,
+    pub isHealing: BOOL,
+    pub isStunned: BOOL,
+    pub isOnFire: BOOL,
     pub isVisible: BOOL,
+    pub isAmmoBayDestroyed: BOOL,
+    pub attackerSetOnFire: OBJECT_ID,
+    pub attackerAmmoBayDestroyed: OBJECT_ID,
+    pub playerStats: COMP7_PLAYER_STATS,
 }
 
-pub struct ANON71 {
+#[derive(Debug)]
+pub struct COMP7_POI_INFO {
+    pub id: OBJECT_ID,
+    pub status: STATUS_WITH_TIME_INTERVAL,
+    pub r#type: u8,
+    pub invader: OBJECT_ID,
+}
+
+#[derive(Debug)]
+pub struct INVADER_CAPTURE_POINTS {
+    pub vehicleID: OBJECT_ID,
+    pub capturePoints: f32,
+}
+
+#[derive(Debug)]
+pub struct COMP7_BASE_INFO {
+    pub id: OBJECT_ID,
+    pub baseID: u8,
+    pub teamID: i8,
+    pub status: i8,
+    pub capturePoints: i32,
+    pub captureTimeLeft: i32,
+    pub invaderCapturePoints: Vec<INVADER_CAPTURE_POINTS>,
+}
+
+#[derive(Debug)]
+pub struct ANON79 {
     pub equipment: Vec<String>,
 }
 
-pub struct ANON164 {
+#[derive(Debug)]
+pub struct ANON172 {
     pub points: Vec<Vec3>,
     pub width: f32,
 }
 
-pub struct ANON166 {
+#[derive(Debug)]
+pub struct ANON174 {
     pub position: Vec3,
     pub size: Vec3,
 }
 
-pub struct ANON168 {
+#[derive(Debug)]
+pub struct ANON176 {
     pub position: Vec3,
     pub radius: Vec3,
 }
 
-pub struct ANON170 {
+#[derive(Debug)]
+pub struct ANON178 {
     pub position: Vec3,
     pub text: String,
     pub color: Vec4,
     pub textSize: f32,
 }
 
-pub struct ANON172 {
+#[derive(Debug)]
+pub struct ANON180 {
     pub name: String,
     pub version: u32,
     pub destroyTime: f32,
-    pub lines: Vec<ANON164>,
-    pub cubes: Vec<ANON166>,
-    pub spheres: Vec<ANON168>,
-    pub texts: Vec<ANON170>,
+    pub lines: Vec<ANON172>,
+    pub cubes: Vec<ANON174>,
+    pub spheres: Vec<ANON176>,
+    pub texts: Vec<ANON178>,
 }

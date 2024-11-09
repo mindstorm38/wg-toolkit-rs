@@ -3,81 +3,34 @@ use wgtk::net::app::common::element::Method;
 use super::super::alias::*;
 use super::interface::*;
 
+/// Entity 0x01
 /// Methods for Account on cell component
 pub enum AccountMethod { 
-    Chat(ChatMethod),
-    PlayerMessenger_chat2(PlayerMessenger_chat2Method),
-    AccountEditor(AccountEditorMethod),
-    TransactionUser(TransactionUserMethod),
-    InterclusterSender(InterclusterSenderMethod),
-    ClientCommandsPort(ClientCommandsPortMethod),
-    AccountAdmin(AccountAdminMethod),
-    AccountAvatar(AccountAvatarMethod),
-    AccountClan(AccountClanMethod),
-    AccountAuthTokenProvider(AccountAuthTokenProviderMethod),
-    AccountAuthTokenProviderClient(AccountAuthTokenProviderClientMethod),
-    BattleResultProcessor(BattleResultProcessorMethod),
-    Invitations(InvitationsMethod),
-    InvitationsClient(InvitationsClientMethod),
-    Invoicing(InvoicingMethod),
-    AccountPrebattle(AccountPrebattleMethod),
-    AccountSpaProcessor(AccountSpaProcessorMethod),
-    AccountIGRProcessing(AccountIGRProcessingMethod),
-    SessionTracker(SessionTrackerMethod),
-    AccountGlobalMapConnector(AccountGlobalMapConnectorMethod),
-    AccountSysMessenger(AccountSysMessengerMethod),
-    AccountUnit(AccountUnitMethod),
-    AccountUnitClient(AccountUnitClientMethod),
-    AccountUnitRemote(AccountUnitRemoteMethod),
-    AccountUnitAssembler(AccountUnitAssemblerMethod),
-    AccountUnitBrowser(AccountUnitBrowserMethod),
-    AccountDebugger(AccountDebuggerMethod),
-    QuestProcessor(QuestProcessorMethod),
-    AvatarCreator(AvatarCreatorMethod),
-    AccountVersion(AccountVersionMethod),
-    PlayLimits(PlayLimitsMethod),
-    ServerSideReplays(ServerSideReplaysMethod),
-    EventTokensController(EventTokensControllerMethod),
 }
 
 
+/// Entity 0x02
 /// Methods for Avatar on cell component
 pub enum AvatarMethod { 
-    Chat(ChatMethod),
-    PlayerMessenger_chat2(PlayerMessenger_chat2Method),
-    ClientCommandsPort(ClientCommandsPortMethod),
-    InvitationsClient(InvitationsClientMethod),
-    AccountAuthTokenProviderClient(AccountAuthTokenProviderClientMethod),
     AvatarObserver(AvatarObserverMethod),
-    TeamHealthBar_Avatar(TeamHealthBar_AvatarMethod),
-    ProtectionZoneController_Avatar(ProtectionZoneController_AvatarMethod),
-    RecoveryMechanic_Avatar(RecoveryMechanic_AvatarMethod),
-    DestructibleEntity_Avatar(DestructibleEntity_AvatarMethod),
-    RespawnController_Avatar(RespawnController_AvatarMethod),
-    VehiclesSpawnListStorage_Avatar(VehiclesSpawnListStorage_AvatarMethod),
-    VehicleRemovalController_Avatar(VehicleRemovalController_AvatarMethod),
-    VehicleHealthBroadcastListenerComponent_Avatar(VehicleHealthBroadcastListenerComponent_AvatarMethod),
-    TriggersController_Avatar(TriggersController_AvatarMethod),
-    AvatarEpic(AvatarEpicMethod),
     autoAim(OBJECT_ID, BOOL), // idx(0)
     moveTo(Vec3), // idx(1)
     bindToVehicle(OBJECT_ID), // idx(2)
     monitorVehicleDamagedDevices(OBJECT_ID), // idx(3)
     activateEquipment(u16, i16), // idx(14)
-    activateVehicleEquipment(u16, String), // idx(15)
-    setEquipmentApplicationPoint(u16, Vec3, Vec2), // idx(16)
-    switchViewPointOrBindToVehicle(BOOL, OBJECT_ID), // idx(17)
-    setDualGunCharger(BOOL), // idx(22)
-    reportClientStats(CLIENT_STATUS_STATISTICS), // idx(23)
-    vehicle_moveWith(u8), // idx(25)
-    vehicle_shoot(), // idx(26)
-    vehicle_trackWorldPointWithGun(Vec3), // idx(27)
-    vehicle_trackRelativePointWithGun(Vec3), // idx(28)
-    vehicle_stopTrackingWithGun(f32, f32), // idx(29)
-    setupAmmo(i64), // idx(30)
-    vehicle_changeSetting(u8, i32), // idx(31)
-    setServerMarker(BOOL), // idx(32)
-    setSendKillCamSimulationData(BOOL), // idx(33)
+    setEquipmentApplicationPoint(u16, Vec3, Vec2), // idx(15)
+    switchViewPointOrBindToVehicle(BOOL, OBJECT_ID), // idx(16)
+    setDualGunCharger(BOOL), // idx(21)
+    reportClientStats(CLIENT_STATUS_STATISTICS), // idx(22)
+    vehicle_moveWith(u8), // idx(24)
+    vehicle_shoot(), // idx(25)
+    vehicle_trackWorldPointWithGun(Vec3), // idx(26)
+    vehicle_trackRelativePointWithGun(Vec3), // idx(27)
+    vehicle_stopTrackingWithGun(f32, f32), // idx(28)
+    setupAmmo(i64), // idx(29)
+    vehicle_changeSetting(u8, i32), // idx(30)
+    setServerMarker(BOOL), // idx(31)
+    setSendKillCamSimulationData(BOOL), // idx(32)
 }
 
 // 0: vehicle_shoot [Fixed(0)] @ []
@@ -99,43 +52,30 @@ pub enum AvatarMethod {
 // 16: vehicle_trackRelativePointWithGun [Fixed(12)] @ []
 // 17: setEquipmentApplicationPoint [Fixed(22)] @ []
 // 18: reportClientStats [Fixed(24)] @ []
-// 19: activateVehicleEquipment [Variable(Variable8)] @ []
 
+/// Entity 0x03
 /// Methods for ArenaInfo on cell component
 pub enum ArenaInfoMethod { 
-    PlaneTrajectoryArenaInfo(PlaneTrajectoryArenaInfoMethod),
 }
 
 
+/// Entity 0x04
 /// Methods for ClientSelectableObject on cell component
 pub enum ClientSelectableObjectMethod { 
 }
 
 
+/// Entity 0x05
 /// Methods for HangarVehicle on cell component
 pub enum HangarVehicleMethod { 
 }
 
 
+/// Entity 0x06
 /// Methods for Vehicle on cell component
 pub enum VehicleMethod { 
-    VehicleAIProxy(VehicleAIProxyMethod),
-    TeamBase_Vehicle(TeamBase_VehicleMethod),
-    SectorBase_Vehicle(SectorBase_VehicleMethod),
-    RepairBase_Vehicle(RepairBase_VehicleMethod),
     VehicleObserver(VehicleObserverMethod),
-    BattleFeedback(BattleFeedbackMethod),
-    Harm(HarmMethod),
-    Sector_Vehicle(Sector_VehicleMethod),
-    ProtectionZone_Vehicle(ProtectionZone_VehicleMethod),
-    StepRepairPoint_Vehicle(StepRepairPoint_VehicleMethod),
-    DestructibleEntity_Vehicle(DestructibleEntity_VehicleMethod),
-    DefenderBonusController_Vehicle(DefenderBonusController_VehicleMethod),
     RecoveryMechanic_Vehicle(RecoveryMechanic_VehicleMethod),
-    RespawnController_Vehicle(RespawnController_VehicleMethod),
-    SmokeController_Vehicle(SmokeController_VehicleMethod),
-    Wheels(WheelsMethod),
-    Perks_Vehicle(Perks_VehicleMethod),
     moveWith(u8), // idx(1)
     trackWorldPointWithGun(Vec3), // idx(2)
     trackRelativePointWithGun(Vec3), // idx(3)
@@ -158,206 +98,225 @@ pub enum VehicleMethod {
 // 9: sendVisibilityDevelopmentInfo [Fixed(16)] @ []
 // 10: setRemoteCamera [Fixed(22)] @ ["VehicleObserver"]
 
+/// Entity 0x07
 /// Methods for AreaDestructibles on cell component
 pub enum AreaDestructiblesMethod { 
 }
 
 
+/// Entity 0x08
 /// Methods for OfflineEntity on cell component
 pub enum OfflineEntityMethod { 
 }
 
 
+/// Entity 0x09
 /// Methods for Flock on cell component
 pub enum FlockMethod { 
 }
 
 
+/// Entity 0x0A
 /// Methods for FlockExotic on cell component
 pub enum FlockExoticMethod { 
 }
 
 
+/// Entity 0x0B
 /// Methods for Login on cell component
 pub enum LoginMethod { 
 }
 
 
+/// Entity 0x0C
 /// Methods for DetachedTurret on cell component
 pub enum DetachedTurretMethod { 
 }
 
 
+/// Entity 0x0D
 /// Methods for DebugDrawEntity on cell component
 pub enum DebugDrawEntityMethod { 
 }
 
 
+/// Entity 0x0E
 /// Methods for ClientSelectableCameraObject on cell component
 pub enum ClientSelectableCameraObjectMethod { 
 }
 
 
+/// Entity 0x0F
 /// Methods for ClientSelectableCameraVehicle on cell component
 pub enum ClientSelectableCameraVehicleMethod { 
 }
 
 
+/// Entity 0x10
 /// Methods for ClientSelectableWebLinksOpener on cell component
 pub enum ClientSelectableWebLinksOpenerMethod { 
 }
 
 
+/// Entity 0x11
 /// Methods for ClientSelectableEasterEgg on cell component
 pub enum ClientSelectableEasterEggMethod { 
 }
 
 
+/// Entity 0x12
 /// Methods for EmptyEntity on cell component
 pub enum EmptyEntityMethod { 
 }
 
 
+/// Entity 0x13
 /// Methods for LimitedVisibilityEntity on cell component
 pub enum LimitedVisibilityEntityMethod { 
 }
 
 
+/// Entity 0x14
 /// Methods for HeroTank on cell component
 pub enum HeroTankMethod { 
 }
 
 
+/// Entity 0x15
 /// Methods for PlatoonTank on cell component
 pub enum PlatoonTankMethod { 
 }
 
 
+/// Entity 0x16
 /// Methods for PlatoonLighting on cell component
 pub enum PlatoonLightingMethod { 
 }
 
 
+/// Entity 0x17
 /// Methods for SectorBase on cell component
 pub enum SectorBaseMethod { 
-    EntityTrap(EntityTrapMethod),
 }
 
 
+/// Entity 0x18
 /// Methods for Sector on cell component
 pub enum SectorMethod { 
 }
 
 
+/// Entity 0x19
 /// Methods for DestructibleEntity on cell component
 pub enum DestructibleEntityMethod { 
-    Destructible(DestructibleMethod),
 }
 
 
+/// Entity 0x1A
 /// Methods for StepRepairPoint on cell component
 pub enum StepRepairPointMethod { 
 }
 
 
+/// Entity 0x1B
 /// Methods for ProtectionZone on cell component
 pub enum ProtectionZoneMethod { 
 }
 
 
+/// Entity 0x1C
 /// Methods for HangarPoster on cell component
 pub enum HangarPosterMethod { 
 }
 
 
+/// Entity 0x1D
 /// Methods for TeamInfo on cell component
 pub enum TeamInfoMethod { 
-    ThrottledMethods(ThrottledMethodsMethod),
 }
 
 
+/// Entity 0x1E
 /// Methods for AvatarInfo on cell component
 pub enum AvatarInfoMethod { 
 }
 
 
+/// Entity 0x1F
 /// Methods for ArenaObserverInfo on cell component
 pub enum ArenaObserverInfoMethod { 
 }
 
 
+/// Entity 0x20
 /// Methods for AreaOfEffect on cell component
 pub enum AreaOfEffectMethod { 
 }
 
 
+/// Entity 0x21
 /// Methods for AttackBomber on cell component
 pub enum AttackBomberMethod { 
 }
 
 
+/// Entity 0x22
 /// Methods for AttackArtilleryFort on cell component
 pub enum AttackArtilleryFortMethod { 
 }
 
 
+/// Entity 0x23
 /// Methods for PersonalDeathZone on cell component
 pub enum PersonalDeathZoneMethod { 
 }
 
 
+/// Entity 0x24
 /// Methods for ClientSelectableRankedObject on cell component
 pub enum ClientSelectableRankedObjectMethod { 
 }
 
 
+/// Entity 0x25
 /// Methods for SimulatedVehicle on cell component
 pub enum SimulatedVehicleMethod { 
 }
 
 
+/// Entity 0x26
 /// Methods for ClientSelectableHangarsSwitcher on cell component
 pub enum ClientSelectableHangarsSwitcherMethod { 
 }
 
 
+/// Entity 0x27
 /// Methods for StaticDeathZone on cell component
 pub enum StaticDeathZoneMethod { 
 }
 
 
+/// Entity 0x28
 /// Methods for BasicMine on cell component
 pub enum BasicMineMethod { 
 }
 
 
+/// Entity 0x29
 /// Methods for ApplicationPoint on cell component
 pub enum ApplicationPointMethod { 
 }
 
 
+/// Entity 0x2A
 /// Methods for NetworkEntity on cell component
 pub enum NetworkEntityMethod { 
 }
 
 
+/// Entity 0x2B
 /// Methods for Comp7Lighting on cell component
 pub enum Comp7LightingMethod { 
-}
-
-
-/// Methods for EventVehicle on cell component
-pub enum EventVehicleMethod { 
-}
-
-
-/// Methods for EventShowcaseVehicle on cell component
-pub enum EventShowcaseVehicleMethod { 
-}
-
-
-/// Methods for EventPortal on cell component
-pub enum EventPortalMethod { 
 }
 
 
