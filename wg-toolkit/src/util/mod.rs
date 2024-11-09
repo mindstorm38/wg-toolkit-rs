@@ -92,9 +92,9 @@ impl fmt::Debug for AsciiFmt<'_> {
 
         }
 
-        // if human {
-        //     f.write_char('"')?;
-        // }
+        if human {
+            f.write_char('"')?;
+        }
 
         Ok(())
 

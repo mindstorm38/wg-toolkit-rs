@@ -8,8 +8,9 @@ use tracing::warn;
 use super::packet::{self, PacketConfig, PacketLocked, Packet};
 use super::element::{Element, Reply, REPLY_ID};
 
-use crate::net::element::ElementLength;
 use crate::util::io::{WgReadExt, WgWriteExt, IoCounter};
+use crate::net::element::ElementLength;
+use crate::util::AsciiFmt;
 
 
 /// The maximum length for writing bundle elements, it's basically the packet capacity 
@@ -764,12 +765,14 @@ impl<'a> BundleElementReader<'a> {
                 // reading the reply header for example.
                 let unread_len = elt_reader.limit() as usize;
                 if unread_len != 0 {
-                    warn!("remaining data while reading element of type '{}'", std::any::type_name::<E>());
+                    // Unwrap for the same reason as below.
+                    let unread_data = self.bundle_reader.read_blob(unread_len).unwrap();
+                    warn!("remaining data while reading element of type '{}': {:?}", std::any::type_name::<E>(), AsciiFmt(&unread_data));
                 }
 
                 // We advance the reader by the amount that has not been read. Unwrapping 
                 // because it should succeed because the element reader has read this much.
-                self.bundle_reader.advance(unread_len + moved_bytes.len()).unwrap();
+                self.bundle_reader.advance(moved_bytes.len()).unwrap();
 
             }
         } else {

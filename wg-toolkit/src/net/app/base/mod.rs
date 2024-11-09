@@ -15,7 +15,7 @@ use crate::net::channel::ChannelTracker;
 use crate::net::element::SimpleElement;
 use crate::net::socket::PacketSocket;
 
-use super::common::element::Entity;
+use super::common::entity::Entity;
 use super::io_invalid_data;
 
 use element::{ClientAuth, ClientSessionKey};
@@ -142,13 +142,13 @@ impl App {
 
     }
 
-    pub fn create_entity<E: Entity>(&mut self, _addr: SocketAddr, _entity: E) -> Handle<E> {
-        todo!()
-    }
+    // pub fn create_entity<E: Entity>(&mut self, _addr: SocketAddr, _entity: E) -> Handle<E> {
+    //     todo!()
+    // }
 
-    pub fn call_method<E: Entity>(&mut self, _addr: SocketAddr, _handle: Handle<E>, _method: E::ClientMethod) {
-        todo!()
-    }
+    // pub fn call_method<E: Entity>(&mut self, _addr: SocketAddr, _handle: Handle<E>, _method: E::ClientMethod) {
+    //     todo!()
+    // }
 
 }
 

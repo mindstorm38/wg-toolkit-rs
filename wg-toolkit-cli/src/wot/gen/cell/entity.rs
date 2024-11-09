@@ -1,4 +1,3 @@
-use wgtk::net::app::common::element::Method;
 
 use super::super::alias::*;
 use super::interface::*;

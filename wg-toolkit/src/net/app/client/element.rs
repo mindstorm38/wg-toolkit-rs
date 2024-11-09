@@ -3,10 +3,12 @@
 
 use std::io::{self, Read, Write};
 
-use glam::Vec3A;
+use glam::Vec3;
 
 use crate::net::element::{ElementLength, SimpleElement, EmptyElement, DebugElementFixed, DebugElementVariable16};
 use crate::util::io::*;
+
+use crate::net::app::common::entity::Entity;
 
 
 /// Internal module containing all raw elements numerical ids.
@@ -222,7 +224,57 @@ impl SimpleElement for ResetEntities {
 }
 
 
-pub type CreateBasePlayer = DebugElementVariable16<{ id::CREATE_BASE_PLAYER }>;
+/// Sent from the base when a player should be created, the entity id
+/// is given with its type.
+/// 
+/// The remaining data will later be decoded properly depending on the
+/// entity type, it's used for initializing its properties (TODO).
+/// For example the `Login` entity receive the account UID.
+#[derive(Debug, Clone)]
+pub struct CreateBasePlayer<E: Entity> {
+    /// The unique identifier of the entity being created.
+    pub entity_id: u32,
+    /// This string's usage is currently unknown.
+    pub unk: String,
+    /// The actual data to be sent for creating the player's entity.
+    pub entity_data: Box<E>,
+    /// This integer describe the number of entity components composing
+    /// the entity, this value must be strictly equal to the same value
+    /// as the client.
+    /// 
+    /// TODO: This number is used to know how much entity components
+    /// must be parsed after this number. Components can be seen as
+    /// regular components. **It's not currently implemented.**
+    pub entity_components_count: u8,
+}
+
+impl<E: Entity> SimpleElement for CreateBasePlayer<E> {
+    
+    const ID: u8 = id::CREATE_BASE_PLAYER;
+    const LEN: ElementLength = ElementLength::Variable16;
+
+    fn encode(&self, write: &mut impl Write) -> io::Result<()> {
+        write.write_u32(self.entity_id)?;
+        write.write_u16(self.entity_data.type_id())?;
+        write.write_string_variable(&self.unk)?;
+        self.entity_data.encode(&mut *write)?;
+        write.write_u8(self.entity_components_count)
+    }
+
+    fn decode(read: &mut impl Read, _len: usize) -> io::Result<Self> {
+        let entity_id = read.read_u32()?;
+        let entity_type_id = read.read_u16()?;
+        Ok(Self {
+            entity_id,
+            unk: read.read_string_variable()?,
+            entity_data: Box::new(E::decode(&mut *read, entity_type_id)?),
+            entity_components_count: read.read_u8()?,
+        })
+    }
+
+}
+
+
 pub type CreateCellPlayer = DebugElementVariable16<{ id::CREATE_CELL_PLAYER }>;
 pub type DummyPacket = DebugElementVariable16<{ id::DUMMY_PACKET }>;
 pub type SpaceProperty = DebugElementVariable16<{ id::SPACE_PROPERTY }>;
@@ -239,57 +291,6 @@ pub type ClientSuspensionDetectionEnabled = DebugElementFixed<{ id::CLIENT_SUSPE
 pub type EnterAoi = DebugElementFixed<{ id::ENTER_AOI }, 5>;
 pub type EnterAoiOnVehicle = DebugElementFixed<{ id::ENTER_AOI_ON_VEHICLE }, 9>;
 pub type LeaveAoi = DebugElementVariable16<{ id::LEAVE_AOI }>;
-
-// /// Sent from the base when a player should be created, the entity id
-// /// is given with its type.
-// /// 
-// /// The remaining data will later be decoded properly depending on the
-// /// entity type, it's used for initializing its properties (TODO).
-// /// For example the `Login` entity receive the account UID.
-// #[derive(Debug, Clone)]
-// pub struct CreateBasePlayer<E> {
-//     /// The unique identifier of the entity being created.
-//     pub entity_id: u32,
-//     /// The entity type identifier being created.
-//     pub entity_type: u16,
-//     /// This string's usage is currently unknown.
-//     pub unk: String,
-//     /// The actual data to be sent for creating the player's entity.
-//     pub entity_data: E,
-//     /// This integer describe the number of entity components composing
-//     /// the entity, this value must be strictly equal to the same value
-//     /// as the client.
-//     /// 
-//     /// TODO: This number is used to know how much entity components
-//     /// must be parsed after this number. Components can be seen as
-//     /// regular components. **It's not currently implemented.**
-//     pub entity_components_count: u8,
-// }
-
-// impl<E: Element<Config = ()>> SimpleElement for CreateBasePlayer<E> {
-
-//     fn encode(&self, write: &mut impl Write) -> io::Result<()> {
-//         write.write_u32(self.entity_id)?;
-//         write.write_u16(self.entity_type)?;
-//         write.write_string_variable(&self.unk)?;
-//         self.entity_data.encode(&mut *write, &())?;
-//         write.write_u8(self.entity_components_count)
-//     }
-
-//     fn decode(read: &mut impl Read, len: usize) -> io::Result<Self> {
-//         Ok(Self {
-//             entity_id: read.read_u32()?,
-//             entity_type: read.read_u16()?,
-//             unk: read.read_string_variable()?,
-//             entity_data: E::decode(&mut *read, len - 7, &())?,
-//             entity_components_count: read.read_u8()?,
-//         })
-//     }
-// }
-
-// impl<E: Element<Config = ()>> TopElement for CreateBasePlayer<E> {
-//     const LEN: ElementLength = ElementLength::Variable16;
-// }
 
 
 /// It is used as a timestamp for the elements in a bundle.
@@ -340,8 +341,8 @@ pub struct ForcedPosition {
     pub entity_id: u32,
     pub space_id: u32,
     pub vehicle_entity_id: u32,
-    pub position: Vec3A,
-    pub direction: Vec3A,
+    pub position: Vec3,
+    pub direction: Vec3,
 }
 
 impl SimpleElement for ForcedPosition {

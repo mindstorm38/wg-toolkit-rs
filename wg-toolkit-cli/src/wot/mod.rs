@@ -279,8 +279,8 @@ impl BaseProxyThread {
                 true
             }
             id => {
-                let elt = elt.read_simple::<()>().unwrap();
-                warn!(%addr, "-> Top element #{id}, request: {:?}", elt.request_id);
+                let elt = elt.read_simple::<DebugElementUndefined<0>>().unwrap();
+                error!(%addr, "-> Top element #{id} {:?} (request: {:?})", elt.element, elt.request_id);
                 false
             }
         }
@@ -331,8 +331,8 @@ impl BaseProxyThread {
                 info!(%addr, "<- Reset entities, keep player on base: {}", elt.element.keep_player_on_base);
                 true
             }
-            CreateBasePlayer::ID => {
-                let elt = elt.read_simple::<CreateBasePlayer>().unwrap();
+            CreateBasePlayer::<gen::entity::Generic>::ID => {
+                let elt = elt.read_simple::<CreateBasePlayer<gen::entity::Generic>>().unwrap();
                 assert!(elt.request_id.is_none());
                 warn!(%addr, "<- Create base player: {:?}", elt.element);
                 true
@@ -372,8 +372,8 @@ impl BaseProxyThread {
                 false
             }
             id => {
-                let elt = elt.read_simple::<()>().unwrap();
-                error!(%addr, "<- Top element #{id}, request: {:?}", elt.request_id);
+                let elt = elt.read_simple::<DebugElementUndefined<0>>().unwrap();
+                error!(%addr, "<- Top element #{id} {:?} (request: {:?})", elt.element, elt.request_id);
                 false
             }
         }

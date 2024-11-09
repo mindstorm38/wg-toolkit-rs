@@ -5,7 +5,7 @@ use std::io::{self, Read, Write, Cursor};
 use std::net::{SocketAddrV4, Ipv4Addr};
 
 use byteorder::{ReadBytesExt, WriteBytesExt, LE, BE};
-use glam::Vec3A;
+use glam::{Vec2, Vec3, Vec4};
 
 
 /// An extension to the [`Read`] trait specifically used to decode WG formats
@@ -104,6 +104,13 @@ pub trait WgReadExt: Read {
     #[inline]
     fn read_f32(&mut self) -> io::Result<f32> {
         ReadBytesExt::read_f32::<LE>(self)
+    }
+
+    /// Reads a IEEE754 double-precision (8 bytes) floating point number 
+    /// from the underlying reader.
+    #[inline]
+    fn read_f64(&mut self) -> io::Result<f64> {
+        ReadBytesExt::read_f64::<LE>(self)
     }
 
     /// Read a single boolean from the underlying reader.
@@ -210,8 +217,26 @@ pub trait WgReadExt: Read {
     }
 
     #[inline]
-    fn read_vec3(&mut self) -> io::Result<Vec3A> {
-        Ok(Vec3A::new(
+    fn read_vec2(&mut self) -> io::Result<Vec2> {
+        Ok(Vec2::new(
+            self.read_f32()?,
+            self.read_f32()?,
+        ))
+    }
+
+    #[inline]
+    fn read_vec3(&mut self) -> io::Result<Vec3> {
+        Ok(Vec3::new(
+            self.read_f32()?,
+            self.read_f32()?,
+            self.read_f32()?,
+        ))
+    }
+
+    #[inline]
+    fn read_vec4(&mut self) -> io::Result<Vec4> {
+        Ok(Vec4::new(
+            self.read_f32()?,
             self.read_f32()?,
             self.read_f32()?,
             self.read_f32()?,
@@ -220,10 +245,10 @@ pub trait WgReadExt: Read {
 
     /// Read a Python Pickle of the given `serde::Deserialize` type, this also
     /// reads the length of the pickle's data in the packed header.
-    fn read_pickle<'de, T: serde::Deserialize<'de>>(&mut self) -> io::Result<T> {
+    fn read_python_pickle(&mut self) -> io::Result<serde_pickle::Value> {
         use serde_pickle::DeOptions;
         let length = self.read_packed_u24()?;
-        Ok(serde_pickle::from_reader(self.take(length as _), DeOptions::new().decode_strings()).unwrap())
+        Ok(serde_pickle::value_from_reader(self.take(length as _), DeOptions::new().decode_strings_relaxed()).unwrap())
     }
 
     /// Read the size header for a single structure. To read the header of
@@ -356,6 +381,13 @@ pub trait WgWriteExt: Write {
         WriteBytesExt::write_f32::<LE>(self, n)
     }
 
+    /// Writes a IEEE754 double-precision (8 bytes) floating point number 
+    /// to the underlying writer.
+    #[inline]
+    fn write_f64(&mut self, n: f64) -> io::Result<()> {
+        WriteBytesExt::write_f64::<LE>(self, n)
+    }
+
     /// Write a single boolean to the underlying writer.
     #[inline]
     fn write_bool(&mut self, b: bool) -> io::Result<()> {
@@ -406,19 +438,33 @@ pub trait WgWriteExt: Write {
         Ok(())
     }
 
-    fn write_vec3(&mut self, vec: Vec3A) -> io::Result<()> {
+    fn write_vec2(&mut self, vec: Vec2) -> io::Result<()> {
+        self.write_f32(vec.x)?;
+        self.write_f32(vec.y)?;
+        Ok(())
+    }
+
+    fn write_vec3(&mut self, vec: Vec3) -> io::Result<()> {
         self.write_f32(vec.x)?;
         self.write_f32(vec.y)?;
         self.write_f32(vec.z)?;
         Ok(())
     }
 
+    fn write_vec4(&mut self, vec: Vec4) -> io::Result<()> {
+        self.write_f32(vec.x)?;
+        self.write_f32(vec.y)?;
+        self.write_f32(vec.z)?;
+        self.write_f32(vec.w)?;
+        Ok(())
+    }
+
     /// Write a Python Pickle from the given `serde::Serialize` value, the pickle's
     /// data is prefixed with the variable length of the data (like a variable blob
     /// or string).
-    fn write_pickle<T: serde::Serialize>(&mut self, value: &T) -> io::Result<()> {
+    fn write_python_pickle(&mut self, value: &serde_pickle::Value) -> io::Result<()> {
         use serde_pickle::SerOptions;
-        self.write_blob_variable(&serde_pickle::to_vec(value, SerOptions::new().proto_v2()).unwrap())
+        self.write_blob_variable(&serde_pickle::value_to_vec(value, SerOptions::new().proto_v2()).unwrap())
     }
 
     /// Write header for vector of structure.

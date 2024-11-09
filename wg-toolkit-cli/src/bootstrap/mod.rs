@@ -125,11 +125,7 @@ fn generate_alias(mod_dir: &Path, model: &Model) -> io::Result<()> {
     let alias_file = mod_dir.join("alias.rs");
     let mut writer = BufWriter::new(File::create(&alias_file)?);
 
-    writeln!(writer, "pub use glam::{{Vec2, Vec3, Vec4}};")?;
-    writeln!(writer)?;
-
-    writeln!(writer, "pub type Python = ();")?;
-    writeln!(writer, "pub type Mailbox = ();")?;
+    writeln!(writer, "pub use wgtk::net::app::common::data::*;")?;
     writeln!(writer)?;
 
     let mut prev_dict = false;
@@ -149,12 +145,14 @@ fn generate_alias(mod_dir: &Path, model: &Model) -> io::Result<()> {
             TyKind::Dict(ty_dict) => {
                 prev_dict = true;
                 writeln!(writer)?;
-                writeln!(writer, "#[derive(Debug)]")?;
-                writeln!(writer, "pub struct {identifier} {{")?;
+                writeln!(writer, "wgtk::struct_data_type! {{")?;
+                writeln!(writer, "    #[derive(Debug)]")?;
+                writeln!(writer, "    pub struct {identifier} {{")?;
                 for prop in &ty_dict.properties {
                     let prop_identifier = generate_rust_identifier(&prop.name);
-                    writeln!(writer, "    pub {prop_identifier}: {},", generate_type_ref(&prop.ty))?;
+                    writeln!(writer, "        pub {prop_identifier}: {},", generate_type_ref(&prop.ty))?;
                 }
+                writeln!(writer, "    }}")?;
                 writeln!(writer, "}}")?;
             }
             TyKind::Array(_) |
@@ -255,16 +253,16 @@ fn generate_app_entities(mod_dir: &Path, app: &'static App, model: &Model, state
     let entity_file = mod_dir.join("entity.rs");
     let mut writer = BufWriter::new(File::create(&entity_file)?);
 
-    writeln!(writer, "use wgtk::net::app::common::element::Method;")?;
+    // writeln!(writer, "use wgtk::net::app::common::element::Method;")?;  FIXME:
     writeln!(writer)?;
     writeln!(writer, "use super::super::alias::*;")?;
     writeln!(writer, "use super::interface::*;")?;
     writeln!(writer)?;
-
+    
     for entity in &model.entities {
         generate_app_entity(&mut writer, app, model, entity, &mut *state)?;
     }
-
+    
     Ok(())
 
 }
@@ -365,7 +363,7 @@ fn generate_app_interface(
 fn generate_app_interface_methods(
     mut writer: impl Write, 
     app: &'static App,
-    model: &Model, 
+    _model: &Model, 
     interface: &Interface,
     state: &mut State,
 ) -> io::Result<()> {
@@ -376,7 +374,7 @@ fn generate_app_interface_methods(
     writeln!(writer, "pub enum {}Method {{ ", interface.name)?;
 
     for interface_name in &interface.implements {
-        if !(app.empty_method_interfaces)(&mut *state).contains(interface_name) {
+        if !(app.state)(&mut *state).empty_methods_interfaces.contains(interface_name) {
             writeln!(writer, "    {interface_name}({interface_name}Method),")?;
         }
     }
@@ -410,7 +408,7 @@ fn generate_app_interface_methods(
 
     if unique_names.is_empty() {
         // Note: It's safe to get this reference as a ptr because it lives for 'static.
-        (app.empty_method_interfaces)(&mut *state).insert(interface.name.clone());
+        (app.state)(&mut *state).empty_methods_interfaces.insert(interface.name.clone());
     }
 
     writeln!(writer, "}}")?;
@@ -444,7 +442,7 @@ fn generate_entities(mod_dir: &Path, model: &Model, state: &mut State) -> io::Re
     let entity_file = mod_dir.join("entity.rs");
     let mut writer = BufWriter::new(File::create(&entity_file)?);
 
-    writeln!(writer, "use wgtk::net::app::common::element::Entity;")?;
+    writeln!(writer, "use wgtk::net::app::common::entity::{{Entity, DataTypeEntity}};")?;
     writeln!(writer)?;
     writeln!(writer, "use super::alias::*;")?;
     writeln!(writer, "use super::interface::*;")?;
@@ -454,6 +452,17 @@ fn generate_entities(mod_dir: &Path, model: &Model, state: &mut State) -> io::Re
     for entity in &model.entities {
         generate_entity(&mut writer, model, entity, &mut *state)?;
     }
+
+    writeln!(writer, "wgtk::enum_entity! {{")?;
+    writeln!(writer, "    /// Generic entity type enumeration allowing decoding of any entities.")?;
+    writeln!(writer, "    #[derive(Debug)]")?;
+    writeln!(writer, "    pub enum Generic {{")?;
+    for entity in &model.entities {
+        writeln!(writer, "        {} = 0x{:02X},", entity.interface.name, entity.id)?;
+    }
+    writeln!(writer, "    }}")?;
+    writeln!(writer, "}}")?;
+    writeln!(writer)?;
 
     Ok(())
 
@@ -468,8 +477,13 @@ fn generate_entity(
 
     writeln!(writer, "/// Entity 0x{:02X}", entity.id)?;
     generate_interface(&mut writer, model, &entity.interface, state)?;
+    
+    writeln!(writer, "impl DataTypeEntity for {} {{", entity.interface.name)?;
+    writeln!(writer, "    const TYPE_ID: u16 = 0x{:02X};", entity.id)?;
+    writeln!(writer, "}}")?;
+    writeln!(writer)?;
 
-    // TODO:
+    // FIXME:?
     // writeln!(writer, "impl Entity for {} {{", entity.interface.name)?;
     // writeln!(writer, "    const ID: u16 = {};", entity.id)?;
     // writeln!(writer, "    type ClientMethod = client::entity::{}Method;", entity.interface.name)?;
@@ -490,12 +504,13 @@ fn generate_interface(
 ) -> io::Result<()> {
     
     writeln!(writer, "/// Interface {}", interface.name)?;
-    writeln!(writer, "#[derive(Debug)]")?;
-    writeln!(writer, "pub struct {} {{", interface.name)?;
+    writeln!(writer, "wgtk::struct_data_type! {{")?;
+    writeln!(writer, "    #[derive(Debug)]")?;
+    writeln!(writer, "    pub struct {} {{", interface.name)?;
     
     for interface_name in &interface.implements {
         if !state.empty_interfaces.contains(interface_name) {
-            writeln!(writer, "    pub i_{interface_name}: {interface_name},")?;
+            writeln!(writer, "        pub i_{interface_name}: {interface_name},")?;
         }
     }
 
@@ -503,7 +518,7 @@ fn generate_interface(
     let mut count = 0;
     for property in &interface.properties {
         if matches!(property.flags, PropertyFlags::AllClients | PropertyFlags::OwnClient | PropertyFlags::BaseAndClient) {
-            writeln!(writer, "    pub {}: {},", property.name, generate_type_ref(&property.ty))?;
+            writeln!(writer, "        pub {}: {},", property.name, generate_type_ref(&property.ty))?;
             count += 1;
         }
     }
@@ -512,32 +527,9 @@ fn generate_interface(
         state.empty_interfaces.insert(interface.name.clone());
     }
 
+    writeln!(writer, "    }}")?;
     writeln!(writer, "}}")?;
     writeln!(writer)?;
-
-    // for property in &interface.properties {
-
-    //     // if !(app.check_property_flags)(property.flags) {
-    //     //     continue;
-    //     // }
-
-    //     // write!(writer, "    {}: {}, //", property.name, gen_model.type_name(property.ty))?;
-    //     // properties_count += 1;
-        
-    //     // match property.flags {
-    //     //     PropertyFlags::None => (),
-    //     //     PropertyFlags::Base => write!(writer, " base")?,
-    //     //     PropertyFlags::BaseAndClient => write!(writer, " base and client")?,
-    //     //     PropertyFlags::OwnClient => write!(writer, " own client")?,
-    //     //     PropertyFlags::CellPrivate => write!(writer, " cell private")?,
-    //     //     PropertyFlags::CellPublic => write!(writer, " cell public")?,
-    //     //     PropertyFlags::AllClients => write!(writer, " all clients")?,
-    //     // }
-    //     // writeln!(writer)?;
-
-    // }
-    // writeln!(writer, "}}")?;
-    // writeln!(writer)?;
 
     Ok(())
 
@@ -593,24 +585,24 @@ fn compute_method_stream_size(method: &Method) -> StreamSize {
 struct App {
     mod_name: &'static str,
     interface_methods: fn(&Interface) -> &[Method],
-    empty_method_interfaces: fn(&mut State) -> &mut HashSet<String>,
+    state: fn(&mut State) -> &mut AppState,
 }
 
 static APPS: [App; 3] = [
     App {
         mod_name: "client",
         interface_methods: |i| &i.client_methods,
-        empty_method_interfaces: |s| &mut s.empty_client_methods_interfaces,
+        state: |s| &mut s.client_state,
     },
     App {
         mod_name: "base",
         interface_methods: |i| &i.base_methods,
-        empty_method_interfaces: |s| &mut s.empty_base_methods_interfaces,
+        state: |s| &mut s.base_state,
     },
     App {
         mod_name: "cell",
         interface_methods: |i| &i.cell_methods,
-        empty_method_interfaces: |s| &mut s.empty_cell_methods_interfaces,
+        state: |s| &mut s.cell_state,
     },
 ];
 
@@ -620,9 +612,14 @@ struct State {
     /// A set of interfaces without any fields (sizeof=0) for which it's useless to 
     /// generate variants.
     empty_interfaces: HashSet<String>,
-    empty_client_methods_interfaces: HashSet<String>,
-    empty_base_methods_interfaces: HashSet<String>,
-    empty_cell_methods_interfaces: HashSet<String>,
+    client_state: AppState,
+    base_state: AppState,
+    cell_state: AppState,
+}
+
+#[derive(Debug, Default)]
+struct AppState {
+    empty_methods_interfaces: HashSet<String>,
 }
 
 /// An exposed method for the network protocol, this is used to list all exposed methods

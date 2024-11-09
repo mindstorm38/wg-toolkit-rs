@@ -1,0 +1,3 @@
+[submodule "serde-pickle"]
+	path = serde-pickle
+	url = git@github.com:mindstorm38/serde-pickle.git

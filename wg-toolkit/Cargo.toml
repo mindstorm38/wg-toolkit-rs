@@ -21,7 +21,8 @@ tracing = "0.1"         # Used possibly everywhere
 
 # Used for codecs read/writing.
 serde = "1.0"
-serde-pickle = "1.0"
+serde-pickle = { version = "1.2.0-beta.0", path = "../serde-pickle" }
+# serde-pickle = "1.1"
 bitflags = "2.6"
 
 # The following dependencies are used for network sub module.
