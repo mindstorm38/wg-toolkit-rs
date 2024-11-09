@@ -12,6 +12,16 @@ use glam::Vec3A;
 /// and used for network protocol.
 pub trait WgReadExt: Read {
 
+    #[inline]
+    fn read_uint(&mut self, nbytes: usize) -> io::Result<u64> {
+        ReadBytesExt::read_uint::<LE>(self, nbytes)
+    }
+
+    #[inline]
+    fn read_int(&mut self, nbytes: usize) -> io::Result<i64> {
+        ReadBytesExt::read_int::<LE>(self, nbytes)
+    }
+
     /// Reads an unsigned 8 bit integer from the underlying reader.
     #[inline]
     fn read_u8(&mut self) -> io::Result<u8> {
@@ -258,6 +268,16 @@ pub trait WgReadExt: Read {
 /// An extension to the [`Write`] trait specifically used to decode WG formats
 /// and used for network protocol.
 pub trait WgWriteExt: Write {
+
+    #[inline]
+    fn write_uint(&mut self, n: u64, nbytes: usize) -> io::Result<()> {
+        WriteBytesExt::write_uint::<LE>(self, n, nbytes)
+    }
+
+    #[inline]
+    fn write_int(&mut self, n: i64, nbytes: usize) -> io::Result<()> {
+        WriteBytesExt::write_int::<LE>(self, n, nbytes)
+    }
 
     /// Writes an unsigned 8 bit integer to the underlying writer.
     #[inline]

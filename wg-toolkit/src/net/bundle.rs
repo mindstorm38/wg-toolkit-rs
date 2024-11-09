@@ -8,6 +8,7 @@ use tracing::warn;
 use super::packet::{self, PacketConfig, PacketLocked, Packet};
 use super::element::{Element, Reply, REPLY_ID};
 
+use crate::net::element::ElementLength;
 use crate::util::io::{WgReadExt, WgWriteExt, IoCounter};
 
 
@@ -191,6 +192,16 @@ impl Bundle {
     /// See [`BundleElementWriter`].
     pub fn element_writer(&mut self) -> BundleElementWriter<'_> {
         BundleElementWriter::new(self)
+    }
+
+    /// Reserve a single byte.
+    fn reserve_single(&mut self) -> &mut u8 {
+        if self.free == 0 {
+            self.push_empty();
+        }
+        let packet = self.packets.last_mut().unwrap();
+        self.free -= 1;
+        &mut packet.grow(1)[0]
     }
 
     /// Reserve exactly the given length in the current packet or a new one if
@@ -389,15 +400,15 @@ impl<'a> BundleReader<'a> {
 
     /// Advance the current reader by a given amount. Return true if successful, if not
     /// the reader has been emptied by remaining delta could not be advanced.
-    pub fn advance(&mut self, mut delta: usize) -> bool {
+    pub fn advance(&mut self, mut delta: usize) -> io::Result<()> {
         while delta != 0 {
-            if !self.ensure_inner() { return false }
+            if !self.ensure_inner() { return Err(io::ErrorKind::UnexpectedEof.into()) }
             let len = delta.min(self.content.len());
             self.content = &self.content[len..];
             self.content_offset += len as u16;
             delta -= len;
         }
-        true
+        Ok(())
     }
 
 }
@@ -539,24 +550,24 @@ impl<'a> BundleElementWriter<'a> {
         }
 
         // Keep the packet index to rewrite the packet's length after writing it.
-        let cur_packet_idx = self.bundle.packets.len() - 1;
+        let init_packet_index = self.bundle.packets.len() - 1;
 
         // IMPORTANT: All offsets are in the content, not absolute.
-        let cur_packet = &mut self.bundle.packets[cur_packet_idx];
-        let cur_packet_len = cur_packet.len();
-        let cur_packet_elt_offset = cur_packet_len - header_len;
+        let init_packet = &mut self.bundle.packets[init_packet_index];
+        let init_packet_len = init_packet.len();
+        let init_packet_elt_offset = init_packet_len - header_len;
 
         // NOTE: We add flags length to element offset because offset contains flags.
         if element.request_id.is_some() {
         
             if let Some(last_request_link_offset) = self.bundle.last_request_link_offset {
-                let mut request_next_slice = &mut cur_packet.slice_mut()[last_request_link_offset as usize..][..REQUEST_NEXT_LEN];
-                request_next_slice.write_u16((packet::PACKET_FLAGS_LEN + cur_packet_elt_offset) as u16).unwrap();
+                let mut request_next_slice = &mut init_packet.slice_mut()[last_request_link_offset as usize..][..REQUEST_NEXT_LEN];
+                request_next_slice.write_u16((packet::PACKET_FLAGS_LEN + init_packet_elt_offset) as u16).unwrap();
             } else {
-                cur_packet.first_request_offset = Some(cur_packet_elt_offset as u16);
+                init_packet.first_request_offset = Some(init_packet_elt_offset as u16);
             }
             
-            self.bundle.last_request_link_offset = Some((cur_packet_len - REQUEST_NEXT_LEN) as u16);
+            self.bundle.last_request_link_offset = Some((init_packet_len - REQUEST_NEXT_LEN) as u16);
             
         }
 
@@ -564,12 +575,41 @@ impl<'a> BundleElementWriter<'a> {
         // because no IO error should be produced by a BundleWriter.
         let mut writer = IoCounter::new(BundleWriter::new(&mut *self.bundle));
         let elt_id = element.element.encode(&mut writer, config).unwrap();
-        let elt_len = writer.count() as u32;
+        let elt_len = u32::try_from(writer.count()).expect("too many bytes written at once, more that u32::MAX");
 
         // Finally write id and length, we can unwrap because we know that enough length is available.
-        let header_len_slice = &mut self.bundle.packets[cur_packet_idx].slice_mut()[cur_packet_elt_offset..];
+        let header_len_slice = &mut self.bundle.packets[init_packet_index].slice_mut()[init_packet_elt_offset..];
         header_len_slice[0] = elt_id;
-        elt_len_kind.write(&mut header_len_slice[1..], elt_len).unwrap();
+        // Early return if no oversize!
+        if elt_len_kind.write(&mut header_len_slice[1..], elt_len).unwrap() {
+            return;
+        }
+
+        // If we land here then we need to handle oversize length compression...
+        // In this case we'll write the full u32 length replacing the first 4 bytes of 
+        // the message and we move these first 4 bytes at the end of the message!! WTF?
+        let mut packet_index = init_packet_index;
+        let mut content_offset = init_packet_len;
+        let mut written_len = elt_len;
+        for _ in 0..4 {
+
+            // Extract the moved byte and replace it with lower byte of length, note that 
+            // we are written little endian, so least significant first.
+            let packet = &mut self.bundle.packets[packet_index];
+            let moved_byte = std::mem::replace(&mut packet.slice_mut()[content_offset], written_len as u8);
+            written_len >>= 8;
+
+            // Increment content offset and packet index, because it may span two packets.
+            content_offset += 1;
+            if content_offset == packet.len() {
+                packet_index += 1;
+                content_offset = 0;
+            }
+
+            // Reserve one by one because it may span two packets.
+            *self.bundle.reserve_single() = moved_byte;
+
+        }
 
     }
 
@@ -682,8 +722,30 @@ impl<'a> BundleElementReader<'a> {
             None
         };
 
-        // Use ::take to limit the number of byte read from the reader.
-        let mut elt_reader = Read::take(&mut self.bundle_reader, elt_len as u64);
+        // If the length is oversized, we need to interpret the first 4 bytes of this 
+        // element as the full u32 length...
+        let elt_len_oversize = elt_len.is_none();
+        let elt_len = match elt_len {
+            Some(elt_len) => elt_len,
+            None => self.bundle_reader.read_u32()?,
+        };
+
+        // Read the last 4 bytes after the element
+        let mut moved_bytes = &mut [0; 4][..];
+        if elt_len_oversize {
+            let mut moved_bytes_reader = self.bundle_reader.clone();
+            // -4 for oversize length we just read.
+            moved_bytes_reader.advance(elt_len as usize - 4)?;
+            moved_bytes_reader.read_exact(&mut *moved_bytes)?;
+        } else {
+            // Make it empty, no moved bytes to start with!
+            moved_bytes = &mut [];
+        }
+
+        // We avoid branching to two kind of readers so we chain with moved bytes when
+        // oversized, or empty slice if not necessary.
+        let elt_reader = moved_bytes.chain(&mut self.bundle_reader);
+        let mut elt_reader = elt_reader.take(elt_len as u64);
         let element = match E::decode(&mut elt_reader, elt_len as usize, config, elt_id) {
             Ok(ret) => ret,
             Err(e) => {
@@ -693,18 +755,23 @@ impl<'a> BundleElementReader<'a> {
         };
 
         if next {
+            // Don't do anything for undefined length, we let the element advance were
+            // it wants, and there is no oversize by definition.
+            if elt_len_kind != ElementLength::Undefined {
 
-            // Just a warning because the decoding process didn't read all the data. This
-            // warning is just enabled when going next, it avoids getting the error when
-            // reading the reply header for example.
-            let unread_len = elt_reader.limit() as usize;
-            if unread_len != 0 {
-                warn!("remaining data while reading element of type '{}'", std::any::type_name::<E>());
+                // Just a warning because the decoding process didn't read all the data. This
+                // warning is just enabled when going next, it avoids getting the error when
+                // reading the reply header for example.
+                let unread_len = elt_reader.limit() as usize;
+                if unread_len != 0 {
+                    warn!("remaining data while reading element of type '{}'", std::any::type_name::<E>());
+                }
+
+                // We advance the reader by the amount that has not been read. Unwrapping 
+                // because it should succeed because the element reader has read this much.
+                self.bundle_reader.advance(unread_len + moved_bytes.len()).unwrap();
+
             }
-
-            // We advance the reader by the amount that has not been read.
-            self.bundle_reader.advance(unread_len);
-
         } else {
             // Not going next, only rollback the internal reader.
             self.bundle_reader = reader_save;

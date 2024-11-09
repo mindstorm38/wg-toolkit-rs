@@ -164,38 +164,55 @@ impl ElementLength {
     /// Constant for fixed zero-length message length.
     pub const ZERO: Self = Self::Fixed(0);
 
-    /// Read the length from a given reader.
-    pub fn read(self, mut reader: impl Read) -> std::io::Result<u32> {
+    /// Read the length from a given reader, this returns None if the length is full of
+    /// ones (0xFF...) and therefore it's oversized and we need to handle this.
+    pub fn read(self, mut reader: impl Read) -> std::io::Result<Option<u32>> {
 
-        match self {
-            Self::Fixed(len) => Ok(len),
-            Self::Variable8 => reader.read_u8().map(|n| n as u32),
-            Self::Variable16 => reader.read_u16().map(|n| n as u32),
-            Self::Variable24 => reader.read_u24().map(|n| n),
-            Self::Variable32 => reader.read_u32().map(|n| n),
-            Self::Undefined => Ok(u32::MAX),
-        }
+        let (len_size, max) = match self {
+            Self::Fixed(len) => return Ok(Some(len)),
+            Self::Undefined => return Ok(Some(u32::MAX)),
+            Self::Variable8 => (1, 0xFF), 
+            Self::Variable16 => (2, 0xFFFF),
+            Self::Variable24 => (3, 0xFFFFFF),
+            Self::Variable32 => return reader.read_u32().map(|n| Some(n)),  // Not oversize for u32
+        };
+
+        let len = reader.read_uint(len_size)?;
+        Ok((len < max).then_some(len as u32))
 
     }
 
-    /// Write the length to the given writer.
-    pub fn write(self, mut writer: impl Write, len: u32) -> std::io::Result<()> {
+    /// Write the length to the given writer, if the length is too big then this function
+    /// returns false and the length written is full of ones (0xFF...).
+    pub fn write(self, mut writer: impl Write, len: u32) -> std::io::Result<bool> {
 
-        match self {
+        let (len_size, max) = match self {
             Self::Fixed(expected_len) => { 
                 assert_eq!(expected_len, len, "this element has fixed length but the actual written length is not coherent"); 
-                Ok(()) 
+                return Ok(true);
             }
-            Self::Variable8 => writer.write_u8(len as u8),
-            Self::Variable16 => writer.write_u16(len as u16),
-            Self::Variable24 => writer.write_u24(len),
-            Self::Variable32 => writer.write_u32(len),
-            Self::Undefined => Ok(()),
-        }
+            Self::Undefined => {
+                return Ok(true);
+            }
+            Self::Variable8 =>  (1, 0xFF),
+            Self::Variable16 => (2, 0xFFFF),
+            Self::Variable24 => (3, 0xFFFFFF),
+            Self::Variable32 => {
+                // No oversize for u32 apparently, which is logic.
+                // See InterfaceElement::compressLength(void *, int).
+                writer.write_u32(len)?;
+                return Ok(true);
+            }
+        };
+
+        // Using .min to write the max (0xFF...) if oversize.
+        writer.write_uint(max.min(len) as u64, len_size)?;
+        Ok(len < max)
 
     }
 
     /// Return the size in bytes of this type of length.
+    #[inline]
     pub fn len(&self) -> usize {
         match self {
             Self::Fixed(_) => 0,
