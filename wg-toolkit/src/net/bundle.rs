@@ -530,7 +530,6 @@ impl<'a> BundleElementWriter<'a> {
         // Using reserve exact so all the header is contiguous.
         let header_len = 1 + elt_len_kind.len() + if element.request_id.is_some() { REQUEST_HEADER_LEN } else { 0 };
         let header_slice = self.bundle.reserve_exact(header_len);
-        // header_slice[0] = element.id;
 
         // If it's a request, write the request ID followed 
         if let Some(request_id) = element.request_id {

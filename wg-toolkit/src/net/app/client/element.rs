@@ -228,6 +228,7 @@ pub type DummyPacket = DebugElementVariable16<{ id::DUMMY_PACKET }>;
 pub type SpaceProperty = DebugElementVariable16<{ id::SPACE_PROPERTY }>;
 pub type AddSpaceGeometryMapping = DebugElementVariable16<{ id::ADD_SPACE_GEOMETRY_MAPPING }>;
 pub type RemoveSpaceGeometryMapping = DebugElementVariable16<{ id::REMOVE_SPACE_GEOMETRY_MAPPING }>;
+
 pub type CreateEntity = DebugElementVariable16<{ id::CREATE_ENTITY }>;
 pub type CreateEntityDetailed = DebugElementVariable16<{ id::CREATE_ENTITY_DETAILED }>;
 

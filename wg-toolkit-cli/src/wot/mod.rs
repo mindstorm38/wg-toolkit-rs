@@ -17,9 +17,9 @@ use tracing::level_filters::LevelFilter;
 use tracing::{error, info, instrument, warn};
 
 use wgtk::net::bundle::{Bundle, ElementReader, TopElementReader};
+use wgtk::net::element::{SimpleElement, DebugElementUndefined};
 use wgtk::net::app::proxy::{self, PacketDirection};
 use wgtk::net::app::{login, base, client};
-use wgtk::net::element::SimpleElement;
 
 use crate::{CliResult, WotArgs};
 
@@ -362,13 +362,13 @@ impl BaseProxyThread {
                 true
             }
             id if id::ENTITY_METHOD.contains(id) => {
-                let elt = elt.read_simple::<()>().unwrap();
-                warn!(%addr, "<- Entity method: {id} (request: {:?})", elt.request_id);
+                let elt = elt.read_simple::<DebugElementUndefined<0>>().unwrap();
+                warn!(%addr, "<- Entity method: [{id}] {:?} (request: {:?})", elt.element, elt.request_id);
                 false
             }
             id if id::ENTITY_PROPERTY.contains(id) => {
-                let elt = elt.read_simple::<()>().unwrap();
-                warn!(%addr, "<- Entity property: {id} (request: {:?})", elt.request_id);
+                let elt = elt.read_simple::<DebugElementUndefined<0>>().unwrap();
+                warn!(%addr, "<- Entity property: [{id}] {:?} (request: {:?})", elt.element, elt.request_id);
                 false
             }
             id => {

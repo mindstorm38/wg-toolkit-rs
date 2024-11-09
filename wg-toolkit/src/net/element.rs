@@ -3,7 +3,7 @@
 use std::fmt;
 use std::io::{self, Read, Write};
 
-use crate::util::BytesFmt;
+use crate::util::AsciiFmt;
 use crate::util::io::*;
 
 
@@ -93,8 +93,9 @@ impl<E: SimpleElement> Element for E {
     }
 
     #[inline]
-    fn decode(read: &mut impl Read, len: usize, _config: &Self::Config, id: u8) -> io::Result<Self> {
-        debug_assert_eq!(id, Self::ID);
+    fn decode(read: &mut impl Read, len: usize, _config: &Self::Config, _id: u8) -> io::Result<Self> {
+        // FIXME: Remove for now, because in case of reply
+        // debug_assert_eq!(id, Self::ID);
         SimpleElement::decode(read, len)
     }
 
@@ -149,6 +150,13 @@ pub enum ElementLength {
     Variable24,
     /// The length is encoded on 32 bits in the element's header.
     Variable32,
+    /// The length is not encoded nor decode, so it's up to the element to encode and
+    /// decode anything wanted, the length given to [`Element::decode`] is `u32::MAX`,
+    /// and the underlying reader is not limited. If the real element being read is
+    /// variable then the decoding should stop immediately after, because the remaining
+    /// data of the bundle might no longer be correct because of this undefined length.
+    /// **This kind of length should be used for debug, see [`DebugElementUndefined`].
+    Undefined,
 }
 
 impl ElementLength {
@@ -165,6 +173,7 @@ impl ElementLength {
             Self::Variable16 => reader.read_u16().map(|n| n as u32),
             Self::Variable24 => reader.read_u24().map(|n| n),
             Self::Variable32 => reader.read_u32().map(|n| n),
+            Self::Undefined => Ok(u32::MAX),
         }
 
     }
@@ -181,6 +190,7 @@ impl ElementLength {
             Self::Variable16 => writer.write_u16(len as u16),
             Self::Variable24 => writer.write_u24(len),
             Self::Variable32 => writer.write_u32(len),
+            Self::Undefined => Ok(()),
         }
 
     }
@@ -193,6 +203,7 @@ impl ElementLength {
             Self::Variable16 => 2,
             Self::Variable24 => 3,
             Self::Variable32 => 4,
+            Self::Undefined => 0,
         }
     }
 
@@ -236,7 +247,8 @@ impl<E: Element> Element for Reply<E> {
     }
 
     fn decode(read: &mut impl Read, len: usize, config: &Self::Config, id: u8) -> io::Result<Self> {
-        debug_assert_eq!(id, REPLY_ID);
+        // FIXME: Read same comment in impl of SimpleElement::decode
+        // debug_assert_eq!(id, REPLY_ID);
         Ok(Self {
             request_id: read.read_u32()?,
             element: E::decode(read, len - 4, config, id)?,
@@ -275,7 +287,7 @@ impl<const ID: u8, const LEN: usize> fmt::Debug for DebugElementFixed<ID, LEN> {
         f.debug_tuple("DebugElementFixed")
             .field(&ID)
             .field(&LEN)
-            .field(&format_args!("{:0X}", BytesFmt(&self.data)))
+            .field(&AsciiFmt(&self.data))
             .finish()
     }
 }
@@ -306,7 +318,7 @@ impl<const ID: u8> fmt::Debug for DebugElementVariable8<ID> {
         f.debug_tuple("DebugElementVariable8")
             .field(&ID)
             .field(&self.data.len())
-            .field(&format_args!("{:0X}", BytesFmt(&self.data)))
+            .field(&AsciiFmt(&self.data))
             .finish()
     }
 }
@@ -337,7 +349,7 @@ impl<const ID: u8> fmt::Debug for DebugElementVariable16<ID> {
         f.debug_tuple("DebugElementVariable16")
             .field(&ID)
             .field(&self.data.len())
-            .field(&format_args!("{:0X}", BytesFmt(&self.data)))
+            .field(&AsciiFmt(&self.data))
             .finish()
     }
 }
@@ -366,8 +378,9 @@ impl<const ID: u8> SimpleElement for DebugElementVariable24<ID> {
 impl<const ID: u8> fmt::Debug for DebugElementVariable24<ID> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_tuple("DebugElementVariable24")
+            .field(&ID)
             .field(&self.data.len())
-            .field(&format_args!("{:0X}", BytesFmt(&self.data)))
+            .field(&AsciiFmt(&self.data))
             .finish()
     }
 }
@@ -396,8 +409,44 @@ impl<const ID: u8> SimpleElement for DebugElementVariable32<ID> {
 impl<const ID: u8> fmt::Debug for DebugElementVariable32<ID> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_tuple("DebugElementVariable32")
+            .field(&ID)
             .field(&self.data.len())
-            .field(&format_args!("{:0X}", BytesFmt(&self.data)))
+            .field(&AsciiFmt(&self.data))
+            .finish()
+    }
+}
+
+/// An element of undefined size that just buffer the data.
+#[derive(Clone)]
+pub struct DebugElementUndefined<const ID: u8> {
+    data: Vec<u8>,
+}
+
+impl<const ID: u8> SimpleElement for DebugElementUndefined<ID> {
+    
+    const ID: u8 = ID;
+    const LEN: ElementLength = ElementLength::Undefined;
+
+    fn encode(&self, write: &mut impl Write) -> io::Result<()> {
+        write.write_all(&self.data)
+    }
+
+    fn decode(read: &mut impl Read, _len: usize) -> io::Result<Self> {
+        // NOTE: With undefined length, the given 'len' is set to u32::MAX so it's not
+        // relevant, we'll just read the vector to end.
+        let mut data = Vec::new();
+        read.read_to_end(&mut data)?;
+        Ok(Self { data })
+    }
+
+}
+
+impl<const ID: u8> fmt::Debug for DebugElementUndefined<ID> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("DebugElementUndefined")
+            .field(&ID)
+            .field(&self.data.len())
+            .field(&AsciiFmt(&self.data))
             .finish()
     }
 }

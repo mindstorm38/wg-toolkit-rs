@@ -215,7 +215,7 @@ impl App {
 
         let challenge = elt.read_simple::<ChallengeResponse<CuckooCycleResponse>>()?;
 
-        trace!("Received key: {}, sent prefix: {}", 
+        trace!("Received key: {:?}, sent prefix: {:?}", 
             crate::util::AsciiFmt(&challenge.element.data.key),
             crate::util::AsciiFmt(&pending_challenge.key_prefix));
 
