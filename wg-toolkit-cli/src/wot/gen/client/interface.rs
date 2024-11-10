@@ -99,7 +99,9 @@ pub enum RecoveryMechanic_VehicleMethod {
 
 /// Methods for RecoveryMechanic_Avatar on client component
 pub enum RecoveryMechanic_AvatarMethod { 
-    updateState(BOOL, i32, i32, f32), // idx(0)
+    notifyCannotStartRecovering(), // idx(0)
+    notifyCancelled(), // idx(1)
+    updateState(BOOL, i32, i32, f32), // idx(2)
 }
 
 /// Methods for QuestProcessor on client component

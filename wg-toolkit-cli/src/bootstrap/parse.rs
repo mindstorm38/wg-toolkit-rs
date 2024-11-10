@@ -125,10 +125,14 @@ pub fn parse_property(elt: &Element, tys: &mut TySystem, name: String) -> Proper
 }
 
 pub fn parse_methods(elt: &Element, tys: &mut TySystem, methods: &mut Vec<Method>, client: bool) {
+    let empty_element = Element::new();
     for (name, val) in elt.iter_children_all() {
-        if let Value::Element(method_elt) = val {
-            methods.push(parse_method(&method_elt, &mut *tys, name.clone(), client));
-        }
+        let method_elt = match val {
+            Value::Element(elt) => &**elt,
+            Value::String(s) if s.is_empty() => &empty_element,
+            _ => panic!("unknown method def: {name}: {val:?}")
+        };
+        methods.push(parse_method(method_elt, &mut *tys, name.clone(), client));
     }
 }
 
@@ -173,7 +177,6 @@ pub fn parse_method(elt: &Element, tys: &mut TySystem, name: String, client: boo
         };
     }
 
-    // TODO: VariableLengthHeaderSize
     // TODO: AllowUnsafeData
     // TODO: IgnoreIfNoClient
     // TODO: ReplayExposureLevel

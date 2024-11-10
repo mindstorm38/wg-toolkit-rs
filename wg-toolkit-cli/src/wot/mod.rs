@@ -362,6 +362,8 @@ impl BaseProxyThread {
                 true
             }
             id if id::ENTITY_METHOD.contains(id) => {
+                // Account::msg#37 = onClanInfoReceived
+                // Account::msg#39 = showGUI
                 let elt = elt.read_simple::<DebugElementUndefined<0>>().unwrap();
                 warn!(%addr, "<- Entity method: msg#{} {:?} (request: {:?})", id - id::ENTITY_METHOD.first, elt.element, elt.request_id);
                 false

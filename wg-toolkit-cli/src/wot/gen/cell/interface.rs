@@ -83,8 +83,8 @@ pub enum RepairBase_VehicleMethod {
 
 /// Methods for RecoveryMechanic_Vehicle on cell component
 pub enum RecoveryMechanic_VehicleMethod { 
-    recoveryMechanic_startRecovering(), // idx(0)
-    recoveryMechanic_stopRecovering(), // idx(1)
+    recoveryMechanic_startRecovering(), // idx(2)
+    recoveryMechanic_stopRecovering(), // idx(3)
 }
 
 /// Methods for RecoveryMechanic_Avatar on cell component

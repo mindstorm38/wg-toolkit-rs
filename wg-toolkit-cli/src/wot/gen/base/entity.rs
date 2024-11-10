@@ -15,18 +15,18 @@ pub enum AccountMethod {
     AccountUnitClient(AccountUnitClientMethod),
     AccountUnitBrowser(AccountUnitBrowserMethod),
     AccountDebugger(AccountDebuggerMethod),
-    makeDenunciation(DB_ID, i32, i8), // idx(24)
-    banUnbanUser(DB_ID, u8, u32, String, i8), // idx(25)
-    requestToken(u16, u8), // idx(26)
-    logStreamCorruption(i16, i32, i32, i32, i32), // idx(29)
-    setKickAtTime(i64, String, String), // idx(30)
+    makeDenunciation(DB_ID, i32, i8), // idx(30)
+    banUnbanUser(DB_ID, u8, u32, String, i8), // idx(31)
+    requestToken(u16, u8), // idx(32)
+    logStreamCorruption(i16, i32, i32, i32, i32), // idx(36)
+    setKickAtTime(i64, String, String), // idx(37)
 }
 
 // 0: accountUnitBrowser_unsubscribe [Fixed(0)] @ ["AccountUnitBrowser"]
-// 1: requestToken [Fixed(3)] @ []
-// 2: onStreamComplete [Fixed(3)] @ ["Chat"]
-// 3: requestToken [Fixed(3)] @ ["AccountAuthTokenProvider"]
-// 4: accountUnitBrowser_subscribe [Fixed(3)] @ ["AccountUnitBrowser"]
+// 1: onStreamComplete [Fixed(3)] @ ["Chat"]
+// 2: requestToken [Fixed(3)] @ ["AccountAuthTokenProvider"]
+// 3: accountUnitBrowser_subscribe [Fixed(3)] @ ["AccountUnitBrowser"]
+// 4: requestToken [Fixed(3)] @ []
 // 5: doCmdNoArgs [Fixed(4)] @ ["ClientCommandsPort"]
 // 6: accountUnitBrowser_doCmd [Fixed(4)] @ ["AccountUnitBrowser"]
 // 7: accountUnitBrowser_recenter [Fixed(7)] @ ["AccountUnitBrowser"]
@@ -39,29 +39,29 @@ pub enum AccountMethod {
 // 14: doCmdInt3 [Fixed(28)] @ ["ClientCommandsPort"]
 // 15: doCmdInt4 [Fixed(28)] @ ["ClientCommandsPort"]
 // 16: ackCommand [Fixed(33)] @ ["Chat"]
-// 17: banUnbanUser [Variable(Variable8)] @ []
-// 18: setKickAtTime [Variable(Variable8)] @ []
-// 19: chatCommandFromClient [Variable(Variable8)] @ ["Chat"]
-// 20: inviteCommand [Variable(Variable8)] @ ["Chat"]
-// 21: messenger_onActionByClient_chat2 [Variable(Variable8)] @ ["PlayerMessenger_chat2"]
-// 22: doCmdStr [Variable(Variable8)] @ ["ClientCommandsPort"]
-// 23: doCmdInt2Str [Variable(Variable8)] @ ["ClientCommandsPort"]
-// 24: doCmdInt3Str [Variable(Variable8)] @ ["ClientCommandsPort"]
-// 25: doCmdIntArr [Variable(Variable8)] @ ["ClientCommandsPort"]
-// 26: doCmdIntStr [Variable(Variable8)] @ ["ClientCommandsPort"]
-// 27: doCmdIntStrArr [Variable(Variable8)] @ ["ClientCommandsPort"]
-// 28: doCmdIntArrStrArr [Variable(Variable8)] @ ["ClientCommandsPort"]
-// 29: doCmdStrArr [Variable(Variable8)] @ ["ClientCommandsPort"]
-// 30: accountAvatar_sendAccountStats [Variable(Variable8)] @ ["AccountAvatar"]
-// 31: accountPrebattle_createTraining [Variable(Variable8)] @ ["AccountPrebattle"]
-// 32: accountPrebattle_createDevPrebattle [Variable(Variable8)] @ ["AccountPrebattle"]
-// 33: accountPrebattle_sendPrebattleInvites [Variable(Variable8)] @ ["AccountPrebattle"]
-// 34: accountGlobalMapConnector_callGlobalMapMethod [Variable(Variable8)] @ ["AccountGlobalMapConnector"]
-// 35: accountUnitClient_create [Variable(Variable8)] @ ["AccountUnitClient"]
-// 36: accountUnitClient_doCmd [Variable(Variable8)] @ ["AccountUnitClient"]
-// 37: accountUnitClient_sendInvites [Variable(Variable8)] @ ["AccountUnitClient"]
-// 38: accountUnitClient_setRosterSlots [Variable(Variable8)] @ ["AccountUnitClient"]
-// 39: accountDebugger_sendDebugTaskResultChunk [Variable(Variable8)] @ ["AccountDebugger"]
+// 17: chatCommandFromClient [Variable(Variable8)] @ ["Chat"]
+// 18: inviteCommand [Variable(Variable8)] @ ["Chat"]
+// 19: messenger_onActionByClient_chat2 [Variable(Variable8)] @ ["PlayerMessenger_chat2"]
+// 20: doCmdStr [Variable(Variable8)] @ ["ClientCommandsPort"]
+// 21: doCmdInt2Str [Variable(Variable8)] @ ["ClientCommandsPort"]
+// 22: doCmdInt3Str [Variable(Variable8)] @ ["ClientCommandsPort"]
+// 23: doCmdIntArr [Variable(Variable8)] @ ["ClientCommandsPort"]
+// 24: doCmdIntStr [Variable(Variable8)] @ ["ClientCommandsPort"]
+// 25: doCmdIntStrArr [Variable(Variable8)] @ ["ClientCommandsPort"]
+// 26: doCmdIntArrStrArr [Variable(Variable8)] @ ["ClientCommandsPort"]
+// 27: doCmdStrArr [Variable(Variable8)] @ ["ClientCommandsPort"]
+// 28: accountAvatar_sendAccountStats [Variable(Variable8)] @ ["AccountAvatar"]
+// 29: accountPrebattle_createTraining [Variable(Variable8)] @ ["AccountPrebattle"]
+// 30: accountPrebattle_createDevPrebattle [Variable(Variable8)] @ ["AccountPrebattle"]
+// 31: accountPrebattle_sendPrebattleInvites [Variable(Variable8)] @ ["AccountPrebattle"]
+// 32: accountGlobalMapConnector_callGlobalMapMethod [Variable(Variable8)] @ ["AccountGlobalMapConnector"]
+// 33: accountUnitClient_create [Variable(Variable8)] @ ["AccountUnitClient"]
+// 34: accountUnitClient_doCmd [Variable(Variable8)] @ ["AccountUnitClient"]
+// 35: accountUnitClient_sendInvites [Variable(Variable8)] @ ["AccountUnitClient"]
+// 36: accountUnitClient_setRosterSlots [Variable(Variable8)] @ ["AccountUnitClient"]
+// 37: accountDebugger_sendDebugTaskResultChunk [Variable(Variable8)] @ ["AccountDebugger"]
+// 38: banUnbanUser [Variable(Variable8)] @ []
+// 39: setKickAtTime [Variable(Variable8)] @ []
 
 /// Entity 0x02
 /// Methods for Avatar on base component
@@ -71,36 +71,36 @@ pub enum AvatarMethod {
     ClientCommandsPort(ClientCommandsPortMethod),
     RespawnController_Avatar(RespawnController_AvatarMethod),
     AvatarEpic(AvatarEpicMethod),
-    logLag(), // idx(0)
-    setClientReady(), // idx(2)
-    leaveArena(), // idx(3)
-    onLoginToCellFailed(), // idx(4)
-    confirmBattleResultsReceiving(), // idx(6)
-    makeDenunciation(OBJECT_ID, i32, i8), // idx(7)
-    banUnbanUser(DB_ID, u8, u32, String, i8), // idx(8)
-    requestToken(u16, u8), // idx(9)
-    sendAccountStats(u32, Vec<String>), // idx(10)
-    setClientCtx(String), // idx(11)
-    vehicle_teleport(Vec3, f32), // idx(14)
-    vehicle_replenishAmmo(), // idx(15)
-    setDevelopmentFeature(OBJECT_ID, String, i32, String), // idx(19)
-    addBotToArena(String, u8, String, Vec3, u8), // idx(20)
-    receiveFakeShot(i32, f32, Vec3, Vec3, u8), // idx(21)
-    logStreamCorruption(i16, i32, i32, i32, i32), // idx(22)
+    logLag(), // idx(1)
+    setClientReady(), // idx(3)
+    leaveArena(), // idx(4)
+    onLoginToCellFailed(), // idx(5)
+    confirmBattleResultsReceiving(), // idx(7)
+    makeDenunciation(OBJECT_ID, i32, i8), // idx(8)
+    banUnbanUser(DB_ID, u8, u32, String, i8), // idx(9)
+    requestToken(u16, u8), // idx(10)
+    sendAccountStats(u32, Vec<String>), // idx(12)
+    setClientCtx(String), // idx(13)
+    vehicle_teleport(Vec3, f32), // idx(16)
+    vehicle_replenishAmmo(), // idx(17)
+    setDevelopmentFeature(OBJECT_ID, String, i32, String), // idx(23)
+    addBotToArena(String, u8, String, Vec3, u8), // idx(24)
+    receiveFakeShot(i32, f32, Vec3, Vec3, u8), // idx(25)
+    logStreamCorruption(i16, i32, i32, i32, i32), // idx(26)
 }
 
-// 0: logLag [Fixed(0)] @ []
-// 1: setClientReady [Fixed(0)] @ []
-// 2: leaveArena [Fixed(0)] @ []
-// 3: onLoginToCellFailed [Fixed(0)] @ []
-// 4: confirmBattleResultsReceiving [Fixed(0)] @ []
-// 5: vehicle_replenishAmmo [Fixed(0)] @ []
-// 6: respawnController_performRespawn [Fixed(0)] @ ["RespawnController_Avatar"]
+// 0: respawnController_performRespawn [Fixed(0)] @ ["RespawnController_Avatar"]
+// 1: logLag [Fixed(0)] @ []
+// 2: setClientReady [Fixed(0)] @ []
+// 3: leaveArena [Fixed(0)] @ []
+// 4: onLoginToCellFailed [Fixed(0)] @ []
+// 5: confirmBattleResultsReceiving [Fixed(0)] @ []
+// 6: vehicle_replenishAmmo [Fixed(0)] @ []
 // 7: respawnController_requestRespawnGroupChange [Fixed(1)] @ ["RespawnController_Avatar"]
 // 8: enableFrontLineDevInfo [Fixed(1)] @ ["AvatarEpic"]
 // 9: respawnController_chooseVehicleForRespawn [Fixed(2)] @ ["RespawnController_Avatar"]
-// 10: requestToken [Fixed(3)] @ []
-// 11: onStreamComplete [Fixed(3)] @ ["Chat"]
+// 10: onStreamComplete [Fixed(3)] @ ["Chat"]
+// 11: requestToken [Fixed(3)] @ []
 // 12: doCmdNoArgs [Fixed(4)] @ ["ClientCommandsPort"]
 // 13: respawnController_switchSetup [Fixed(4)] @ ["RespawnController_Avatar"]
 // 14: makeDenunciation [Fixed(9)] @ []
@@ -111,24 +111,24 @@ pub enum AvatarMethod {
 // 19: doCmdInt2 [Fixed(20)] @ ["ClientCommandsPort"]
 // 20: doCmdInt3 [Fixed(28)] @ ["ClientCommandsPort"]
 // 21: doCmdInt4 [Fixed(28)] @ ["ClientCommandsPort"]
-// 22: receiveFakeShot [Fixed(33)] @ []
-// 23: ackCommand [Fixed(33)] @ ["Chat"]
-// 24: banUnbanUser [Variable(Variable8)] @ []
-// 25: sendAccountStats [Variable(Variable8)] @ []
-// 26: setClientCtx [Variable(Variable8)] @ []
-// 27: setDevelopmentFeature [Variable(Variable8)] @ []
-// 28: addBotToArena [Variable(Variable8)] @ []
-// 29: chatCommandFromClient [Variable(Variable8)] @ ["Chat"]
-// 30: inviteCommand [Variable(Variable8)] @ ["Chat"]
-// 31: messenger_onActionByClient_chat2 [Variable(Variable8)] @ ["PlayerMessenger_chat2"]
-// 32: doCmdStr [Variable(Variable8)] @ ["ClientCommandsPort"]
-// 33: doCmdInt2Str [Variable(Variable8)] @ ["ClientCommandsPort"]
-// 34: doCmdInt3Str [Variable(Variable8)] @ ["ClientCommandsPort"]
-// 35: doCmdIntArr [Variable(Variable8)] @ ["ClientCommandsPort"]
-// 36: doCmdIntStr [Variable(Variable8)] @ ["ClientCommandsPort"]
-// 37: doCmdIntStrArr [Variable(Variable8)] @ ["ClientCommandsPort"]
-// 38: doCmdIntArrStrArr [Variable(Variable8)] @ ["ClientCommandsPort"]
-// 39: doCmdStrArr [Variable(Variable8)] @ ["ClientCommandsPort"]
+// 22: ackCommand [Fixed(33)] @ ["Chat"]
+// 23: receiveFakeShot [Fixed(33)] @ []
+// 24: chatCommandFromClient [Variable(Variable8)] @ ["Chat"]
+// 25: inviteCommand [Variable(Variable8)] @ ["Chat"]
+// 26: messenger_onActionByClient_chat2 [Variable(Variable8)] @ ["PlayerMessenger_chat2"]
+// 27: doCmdStr [Variable(Variable8)] @ ["ClientCommandsPort"]
+// 28: doCmdInt2Str [Variable(Variable8)] @ ["ClientCommandsPort"]
+// 29: doCmdInt3Str [Variable(Variable8)] @ ["ClientCommandsPort"]
+// 30: doCmdIntArr [Variable(Variable8)] @ ["ClientCommandsPort"]
+// 31: doCmdIntStr [Variable(Variable8)] @ ["ClientCommandsPort"]
+// 32: doCmdIntStrArr [Variable(Variable8)] @ ["ClientCommandsPort"]
+// 33: doCmdIntArrStrArr [Variable(Variable8)] @ ["ClientCommandsPort"]
+// 34: doCmdStrArr [Variable(Variable8)] @ ["ClientCommandsPort"]
+// 35: banUnbanUser [Variable(Variable8)] @ []
+// 36: sendAccountStats [Variable(Variable8)] @ []
+// 37: setClientCtx [Variable(Variable8)] @ []
+// 38: setDevelopmentFeature [Variable(Variable8)] @ []
+// 39: addBotToArena [Variable(Variable8)] @ []
 
 /// Entity 0x03
 /// Methods for ArenaInfo on base component

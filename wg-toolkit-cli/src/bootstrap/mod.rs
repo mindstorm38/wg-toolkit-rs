@@ -291,16 +291,6 @@ fn generate_app_entity(
         interface: &'m Interface,
         path: &[String],
     ) {
-        
-        for method in (app.interface_methods)(interface) {
-            if method.exposed_to_all_clients | method.exposed_to_own_client {
-                exposed_methods.push(ExposedMethod {
-                    method,
-                    path: path.to_vec(),
-                    stream_size: compute_method_stream_size(method),
-                });
-            }
-        }
 
         let mut path = path.to_vec();
         
@@ -314,6 +304,16 @@ fn generate_app_entity(
             add_internal_methods(app, exposed_methods, model, interface, &path);
             path.pop();
 
+        }
+        
+        for method in (app.interface_methods)(interface) {
+            if method.exposed_to_all_clients | method.exposed_to_own_client {
+                exposed_methods.push(ExposedMethod {
+                    method,
+                    path: path.to_vec(),
+                    stream_size: compute_method_stream_size(method),
+                });
+            }
         }
 
     }

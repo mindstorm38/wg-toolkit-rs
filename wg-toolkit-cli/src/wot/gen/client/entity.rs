@@ -15,71 +15,77 @@ pub enum AccountMethod {
     onEnqueueFailure(u8, u8, String), // idx(2)
     onDequeued(u8), // idx(3)
     onKickedFromQueue(u8), // idx(4)
-    onIGRTypeChanged(String), // idx(5)
-    onArenaJoinFailure(u8, String), // idx(6)
-    onPrebattleJoined(OBJECT_ID), // idx(7)
-    onPrebattleJoinFailure(u8), // idx(8)
-    onKickedFromArena(u8), // idx(9)
-    onKickedFromPrebattle(u8), // idx(10)
-    onCenterIsLongDisconnected(BOOL), // idx(11)
-    showGUI(String), // idx(12)
-    receiveActiveArenas(Vec<PUBLIC_ARENA_INFO>), // idx(13)
-    receiveServerStats(SERVER_STATISTICS), // idx(14)
-    receiveQueueInfo(QUEUE_INFO), // idx(15)
-    updatePrebattle(u8, String), // idx(16)
-    update(String), // idx(17)
-    resyncDossiers(BOOL), // idx(18)
-    onUnitUpdate(u64, String, String), // idx(19)
-    onUnitCallOk(i32), // idx(20)
-    onUnitNotify(u64, i32, String, Python), // idx(21)
-    onUnitError(i32, u64, i32, String), // idx(22)
-    onUnitBrowserError(i32, String), // idx(23)
-    onUnitBrowserResultsSet(String), // idx(24)
-    onUnitBrowserResultsUpdate(String), // idx(25)
-    onGlobalMapUpdate(String, String), // idx(26)
-    onGlobalMapReply(u64, i32, String), // idx(27)
-    onSendPrebattleInvites(DB_ID, String, DB_ID, String, u64, u8), // idx(28)
-    onClanInfoReceived(DB_ID, String, String, String, String), // idx(29)
-    receiveNotification(String), // idx(30)
+    onArenaCreated(), // idx(5)
+    onIGRTypeChanged(String), // idx(6)
+    onArenaJoinFailure(u8, String), // idx(7)
+    onPrebattleJoined(OBJECT_ID), // idx(8)
+    onPrebattleJoinFailure(u8), // idx(9)
+    onPrebattleLeft(), // idx(10)
+    onKickedFromArena(u8), // idx(11)
+    onKickedFromPrebattle(u8), // idx(12)
+    onCenterIsLongDisconnected(BOOL), // idx(13)
+    showGUI(String), // idx(14)
+    receiveActiveArenas(Vec<PUBLIC_ARENA_INFO>), // idx(15)
+    receiveServerStats(SERVER_STATISTICS), // idx(16)
+    receiveQueueInfo(QUEUE_INFO), // idx(17)
+    updatePrebattle(u8, String), // idx(18)
+    update(String), // idx(19)
+    resyncDossiers(BOOL), // idx(20)
+    reloadShop(), // idx(21)
+    onUnitUpdate(u64, String, String), // idx(22)
+    onUnitCallOk(i32), // idx(23)
+    onUnitNotify(u64, i32, String, Python), // idx(24)
+    onUnitError(i32, u64, i32, String), // idx(25)
+    onUnitBrowserError(i32, String), // idx(26)
+    onUnitBrowserResultsSet(String), // idx(27)
+    onUnitBrowserResultsUpdate(String), // idx(28)
+    onGlobalMapUpdate(String, String), // idx(29)
+    onGlobalMapReply(u64, i32, String), // idx(30)
+    onSendPrebattleInvites(DB_ID, String, DB_ID, String, u64, u8), // idx(31)
+    onClanInfoReceived(DB_ID, String, String, String, String), // idx(32)
+    receiveNotification(String), // idx(33)
 }
 
-// 0: onEnqueued [Fixed(1)] @ []
-// 1: onDequeued [Fixed(1)] @ []
-// 2: onKickedFromQueue [Fixed(1)] @ []
-// 3: onPrebattleJoinFailure [Fixed(1)] @ []
-// 4: onKickedFromArena [Fixed(1)] @ []
-// 5: onKickedFromPrebattle [Fixed(1)] @ []
-// 6: onCenterIsLongDisconnected [Fixed(1)] @ []
-// 7: resyncDossiers [Fixed(1)] @ []
-// 8: onPrebattleJoined [Fixed(4)] @ []
-// 9: onUnitCallOk [Fixed(4)] @ []
-// 10: receiveServerStats [Fixed(8)] @ []
-// 11: onKickedFromServer [Variable(Variable8)] @ []
-// 12: onEnqueueFailure [Variable(Variable8)] @ []
-// 13: onIGRTypeChanged [Variable(Variable8)] @ []
-// 14: onArenaJoinFailure [Variable(Variable8)] @ []
-// 15: receiveActiveArenas [Variable(Variable8)] @ []
-// 16: receiveQueueInfo [Variable(Variable8)] @ []
-// 17: updatePrebattle [Variable(Variable8)] @ []
-// 18: update [Variable(Variable8)] @ []
-// 19: onUnitUpdate [Variable(Variable8)] @ []
-// 20: onUnitNotify [Variable(Variable8)] @ []
-// 21: onUnitError [Variable(Variable8)] @ []
-// 22: onUnitBrowserError [Variable(Variable8)] @ []
-// 23: onUnitBrowserResultsSet [Variable(Variable8)] @ []
-// 24: onUnitBrowserResultsUpdate [Variable(Variable8)] @ []
-// 25: onGlobalMapUpdate [Variable(Variable8)] @ []
-// 26: onGlobalMapReply [Variable(Variable8)] @ []
-// 27: onSendPrebattleInvites [Variable(Variable8)] @ []
-// 28: onClanInfoReceived [Variable(Variable8)] @ []
-// 29: receiveNotification [Variable(Variable8)] @ []
-// 30: onChatAction [Variable(Variable8)] @ ["Chat"]
-// 31: messenger_onActionByServer_chat2 [Variable(Variable8)] @ ["PlayerMessenger_chat2"]
-// 32: onCmdResponse [Variable(Variable8)] @ ["ClientCommandsPort"]
-// 33: onCmdResponseExt [Variable(Variable8)] @ ["ClientCommandsPort"]
-// 34: onTokenReceived [Variable(Variable8)] @ ["AccountAuthTokenProviderClient"]
-// 35: processInvitations [Variable(Variable8)] @ ["InvitationsClient"]
-// 36: showGUI [Variable(Variable16)] @ []
+// 0: onArenaCreated [Fixed(0)] @ []
+// 1: onPrebattleLeft [Fixed(0)] @ []
+// 2: reloadShop [Fixed(0)] @ []
+// 3: onEnqueued [Fixed(1)] @ []
+// 4: onDequeued [Fixed(1)] @ []
+// 5: onKickedFromQueue [Fixed(1)] @ []
+// 6: onPrebattleJoinFailure [Fixed(1)] @ []
+// 7: onKickedFromArena [Fixed(1)] @ []
+// 8: onKickedFromPrebattle [Fixed(1)] @ []
+// 9: onCenterIsLongDisconnected [Fixed(1)] @ []
+// 10: resyncDossiers [Fixed(1)] @ []
+// 11: onPrebattleJoined [Fixed(4)] @ []
+// 12: onUnitCallOk [Fixed(4)] @ []
+// 13: receiveServerStats [Fixed(8)] @ []
+// 14: onChatAction [Variable(Variable8)] @ ["Chat"]
+// 15: messenger_onActionByServer_chat2 [Variable(Variable8)] @ ["PlayerMessenger_chat2"]
+// 16: onCmdResponse [Variable(Variable8)] @ ["ClientCommandsPort"]
+// 17: onCmdResponseExt [Variable(Variable8)] @ ["ClientCommandsPort"]
+// 18: onTokenReceived [Variable(Variable8)] @ ["AccountAuthTokenProviderClient"]
+// 19: processInvitations [Variable(Variable8)] @ ["InvitationsClient"]
+// 20: onKickedFromServer [Variable(Variable8)] @ []
+// 21: onEnqueueFailure [Variable(Variable8)] @ []
+// 22: onIGRTypeChanged [Variable(Variable8)] @ []
+// 23: onArenaJoinFailure [Variable(Variable8)] @ []
+// 24: receiveActiveArenas [Variable(Variable8)] @ []
+// 25: receiveQueueInfo [Variable(Variable8)] @ []
+// 26: updatePrebattle [Variable(Variable8)] @ []
+// 27: update [Variable(Variable8)] @ []
+// 28: onUnitUpdate [Variable(Variable8)] @ []
+// 29: onUnitNotify [Variable(Variable8)] @ []
+// 30: onUnitError [Variable(Variable8)] @ []
+// 31: onUnitBrowserError [Variable(Variable8)] @ []
+// 32: onUnitBrowserResultsSet [Variable(Variable8)] @ []
+// 33: onUnitBrowserResultsUpdate [Variable(Variable8)] @ []
+// 34: onGlobalMapUpdate [Variable(Variable8)] @ []
+// 35: onGlobalMapReply [Variable(Variable8)] @ []
+// 36: onSendPrebattleInvites [Variable(Variable8)] @ []
+// 37: onClanInfoReceived [Variable(Variable8)] @ []
+// 38: receiveNotification [Variable(Variable8)] @ []
+// 39: showGUI [Variable(Variable16)] @ []
 
 /// Entity 0x02
 /// Methods for Avatar on client component
@@ -142,83 +148,85 @@ pub enum AvatarMethod {
     onRandomEvent(String), // idx(42)
 }
 
-// 0: onAutoAimVehicleLost [Fixed(1)] @ []
-// 1: onKickedFromArena [Fixed(1)] @ []
+// 0: notifyCannotStartRecovering [Fixed(0)] @ ["RecoveryMechanic_Avatar"]
+// 1: notifyCancelled [Fixed(0)] @ ["RecoveryMechanic_Avatar"]
 // 2: updatePlayerLives [Fixed(1)] @ ["RespawnController_Avatar"]
 // 3: enteringProtectionZone [Fixed(1)] @ ["AvatarEpic"]
 // 4: leavingProtectionZone [Fixed(1)] @ ["AvatarEpic"]
 // 5: protectionZoneShooting [Fixed(1)] @ ["AvatarEpic"]
 // 6: onSectorShooting [Fixed(1)] @ ["AvatarEpic"]
 // 7: onRankUpdate [Fixed(1)] @ ["AvatarEpic"]
-// 8: onRoundFinished [Fixed(2)] @ []
-// 9: onXPUpdated [Fixed(2)] @ ["AvatarEpic"]
-// 10: updateTargetVehicleID [Fixed(4)] @ []
-// 11: explodeVehicleBeforeRespawn [Fixed(4)] @ ["RespawnController_Avatar"]
-// 12: removeVehicle [Fixed(4)] @ ["VehicleRemovalController_Avatar"]
-// 13: updateResourceAmount [Fixed(5)] @ []
-// 14: updateVehicleQuickShellChanger [Fixed(5)] @ []
+// 8: onAutoAimVehicleLost [Fixed(1)] @ []
+// 9: onKickedFromArena [Fixed(1)] @ []
+// 10: onXPUpdated [Fixed(2)] @ ["AvatarEpic"]
+// 11: onRoundFinished [Fixed(2)] @ []
+// 12: explodeVehicleBeforeRespawn [Fixed(4)] @ ["RespawnController_Avatar"]
+// 13: removeVehicle [Fixed(4)] @ ["VehicleRemovalController_Avatar"]
+// 14: updateTargetVehicleID [Fixed(4)] @ []
 // 15: onDestructibleDestroyed [Fixed(5)] @ ["AvatarEpic"]
-// 16: onRepairPointAction [Fixed(6)] @ []
-// 17: onSectorBaseAction [Fixed(6)] @ ["AvatarEpic"]
-// 18: updateVehicleHealth [Fixed(9)] @ []
-// 19: updateVehicleSetting [Fixed(9)] @ []
-// 20: onStepRepairPointAction [Fixed(11)] @ ["AvatarEpic"]
-// 21: enemySPGHit [Fixed(12)] @ []
-// 22: onVehicleHealthChanged [Fixed(12)] @ ["VehicleHealthBroadcastListenerComponent_Avatar"]
-// 23: welcomeToSector [Fixed(12)] @ ["AvatarEpic"]
-// 24: updateState [Fixed(13)] @ ["RecoveryMechanic_Avatar"]
-// 25: onCrewRoleFactorAndRankUpdate [Fixed(13)] @ ["AvatarEpic"]
-// 26: onCombatEquipmentShotLaunched [Fixed(14)] @ []
-// 27: onSwitchViewpoint [Fixed(16)] @ []
-// 28: stopTracer [Fixed(16)] @ []
-// 29: onCollisionWithVehicle [Fixed(16)] @ []
-// 30: onSmoke [Fixed(16)] @ []
-// 31: onFrictionWithVehicle [Fixed(17)] @ []
-// 32: updateVehicleAmmo [Fixed(18)] @ []
-// 33: showOwnVehicleHitDirection [Fixed(21)] @ []
-// 34: enemySPGShotSound [Fixed(24)] @ []
-// 35: showHittingArea [Fixed(34)] @ []
-// 36: showCarpetBombing [Fixed(34)] @ []
-// 37: battleEventsSummary [Fixed(34)] @ []
-// 38: updateTargetingInfo [Fixed(36)] @ []
-// 39: showTracer [Fixed(43)] @ []
-// 40: update [Variable(Variable8)] @ []
-// 41: onKickedFromServer [Variable(Variable8)] @ []
-// 42: onIGRTypeChanged [Variable(Variable8)] @ []
-// 43: receiveAccountStats [Variable(Variable8)] @ []
-// 44: showOtherVehicleDamagedDevices [Variable(Variable8)] @ []
-// 45: showShotResults [Variable(Variable8)] @ []
-// 46: showDevelopmentInfo [Variable(Variable8)] @ []
-// 47: explodeProjectile [Variable(Variable8)] @ []
-// 48: onBattleEvents [Variable(Variable8)] @ []
-// 49: updateArena [Variable(Variable8)] @ []
-// 50: updatePositions [Variable(Variable8)] @ []
-// 51: receivePhysicsDebugInfo [Variable(Variable8)] @ []
-// 52: updateCarriedFlagPositions [Variable(Variable8)] @ []
-// 53: receiveNotification [Variable(Variable8)] @ []
-// 54: updateAvatarPrivateStats [Variable(Variable8)] @ []
-// 55: updateQuestProgress [Variable(Variable8)] @ []
-// 56: handleScriptEventFromServer [Variable(Variable8)] @ []
-// 57: setUpdatedGoodiesSnapshot [Variable(Variable8)] @ []
-// 58: onRandomEvent [Variable(Variable8)] @ []
-// 59: onChatAction [Variable(Variable8)] @ ["Chat"]
-// 60: messenger_onActionByServer_chat2 [Variable(Variable8)] @ ["PlayerMessenger_chat2"]
-// 61: onCmdResponse [Variable(Variable8)] @ ["ClientCommandsPort"]
-// 62: onCmdResponseExt [Variable(Variable8)] @ ["ClientCommandsPort"]
-// 63: processInvitations [Variable(Variable8)] @ ["InvitationsClient"]
-// 64: onTokenReceived [Variable(Variable8)] @ ["AccountAuthTokenProviderClient"]
-// 65: updateTeamsHealthPercentage [Variable(Variable8)] @ ["TeamHealthBar_Avatar"]
-// 66: redrawVehicleOnRespawn [Variable(Variable8)] @ ["RespawnController_Avatar"]
-// 67: updateRespawnVehicles [Variable(Variable8)] @ ["RespawnController_Avatar"]
-// 68: updateRespawnCooldowns [Variable(Variable8)] @ ["RespawnController_Avatar"]
-// 69: updateRespawnInfo [Variable(Variable8)] @ ["RespawnController_Avatar"]
-// 70: updateVehicleLimits [Variable(Variable8)] @ ["RespawnController_Avatar"]
-// 71: onTeamLivesRestored [Variable(Variable8)] @ ["RespawnController_Avatar"]
-// 72: externalTrigger [Variable(Variable8)] @ ["TriggersController_Avatar"]
-// 73: syncPurchasedAbilities [Variable(Variable8)] @ ["AvatarEpic"]
-// 74: onRandomReserveOffer [Variable(Variable8)] @ ["AvatarEpic"]
-// 75: showDestructibleShotResults [Variable(Variable8)] @ ["AvatarEpic"]
-// 76: updateSpawnList [Variable(Variable16)] @ ["VehiclesSpawnListStorage_Avatar"]
+// 16: updateResourceAmount [Fixed(5)] @ []
+// 17: updateVehicleQuickShellChanger [Fixed(5)] @ []
+// 18: onSectorBaseAction [Fixed(6)] @ ["AvatarEpic"]
+// 19: onRepairPointAction [Fixed(6)] @ []
+// 20: updateVehicleHealth [Fixed(9)] @ []
+// 21: updateVehicleSetting [Fixed(9)] @ []
+// 22: onStepRepairPointAction [Fixed(11)] @ ["AvatarEpic"]
+// 23: onVehicleHealthChanged [Fixed(12)] @ ["VehicleHealthBroadcastListenerComponent_Avatar"]
+// 24: welcomeToSector [Fixed(12)] @ ["AvatarEpic"]
+// 25: enemySPGHit [Fixed(12)] @ []
+// 26: updateState [Fixed(13)] @ ["RecoveryMechanic_Avatar"]
+// 27: onCrewRoleFactorAndRankUpdate [Fixed(13)] @ ["AvatarEpic"]
+// 28: onCombatEquipmentShotLaunched [Fixed(14)] @ []
+// 29: onSwitchViewpoint [Fixed(16)] @ []
+// 30: stopTracer [Fixed(16)] @ []
+// 31: onCollisionWithVehicle [Fixed(16)] @ []
+// 32: onSmoke [Fixed(16)] @ []
+// 33: onFrictionWithVehicle [Fixed(17)] @ []
+// 34: updateVehicleAmmo [Fixed(18)] @ []
+// 35: showOwnVehicleHitDirection [Fixed(21)] @ []
+// 36: enemySPGShotSound [Fixed(24)] @ []
+// 37: showHittingArea [Fixed(34)] @ []
+// 38: showCarpetBombing [Fixed(34)] @ []
+// 39: battleEventsSummary [Fixed(34)] @ []
+// 40: updateTargetingInfo [Fixed(36)] @ []
+// 41: showTracer [Fixed(43)] @ []
+// 42: onChatAction [Variable(Variable8)] @ ["Chat"]
+// 43: messenger_onActionByServer_chat2 [Variable(Variable8)] @ ["PlayerMessenger_chat2"]
+// 44: onCmdResponse [Variable(Variable8)] @ ["ClientCommandsPort"]
+// 45: onCmdResponseExt [Variable(Variable8)] @ ["ClientCommandsPort"]
+// 46: processInvitations [Variable(Variable8)] @ ["InvitationsClient"]
+// 47: onTokenReceived [Variable(Variable8)] @ ["AccountAuthTokenProviderClient"]
+// 48: updateTeamsHealthPercentage [Variable(Variable8)] @ ["TeamHealthBar_Avatar"]
+// 49: redrawVehicleOnRespawn [Variable(Variable8)] @ ["RespawnController_Avatar"]
+// 50: updateRespawnVehicles [Variable(Variable8)] @ ["RespawnController_Avatar"]
+// 51: updateRespawnCooldowns [Variable(Variable8)] @ ["RespawnController_Avatar"]
+// 52: updateRespawnInfo [Variable(Variable8)] @ ["RespawnController_Avatar"]
+// 53: updateVehicleLimits [Variable(Variable8)] @ ["RespawnController_Avatar"]
+// 54: onTeamLivesRestored [Variable(Variable8)] @ ["RespawnController_Avatar"]
+// 55: externalTrigger [Variable(Variable8)] @ ["TriggersController_Avatar"]
+// 56: syncPurchasedAbilities [Variable(Variable8)] @ ["AvatarEpic"]
+// 57: onRandomReserveOffer [Variable(Variable8)] @ ["AvatarEpic"]
+// 58: showDestructibleShotResults [Variable(Variable8)] @ ["AvatarEpic"]
+// 59: update [Variable(Variable8)] @ []
+// 60: onKickedFromServer [Variable(Variable8)] @ []
+// 61: onIGRTypeChanged [Variable(Variable8)] @ []
+// 62: receiveAccountStats [Variable(Variable8)] @ []
+// 63: showOtherVehicleDamagedDevices [Variable(Variable8)] @ []
+// 64: showShotResults [Variable(Variable8)] @ []
+// 65: showDevelopmentInfo [Variable(Variable8)] @ []
+// 66: explodeProjectile [Variable(Variable8)] @ []
+// 67: onBattleEvents [Variable(Variable8)] @ []
+// 68: updateArena [Variable(Variable8)] @ []
+// 69: updatePositions [Variable(Variable8)] @ []
+// 70: receivePhysicsDebugInfo [Variable(Variable8)] @ []
+// 71: updateCarriedFlagPositions [Variable(Variable8)] @ []
+// 72: receiveNotification [Variable(Variable8)] @ []
+// 73: updateAvatarPrivateStats [Variable(Variable8)] @ []
+// 74: updateQuestProgress [Variable(Variable8)] @ []
+// 75: handleScriptEventFromServer [Variable(Variable8)] @ []
+// 76: setUpdatedGoodiesSnapshot [Variable(Variable8)] @ []
+// 77: onRandomEvent [Variable(Variable8)] @ []
+// 78: updateSpawnList [Variable(Variable16)] @ ["VehiclesSpawnListStorage_Avatar"]
 
 /// Entity 0x03
 /// Methods for ArenaInfo on client component
@@ -243,28 +251,30 @@ pub enum HangarVehicleMethod {
 /// Entity 0x06
 /// Methods for Vehicle on client component
 pub enum VehicleMethod { 
-    onExtraHitted(i16, Vec3), // idx(0)
-    onHealthChanged(i16, i16, OBJECT_ID, u8, i8), // idx(1)
-    showShooting(u8, i8), // idx(2)
-    updateLaserSight(OBJECT_ID, BOOL, String), // idx(3)
-    showDamageFromShot(OBJECT_ID, Vec<u64>, u8, i32, u8, BOOL), // idx(4)
-    showDamageFromExplosion(OBJECT_ID, Vec3, u8, i32, u8), // idx(5)
-    showAmmoBayEffect(u8, f32, f32), // idx(6)
-    onPushed(f32, f32), // idx(7)
-    onStaticCollision(f32, Vec3, Vec3, u8, f32, i8, u16), // idx(8)
-    showRammingEffect(f32, Vec3), // idx(9)
+    onVehiclePickup(), // idx(0)
+    onExtraHitted(i16, Vec3), // idx(1)
+    onHealthChanged(i16, i16, OBJECT_ID, u8, i8), // idx(2)
+    showShooting(u8, i8), // idx(3)
+    updateLaserSight(OBJECT_ID, BOOL, String), // idx(4)
+    showDamageFromShot(OBJECT_ID, Vec<u64>, u8, i32, u8, BOOL), // idx(5)
+    showDamageFromExplosion(OBJECT_ID, Vec3, u8, i32, u8), // idx(6)
+    showAmmoBayEffect(u8, f32, f32), // idx(7)
+    onPushed(f32, f32), // idx(8)
+    onStaticCollision(f32, Vec3, Vec3, u8, f32, i8, u16), // idx(9)
+    showRammingEffect(f32, Vec3), // idx(10)
 }
 
-// 0: showShooting [Fixed(2)] @ []
-// 1: onPushed [Fixed(8)] @ []
-// 2: showAmmoBayEffect [Fixed(9)] @ []
-// 3: onHealthChanged [Fixed(10)] @ []
-// 4: onExtraHitted [Fixed(14)] @ []
-// 5: showRammingEffect [Fixed(16)] @ []
-// 6: showDamageFromExplosion [Fixed(22)] @ []
-// 7: onStaticCollision [Fixed(36)] @ []
-// 8: updateLaserSight [Variable(Variable8)] @ []
-// 9: showDamageFromShot [Variable(Variable8)] @ []
+// 0: onVehiclePickup [Fixed(0)] @ []
+// 1: showShooting [Fixed(2)] @ []
+// 2: onPushed [Fixed(8)] @ []
+// 3: showAmmoBayEffect [Fixed(9)] @ []
+// 4: onHealthChanged [Fixed(10)] @ []
+// 5: onExtraHitted [Fixed(14)] @ []
+// 6: showRammingEffect [Fixed(16)] @ []
+// 7: showDamageFromExplosion [Fixed(22)] @ []
+// 8: onStaticCollision [Fixed(36)] @ []
+// 9: updateLaserSight [Variable(Variable8)] @ []
+// 10: showDamageFromShot [Variable(Variable8)] @ []
 
 /// Entity 0x07
 /// Methods for AreaDestructibles on client component

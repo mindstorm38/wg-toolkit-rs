@@ -16,28 +16,28 @@ pub enum AvatarMethod {
     moveTo(Vec3), // idx(1)
     bindToVehicle(OBJECT_ID), // idx(2)
     monitorVehicleDamagedDevices(OBJECT_ID), // idx(3)
-    activateEquipment(u16, i16), // idx(14)
-    setEquipmentApplicationPoint(u16, Vec3, Vec2), // idx(15)
-    switchViewPointOrBindToVehicle(BOOL, OBJECT_ID), // idx(16)
-    setDualGunCharger(BOOL), // idx(21)
-    reportClientStats(CLIENT_STATUS_STATISTICS), // idx(22)
-    vehicle_moveWith(u8), // idx(24)
-    vehicle_shoot(), // idx(25)
-    vehicle_trackWorldPointWithGun(Vec3), // idx(26)
-    vehicle_trackRelativePointWithGun(Vec3), // idx(27)
-    vehicle_stopTrackingWithGun(f32, f32), // idx(28)
-    setupAmmo(i64), // idx(29)
-    vehicle_changeSetting(u8, i32), // idx(30)
-    setServerMarker(BOOL), // idx(31)
-    setSendKillCamSimulationData(BOOL), // idx(32)
+    activateEquipment(u16, i16), // idx(15)
+    setEquipmentApplicationPoint(u16, Vec3, Vec2), // idx(16)
+    switchViewPointOrBindToVehicle(BOOL, OBJECT_ID), // idx(17)
+    setDualGunCharger(BOOL), // idx(23)
+    reportClientStats(CLIENT_STATUS_STATISTICS), // idx(24)
+    vehicle_moveWith(u8), // idx(26)
+    vehicle_shoot(), // idx(27)
+    vehicle_trackWorldPointWithGun(Vec3), // idx(28)
+    vehicle_trackRelativePointWithGun(Vec3), // idx(29)
+    vehicle_stopTrackingWithGun(f32, f32), // idx(30)
+    setupAmmo(i64), // idx(31)
+    vehicle_changeSetting(u8, i32), // idx(32)
+    setServerMarker(BOOL), // idx(33)
+    setSendKillCamSimulationData(BOOL), // idx(35)
 }
 
 // 0: vehicle_shoot [Fixed(0)] @ []
-// 1: setDualGunCharger [Fixed(1)] @ []
-// 2: vehicle_moveWith [Fixed(1)] @ []
-// 3: setServerMarker [Fixed(1)] @ []
-// 4: setSendKillCamSimulationData [Fixed(1)] @ []
-// 5: switchObserverFPV [Fixed(1)] @ ["AvatarObserver"]
+// 1: switchObserverFPV [Fixed(1)] @ ["AvatarObserver"]
+// 2: setDualGunCharger [Fixed(1)] @ []
+// 3: vehicle_moveWith [Fixed(1)] @ []
+// 4: setServerMarker [Fixed(1)] @ []
+// 5: setSendKillCamSimulationData [Fixed(1)] @ []
 // 6: bindToVehicle [Fixed(4)] @ []
 // 7: monitorVehicleDamagedDevices [Fixed(4)] @ []
 // 8: activateEquipment [Fixed(4)] @ []
@@ -81,13 +81,13 @@ pub enum VehicleMethod {
     stopTrackingWithGun(f32, f32), // idx(4)
     changeSetting(u8, i32), // idx(6)
     sendVisibilityDevelopmentInfo(OBJECT_ID, Vec3), // idx(7)
-    sendStateToOwnClient(), // idx(16)
-    switchSetup(u8, u8), // idx(40)
+    sendStateToOwnClient(), // idx(17)
+    switchSetup(u8, u8), // idx(43)
 }
 
-// 0: sendStateToOwnClient [Fixed(0)] @ []
-// 1: recoveryMechanic_startRecovering [Fixed(0)] @ ["RecoveryMechanic_Vehicle"]
-// 2: recoveryMechanic_stopRecovering [Fixed(0)] @ ["RecoveryMechanic_Vehicle"]
+// 0: recoveryMechanic_startRecovering [Fixed(0)] @ ["RecoveryMechanic_Vehicle"]
+// 1: recoveryMechanic_stopRecovering [Fixed(0)] @ ["RecoveryMechanic_Vehicle"]
+// 2: sendStateToOwnClient [Fixed(0)] @ []
 // 3: moveWith [Fixed(1)] @ []
 // 4: switchSetup [Fixed(2)] @ []
 // 5: changeSetting [Fixed(5)] @ []
