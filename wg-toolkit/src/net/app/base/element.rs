@@ -12,11 +12,13 @@ use crate::util::io::*;
 /// Internal module containing all raw elements numerical ids.
 pub mod id {
 
+    use crate::net::element::ElementIdRange;
+
     pub const CLIENT_AUTH: u8           = 0x00;
     pub const CLIENT_SESSION_KEY: u8    = 0x01;
 
     // pub const CELL_ENTITY_METHOD: ElementIdRange = ElementIdRange::new(0x0F, 0x87);
-    // pub const BASE_ENTITY_METHOD: ElementIdRange = ElementIdRange::new(0x88, 0xFE);
+    pub const BASE_ENTITY_METHOD: ElementIdRange = ElementIdRange::new(0x87, 0xFE);
 
 }
 
@@ -43,13 +45,13 @@ impl SimpleElement for ClientAuth {
     const ID: u8 = id::CLIENT_AUTH;
     const LEN: ElementLength = ElementLength::Fixed(7);
     
-    fn encode(&self, write: &mut impl Write) -> io::Result<()> {
+    fn encode(&self, write: &mut dyn Write) -> io::Result<()> {
         write.write_u32(self.login_key)?;
         write.write_u8(self.attempt_num)?;
         write.write_u16(self.unk)
     }
 
-    fn decode(read: &mut impl Read, _len: usize) -> io::Result<Self> {
+    fn decode(read: &mut dyn Read, _len: usize) -> io::Result<Self> {
         Ok(Self {
             login_key: read.read_u32()?, 
             attempt_num: read.read_u8()?,
@@ -77,11 +79,11 @@ impl SimpleElement for ClientSessionKey {
     const ID: u8 = id::CLIENT_SESSION_KEY;
     const LEN: ElementLength = ElementLength::Fixed(4);
     
-    fn encode(&self, write: &mut impl Write) -> io::Result<()> {
+    fn encode(&self, write: &mut dyn Write) -> io::Result<()> {
         write.write_u32(self.session_key)
     }
 
-    fn decode(read: &mut impl Read, _len: usize) -> io::Result<Self> {
+    fn decode(read: &mut dyn Read, _len: usize) -> io::Result<Self> {
         Ok(Self { session_key: read.read_u32()? })
     }
 

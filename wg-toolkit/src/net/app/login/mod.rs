@@ -117,8 +117,12 @@ impl App {
                 Ok(ret) => ret,
                 Err(error) => return Event::IoError(IoErrorEvent { error, addr: None }),
             };
+            
+            let Some(mut channel) = self.channel.accept(packet, addr) else {
+                continue;
+            };
 
-            let Some((bundle, _)) = self.channel.accept(packet, addr) else {
+            let Some(bundle) = channel.next_bundle() else {
                 continue;
             };
 

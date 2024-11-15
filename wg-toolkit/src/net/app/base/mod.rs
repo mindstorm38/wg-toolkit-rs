@@ -2,13 +2,18 @@
 
 pub mod element;
 
+use core::fmt;
 use std::collections::{HashMap, VecDeque};
 use std::marker::PhantomData;
 use std::net::SocketAddr;
+use std::num::Wrapping;
 use std::sync::Arc;
 use std::io;
 
 use blowfish::Blowfish;
+
+use rand::rngs::OsRng;
+use rand::RngCore;
 
 use crate::net::bundle::{Bundle, ElementReader, TopElementReader};
 use crate::net::channel::ChannelTracker;
@@ -36,6 +41,11 @@ pub struct App {
     pending_clients: HashMap<SocketAddr, u32>,
     /// Map of clients.
     clients: HashMap<SocketAddr, Client>,
+    /// Map of all currently alive entities.
+    entities: HashMap<u32, EntityGeneric>,
+    /// The next id for entities, this is wrapping around and we ensure that the same id
+    /// isn't used twice!
+    entities_next_id: Wrapping<u32>,
 }
 
 impl App {
@@ -48,6 +58,8 @@ impl App {
             bundle: Bundle::new(),
             pending_clients: HashMap::new(),
             clients: HashMap::new(),
+            entities: HashMap::new(),
+            entities_next_id: Wrapping(OsRng.next_u32()),
         })
     }
 
@@ -70,7 +82,11 @@ impl App {
                 Err(error) => return Event::IoError(IoErrorEvent { error, addr: None }),
             };
 
-            let Some((bundle, _)) = self.channel.accept(packet, addr) else {
+            let Some(mut channel) = self.channel.accept(packet, addr) else {
+                continue;
+            };
+
+            let Some(bundle) = channel.next_bundle() else {
                 continue;
             };
 
@@ -142,13 +158,33 @@ impl App {
 
     }
 
-    // pub fn create_entity<E: Entity>(&mut self, _addr: SocketAddr, _entity: E) -> Handle<E> {
-    //     todo!()
-    // }
+    /// Create an entity and return the handle to manage it.
+    pub fn create_entity<E: Entity + 'static>(&mut self, entity: E) -> Handle<E> {
 
-    // pub fn call_method<E: Entity>(&mut self, _addr: SocketAddr, _handle: Handle<E>, _method: E::ClientMethod) {
-    //     todo!()
-    // }
+        // Generate a new unique entity id.
+        let entity_id = loop {
+            let id = self.entities_next_id.0;
+            self.entities_next_id += 1;
+            if !self.entities.contains_key(&id) {
+                break id;
+            }
+        };
+
+        // self.entities.insert(entity_id, EntityGeneric {
+        //     wrapper: Box::new(EntityWrapperImpl {
+        //         inner: entity,
+        //     })
+        // });
+
+        todo!()
+
+    }
+
+    /// Call a method on an entity present on the given client address and its handle.
+    pub fn call_method<E: Entity>(&mut self, addr: SocketAddr, handle: Handle<E>, method: E::ClientMethod) {
+        let _ = (addr, handle, method);
+        todo!()
+    }
 
 }
 
@@ -157,6 +193,7 @@ impl App {
 pub enum Event {
     IoError(IoErrorEvent),
     Login(LoginEvent),
+    // BaseMethod(BaseMethodEvent),
 }
 
 /// Some IO error happened internally and optionally related to a client.
@@ -179,10 +216,24 @@ pub struct LoginEvent {
     pub attempt_num: u8,
 }
 
-/// A typed handle to an arbitrary entity in the base app.
+#[derive(Debug)]
+pub struct BaseMethodEvent {
+    pub addr: SocketAddr,
+    pub entity_id: u32,
+
+}
+
+/// A typed handle to an entity in the base app, potentially present on client side.
+#[derive(Debug, Clone, Copy)]
 pub struct Handle<E> {
     entity_id: u32,
     _phantom: PhantomData<*const E>,
+}
+
+/// A untyped handle to an entity in the base app, potentially present on client side.
+#[derive(Debug, Clone, Copy)]
+pub struct GenericHandle {
+    entity_id: u32,
 }
 
 /// An active logged in client in the base application.
@@ -192,4 +243,26 @@ struct Client {
     session_key: u32,
     /// The blowfish key for encryption of this client's packets.
     blowfish: Arc<Blowfish>,
+}
+
+struct EntityGeneric {
+    // wrapper: Box<dyn EntityWrapper>,
+}
+
+impl fmt::Debug for EntityGeneric {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EntityGeneric").finish()
+    }
+}
+
+trait EntityWrapper {
+
+}
+
+struct EntityWrapperImpl<E: Entity> {
+    inner: E,
+}
+
+impl<E: Entity> EntityWrapper for EntityWrapperImpl<E> {
+
 }

@@ -6,19 +6,22 @@ use std::collections::{hash_map, HashMap};
 use std::net::{SocketAddr, SocketAddrV4};
 use std::sync::{Arc, Mutex};
 use std::{fs, thread};
+use std::fmt::Debug;
+use std::io;
 
 use rsa::pkcs8::{DecodePrivateKey, DecodePublicKey};
 use rsa::rand_core::{OsRng, RngCore};
 use rsa::{RsaPrivateKey, RsaPublicKey};
 
 use blowfish::Blowfish;
-
 use tracing::level_filters::LevelFilter;
+
 use tracing::{error, info, instrument, warn};
 
 use wgtk::net::bundle::{Bundle, ElementReader, TopElementReader};
-use wgtk::net::element::{SimpleElement, DebugElementUndefined};
+use wgtk::net::element::{DebugElementUndefined, DebugElementVariable16, SimpleElement};
 use wgtk::net::app::proxy::{self, PacketDirection};
+use wgtk::net::app::common::entity::Entity;
 use wgtk::net::app::{login, base, client};
 
 use crate::{CliResult, WotArgs};
@@ -82,6 +85,9 @@ pub fn cmd_wot(args: WotArgs) -> CliResult<()> {
         let base_thread = BaseProxyThread {
             app: base_app,
             shared,
+            entities: HashMap::new(),
+            selected_entity_id: None,
+            player_entity_id: None,
         };
         
         thread::scope(move |scope| {
@@ -136,6 +142,10 @@ pub fn cmd_wot(args: WotArgs) -> CliResult<()> {
 
 }
 
+// ================= //
+// ===== PROXY ===== //
+// ================= //
+
 #[derive(Debug)]
 struct LoginProxyThread {
     app: login::proxy::App,
@@ -146,6 +156,9 @@ struct LoginProxyThread {
 struct BaseProxyThread {
     app: proxy::App,
     shared: Arc<ProxyShared>,
+    entities: HashMap<u32, &'static ProxyEntityType>,
+    selected_entity_id: Option<u32>,
+    player_entity_id: Option<u32>,
 }
 
 #[derive(Debug)]
@@ -235,10 +248,16 @@ impl BaseProxyThread {
                     }
                 }
                 Event::Bundle(bundle) => {
-                    match bundle.direction {
+                    
+                    let res = match bundle.direction {
                         PacketDirection::Out => self.read_out_bundle(bundle.addr, bundle.bundle),
                         PacketDirection::In => self.read_in_bundle(bundle.addr, bundle.bundle),
+                    };
+
+                    if let Err(e) = res {
+                        error!(addr = %bundle.addr, "Error while reading bundle: ({:?}) {e}", bundle.direction);
                     }
+
                 }
                     
             }
@@ -246,144 +265,243 @@ impl BaseProxyThread {
 
     }
 
-    fn read_out_bundle(&mut self, addr: SocketAddr, bundle: Bundle) {
+    fn read_out_bundle(&mut self, addr: SocketAddr, bundle: Bundle) -> io::Result<()> {
 
         let mut reader = bundle.element_reader();
         while let Some(elt) = reader.next_element() {
             match elt {
                 ElementReader::Top(elt) => {
-                    if !self.read_out_element(addr, elt) {
+                    if !self.read_out_element(addr, elt)? {
                         break;
                     }
                 }
                 ElementReader::Reply(elt) => {
                     let request_id = elt.request_id();
-                    let _elt = elt.read_simple::<()>().unwrap();
+                    let _elt = elt.read_simple::<()>()?;
                     warn!(%addr, "-> Reply element #{request_id}");
                     break;
                 }
             }
         }
 
+        Ok(())
+
     }
 
-    fn read_out_element(&mut self, addr: SocketAddr, elt: TopElementReader) -> bool {
+    fn read_out_element(&mut self, addr: SocketAddr, elt: TopElementReader) -> io::Result<bool> {
         
         use base::element::*;
 
         match elt.id() {
             ClientSessionKey::ID => {
-                let elt = elt.read_simple::<ClientSessionKey>().unwrap();
+                let elt = elt.read_simple::<ClientSessionKey>()?;
                 assert!(elt.request_id.is_none());
                 info!(%addr, "-> Session key: 0x{:08X}", elt.element.session_key);
-                true
             }
+            // TODO: Account::doCmdInt3 (AccountCommands.CMD_SYNC_DATA), exposed id: 0x0E, message id: 0x95
             id => {
-                let elt = elt.read_simple::<DebugElementUndefined<0>>().unwrap();
+                let elt = elt.read_simple::<DebugElementUndefined<0>>()?;
                 error!(%addr, "-> Top element #{id} {:?} (request: {:?})", elt.element, elt.request_id);
-                false
+                return Ok(false);
             }
         }
 
+        Ok(true)
+
     }
 
-    fn read_in_bundle(&mut self, addr: SocketAddr, bundle: Bundle) {
+    fn read_in_bundle(&mut self, addr: SocketAddr, bundle: Bundle) -> io::Result<()> {
 
         let mut reader = bundle.element_reader();
         while let Some(elt) = reader.next_element() {
             match elt {
                 ElementReader::Top(elt) => {
-                    if !self.read_in_element(addr, elt) {
+                    if !self.read_in_element(addr, elt)? {
                         break;
                     }
                 }
                 ElementReader::Reply(elt) => {
                     let request_id = elt.request_id();
-                    let _elt = elt.read_simple::<()>().unwrap();
+                    let _elt = elt.read_simple::<()>()?;
                     warn!(%addr, "<- Reply element #{request_id}");
                     break;
                 }
             }
         }
 
+        Ok(())
+
     }
 
-    fn read_in_element(&mut self, addr: SocketAddr, elt: TopElementReader) -> bool {
+    fn read_in_element(&mut self, addr: SocketAddr, mut elt: TopElementReader) -> io::Result<bool> {
 
         use client::element::*;
 
         match elt.id() {
             UpdateFrequencyNotification::ID => {
-                let elt = elt.read_simple::<UpdateFrequencyNotification>().unwrap();
-                assert!(elt.request_id.is_none());
-                info!(%addr, "<- Update frequency: {} Hz, game time: {}", elt.element.frequency, elt.element.game_time);
-                true
+                let ufn = elt.read_simple::<UpdateFrequencyNotification>()?;
+                assert!(ufn.request_id.is_none());
+                info!(%addr, "<- Update frequency: {} Hz, game time: {}", ufn.element.frequency, ufn.element.game_time);
             }
             TickSync::ID => {
-                let elt = elt.read_simple::<TickSync>().unwrap();
-                assert!(elt.request_id.is_none());
-                info!(%addr, "<- Tick sync: {}", elt.element.tick);
-                true
+                let ts = elt.read_simple::<TickSync>()?;
+                assert!(ts.request_id.is_none());
+                info!(%addr, "<- Tick sync: {}", ts.element.tick);
             }
             ResetEntities::ID => {
-                let elt = elt.read_simple::<ResetEntities>().unwrap();
-                assert!(elt.request_id.is_none());
-                info!(%addr, "<- Reset entities, keep player on base: {}", elt.element.keep_player_on_base);
-                true
+
+                let re = elt.read_simple::<ResetEntities>()?;
+                assert!(re.request_id.is_none());
+
+                info!(%addr, "<- Reset entities, keep player on base: {}, entities: {}", 
+                    re.element.keep_player_on_base, self.entities.len());
+
+                // Don't delete player entity if requested...
+                let mut player_entity = None;
+                if re.element.keep_player_on_base {
+                    if let Some(player_entity_id) = self.player_entity_id {
+                        player_entity = Some(self.entities.remove_entry(&player_entity_id).unwrap());
+                    }
+                }
+                
+                self.entities.clear();
+                self.player_entity_id = None;
+                
+                // Restore player entity!
+                if let Some((player_entity_id, player_entity)) = player_entity {
+                    self.entities.insert(player_entity_id, player_entity);
+                    self.player_entity_id = Some(player_entity_id);
+                }
+
             }
-            CreateBasePlayer::<gen::entity::Generic>::ID => {
-                let elt = elt.read_simple::<CreateBasePlayer<gen::entity::Generic>>().unwrap();
-                assert!(elt.request_id.is_none());
-                warn!(%addr, "<- Create base player: {:?}", elt.element);
-                true
+            CreateBasePlayerHeader::ID => {
+
+                let cbp = elt.read_simple_stable::<CreateBasePlayerHeader>()?;
+                assert!(cbp.request_id.is_none());
+
+                if let Some(entity_type) = cbp.element.entity_type_id.checked_sub(1).and_then(|i| ENTITY_TYPES.get(i as usize)) {
+                    self.entities.insert(cbp.element.entity_id, entity_type);
+                    self.player_entity_id = Some(cbp.element.entity_id);
+                    return (entity_type.create_base_player)(addr, elt);
+                }
+
+                self.player_entity_id = None;
+                // It's possible to skip it because its len is variable.
+                let dbg = elt.read_simple::<DebugElementVariable16<0>>()?;
+                warn!(%addr, "<- Create base player with invalid entity type id: 0x{:02X}, {:?}", 
+                    cbp.element.entity_type_id, dbg.element);
+
             }
             CreateCellPlayer::ID => {
-                let elt = elt.read_simple::<CreateCellPlayer>().unwrap();
-                assert!(elt.request_id.is_none());
-                warn!(%addr, "<- Create cell player: {:?}", elt.element);
-                true
+                let ccp = elt.read_simple::<CreateCellPlayer>()?;
+                assert!(ccp.request_id.is_none());
+                warn!(%addr, "<- Create cell player: {:?}", ccp.element);
             }
             SelectPlayerEntity::ID => {
-                let elt = elt.read_simple::<SelectPlayerEntity>().unwrap();
-                assert!(elt.request_id.is_none());
-                info!(%addr, "<- Select player entity");
-                true
+                let spe = elt.read_simple::<SelectPlayerEntity>()?;
+                assert!(spe.request_id.is_none());
+                if let Some(player_entity_id) = self.player_entity_id {
+                    info!(%addr, "<- Select player entity: {player_entity_id}");
+                } else {
+                    warn!(%addr, "<- Select player entity: no player entity")
+                }
+                self.selected_entity_id = self.player_entity_id;
             }
             ResourceHeader::ID => {
-                let elt = elt.read_simple::<ResourceHeader>().unwrap();
-                assert!(elt.request_id.is_none());
-                info!(%addr, "<- Resource header: {:?}", elt.element);
-                true
+                let rh = elt.read_simple::<ResourceHeader>()?;
+                assert!(rh.request_id.is_none());
+                info!(%addr, "<- Resource header: {:?}", rh.element);
             }
             ResourceFragment::ID => {
-                let elt = elt.read_simple::<ResourceFragment>().unwrap();
-                assert!(elt.request_id.is_none());
-                info!(%addr, "<- Resource fragment: {:?}", elt.element);
-                true
+                let rf = elt.read_simple::<ResourceFragment>()?;
+                assert!(rf.request_id.is_none());
+                info!(%addr, "<- Resource fragment: {:?}", rf.element);
             }
             id if id::ENTITY_METHOD.contains(id) => {
+
                 // Account::msg#37 = onClanInfoReceived
                 // Account::msg#39 = showGUI
-                let elt = elt.read_simple::<DebugElementUndefined<0>>().unwrap();
-                warn!(%addr, "<- Entity method: msg#{} {:?} (request: {:?})", id - id::ENTITY_METHOD.first, elt.element, elt.request_id);
-                false
+
+                if let Some(entity_id) = self.selected_entity_id {
+                    // Unwrap because selected entity should exist!
+                    let entity_type = *self.entities.get(&entity_id).unwrap();
+                    return (entity_type.entity_method)(addr, entity_id, elt);
+                }
+
+                let elt = elt.read_simple::<DebugElementUndefined<0>>()?;
+                warn!(%addr, "<- Entity method (unknown selected entity): msg#{} {:?} (request: {:?})", id - id::ENTITY_METHOD.first, elt.element, elt.request_id);
+                return Ok(false);
+
             }
             id if id::ENTITY_PROPERTY.contains(id) => {
-                let elt = elt.read_simple::<DebugElementUndefined<0>>().unwrap();
+                let elt = elt.read_simple::<DebugElementUndefined<0>>()?;
                 warn!(%addr, "<- Entity property: msg#{} {:?} (request: {:?})", id - id::ENTITY_PROPERTY.first, elt.element, elt.request_id);
-                false
+                return Ok(false);
             }
             id => {
-                let elt = elt.read_simple::<DebugElementUndefined<0>>().unwrap();
+                let elt = elt.read_simple::<DebugElementUndefined<0>>()?;
                 error!(%addr, "<- Top element #{id} {:?} (request: {:?})", elt.element, elt.request_id);
-                false
+                return Ok(false);
             }
         }
+
+        Ok(true)
+
     }
 
 }
 
 
+/// Represent an entity type and its associated static functions.
+#[derive(Debug)]
+struct ProxyEntityType {
+    create_base_player: fn(SocketAddr, TopElementReader) -> io::Result<bool>,
+    entity_method: fn(SocketAddr, u32, TopElementReader) -> io::Result<bool>,
+}
+
+impl ProxyEntityType {
+
+    const fn new<E>() -> Self
+    where
+        E: Entity + Debug,
+        E::ClientMethod: Debug,
+    {
+        Self {
+            create_base_player: |addr, elt| {
+                use client::element::CreateBasePlayer;
+                let cbp = elt.read_simple::<CreateBasePlayer<E>>()?;
+                info!(%addr, "<- Create base player: ({}) {:?}", cbp.element.entity_id, cbp.element.entity_data);
+                Ok(true)
+            },
+            entity_method: |addr, entity_id, elt| {
+                use client::element::EntityMethod;
+                let em = elt.read_simple::<EntityMethod<E::ClientMethod>>()?;
+                info!(%addr, "<- Entity method: ({entity_id}) {:?}", em.element.inner);
+                Ok(true)
+            },
+        }
+    }
+
+}
+
+const ENTITY_TYPES: &[ProxyEntityType] = &[
+    ProxyEntityType::new::<gen::entity::Account>(),
+    ProxyEntityType::new::<gen::entity::Avatar>(),
+    ProxyEntityType::new::<gen::entity::ArenaInfo>(),
+    ProxyEntityType::new::<gen::entity::ClientSelectableObject>(),
+    ProxyEntityType::new::<gen::entity::HangarVehicle>(),
+    ProxyEntityType::new::<gen::entity::Vehicle>(),
+    ProxyEntityType::new::<gen::entity::AreaDestructibles>(),
+    ProxyEntityType::new::<gen::entity::OfflineEntity>(),
+    ProxyEntityType::new::<gen::entity::Flock>(),
+    ProxyEntityType::new::<gen::entity::FlockExotic>(),
+    ProxyEntityType::new::<gen::entity::Login>(),
+];
+
+
+// ==================== //
+// ===== EMULATOR ===== //
+// ==================== //
 
 #[derive(Debug)]
 struct LoginThread {
@@ -515,6 +633,7 @@ impl BaseThread {
                     self.app.answer_login_success(login.addr, client.blowfish);
 
                 }
+                
             }
 
             // // Proof of concept:

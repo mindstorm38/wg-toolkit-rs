@@ -157,6 +157,18 @@ pub trait WgReadExt: Read {
             .map_err(|_| io::ErrorKind::InvalidData.into())
     }
 
+    fn read_string_lossy(&mut self, len: usize) -> io::Result<String> {
+        Ok(String::from_utf8_lossy(&self.read_blob(len)?).into_owned())
+    }
+
+    fn read_string_fallback(&mut self, len: usize) -> io::Result<Result<String, Vec<u8>>> {
+        let blob = self.read_blob(len)?;
+        match String::from_utf8(blob) {
+            Ok(s) => Ok(Ok(s)),
+            Err(e) => Ok(Err(e.into_bytes())),
+        }
+    }
+
     // /// Read an UTF-8 string into the given buffer, returning an error if the data is not
     // /// valid UTF-8, and the given buffer is zero-ed out.
     // fn read_string_into(&mut self, dst: &mut str) -> io::Result<()> {
@@ -179,6 +191,19 @@ pub trait WgReadExt: Read {
         match String::from_utf8(blob) {
             Ok(s) => Ok(s),
             Err(_) => Err(io::Error::new(io::ErrorKind::InvalidData, "invalid utf8 string"))
+        }
+    }
+
+    fn read_string_variable_lossy(&mut self) -> io::Result<String> {
+        let blob = self.read_blob_variable()?;
+        Ok(String::from_utf8_lossy(&blob).into_owned())
+    }
+
+    fn read_string_variable_fallback(&mut self) -> io::Result<Result<String, Vec<u8>>> {
+        let blob = self.read_blob_variable()?;
+        match String::from_utf8(blob) {
+            Ok(s) => Ok(Ok(s)),
+            Err(e) => Ok(Err(e.into_bytes())),
         }
     }
 
@@ -488,8 +513,8 @@ pub trait WgWriteExt: Write {
 
 }
 
-impl<R: Read> WgReadExt for R {}
-impl<W: Write> WgWriteExt for W {}
+impl<R: Read + ?Sized> WgReadExt for R {}
+impl<W: Write + ?Sized> WgWriteExt for W {}
 
 
 /// A wrapper for a [`Read`] or [`Write`] implementor that will increment

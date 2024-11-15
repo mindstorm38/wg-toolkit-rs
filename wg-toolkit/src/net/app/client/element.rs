@@ -1,14 +1,18 @@
 //! Definition of the elements that can be sent from server to client
 //! once connected to the base application..
 
+use std::fmt;
 use std::io::{self, Read, Write};
 
 use glam::Vec3;
 
-use crate::net::element::{ElementLength, SimpleElement, EmptyElement, DebugElementFixed, DebugElementVariable16};
-use crate::util::io::*;
+use tracing::warn;
 
-use crate::net::app::common::entity::Entity;
+use crate::net::element::{DebugElementFixed, DebugElementVariable16, Element, ElementLength, EmptyElement, SimpleElement};
+use crate::util::io::{WgReadExt, WgWriteExt};
+use crate::util::AsciiFmt;
+
+use crate::net::app::common::entity::{Entity, Method};
 
 
 /// Internal module containing all raw elements numerical ids.
@@ -111,11 +115,11 @@ impl SimpleElement for Authenticate {
     const ID: u8 = id::AUTHENTICATE;
     const LEN: ElementLength = ElementLength::Fixed(4);
 
-    fn encode(&self, write: &mut impl Write) -> io::Result<()> {
+    fn encode(&self, write: &mut dyn Write) -> io::Result<()> {
         write.write_u32(self.key)
     }
 
-    fn decode(read: &mut impl Read, _len: usize) -> io::Result<Self> {
+    fn decode(read: &mut dyn Read, _len: usize) -> io::Result<Self> {
         Ok(Self {
             key: read.read_u32()?,
         })
@@ -133,11 +137,11 @@ impl SimpleElement for BandwidthNotification {
     const ID: u8 = id::BANDWIDTH_NOTIFICATION;
     const LEN: ElementLength = ElementLength::Fixed(4);
 
-    fn encode(&self, write: &mut impl Write) -> io::Result<()> {
+    fn encode(&self, write: &mut dyn Write) -> io::Result<()> {
         write.write_u32(self.bps)
     }
 
-    fn decode(read: &mut impl Read, _len: usize) -> io::Result<Self> {
+    fn decode(read: &mut dyn Read, _len: usize) -> io::Result<Self> {
         Ok(Self {
             bps: read.read_u32()?,
         })
@@ -162,13 +166,13 @@ impl SimpleElement for UpdateFrequencyNotification {
     const ID: u8 = id::UPDATE_FREQUENCY_NOTIFICATION;
     const LEN: ElementLength = ElementLength::Fixed(7);
 
-    fn encode(&self, write: &mut impl Write) -> io::Result<()> {
+    fn encode(&self, write: &mut dyn Write) -> io::Result<()> {
         write.write_u8(self.frequency)?;
         write.write_u16(1)?;
         write.write_u32(self.game_time)
     }
 
-    fn decode(read: &mut impl Read, _len: usize) -> io::Result<Self> {
+    fn decode(read: &mut dyn Read, _len: usize) -> io::Result<Self> {
         Ok(Self { 
             frequency: read.read_u8()?,
             // Skip 2 bytes that we don't use.
@@ -191,11 +195,11 @@ impl SimpleElement for SetGameTime {
     const ID: u8 = id::SET_GAME_TIME;
     const LEN: ElementLength = ElementLength::Fixed(4);
 
-    fn encode(&self, write: &mut impl Write) -> io::Result<()> {
+    fn encode(&self, write: &mut dyn Write) -> io::Result<()> {
         write.write_u32(self.game_time)
     }
 
-    fn decode(read: &mut impl Read, _len: usize) -> io::Result<Self> {
+    fn decode(read: &mut dyn Read, _len: usize) -> io::Result<Self> {
         Ok(Self { game_time: read.read_u32()? })
     }
 
@@ -213,16 +217,44 @@ impl SimpleElement for ResetEntities {
     const ID: u8 = id::RESET_ENTITIES;
     const LEN: ElementLength = ElementLength::Fixed(1);
 
-    fn encode(&self, write: &mut impl Write) -> io::Result<()> {
+    fn encode(&self, write: &mut dyn Write) -> io::Result<()> {
         write.write_bool(self.keep_player_on_base)
     }
 
-    fn decode(read: &mut impl Read, _len: usize) -> io::Result<Self> {
+    fn decode(read: &mut dyn Read, _len: usize) -> io::Result<Self> {
         Ok(Self { keep_player_on_base: read.read_bool()? })
     }
 
 }
 
+
+/// The header for the non-generic [`CreateBasePlayer`] element, that can be used to read
+/// the header once before 
+#[derive(Debug, Clone)]
+pub struct CreateBasePlayerHeader {
+    /// The unique identifier of the entity being created.
+    pub entity_id: u32,
+    /// The entity type id.
+    pub entity_type_id: u16,
+}
+
+impl SimpleElement for CreateBasePlayerHeader {
+
+    const ID: u8 = id::CREATE_BASE_PLAYER;
+    const LEN: ElementLength = ElementLength::Variable16;
+
+    fn encode(&self, _write: &mut dyn Write) -> io::Result<()> {
+        panic!("this header element should not be used for encoding");
+    }
+
+    fn decode(read: &mut dyn Read, _len: usize) -> io::Result<Self> {
+        Ok(Self {
+            entity_id: read.read_u32()?,
+            entity_type_id: read.read_u16()?,
+        })
+    }
+
+}
 
 /// Sent from the base when a player should be created, the entity id
 /// is given with its type.
@@ -234,8 +266,8 @@ impl SimpleElement for ResetEntities {
 pub struct CreateBasePlayer<E: Entity> {
     /// The unique identifier of the entity being created.
     pub entity_id: u32,
-    /// This string's usage is currently unknown.
-    pub unk: String,
+    /// The entity type id.
+    pub entity_type_id: u16,
     /// The actual data to be sent for creating the player's entity.
     pub entity_data: Box<E>,
     /// This integer describe the number of entity components composing
@@ -253,21 +285,25 @@ impl<E: Entity> SimpleElement for CreateBasePlayer<E> {
     const ID: u8 = id::CREATE_BASE_PLAYER;
     const LEN: ElementLength = ElementLength::Variable16;
 
-    fn encode(&self, write: &mut impl Write) -> io::Result<()> {
+    fn encode(&self, write: &mut dyn Write) -> io::Result<()> {
         write.write_u32(self.entity_id)?;
-        write.write_u16(self.entity_data.type_id())?;
-        write.write_string_variable(&self.unk)?;
+        write.write_u16(self.entity_type_id)?;
+        write.write_blob_variable(&[])?;  // Unknown blob or string?
         self.entity_data.encode(&mut *write)?;
         write.write_u8(self.entity_components_count)
     }
 
-    fn decode(read: &mut impl Read, _len: usize) -> io::Result<Self> {
+    fn decode(read: &mut dyn Read, _len: usize) -> io::Result<Self> {
         let entity_id = read.read_u32()?;
         let entity_type_id = read.read_u16()?;
+        let unk = read.read_blob_variable()?;
+        if !unk.is_empty() {
+            warn!("Non empty unknown blob when decoding CreateBasePlayer: {unk:?}");
+        }
         Ok(Self {
             entity_id,
-            unk: read.read_string_variable()?,
-            entity_data: Box::new(E::decode(&mut *read, entity_type_id)?),
+            entity_type_id,
+            entity_data: Box::new(E::decode(&mut *read)?),
             entity_components_count: read.read_u8()?,
         })
     }
@@ -304,11 +340,11 @@ impl SimpleElement for TickSync {
     const ID: u8 = id::TICK_SYNC;
     const LEN: ElementLength = ElementLength::Fixed(1);
 
-    fn encode(&self, write: &mut impl Write) -> io::Result<()> {
+    fn encode(&self, write: &mut dyn Write) -> io::Result<()> {
         write.write_u8(self.tick)
     }
 
-    fn decode(read: &mut impl Read, _len: usize) -> io::Result<Self> {
+    fn decode(read: &mut dyn Read, _len: usize) -> io::Result<Self> {
         Ok(Self { tick: read.read_u8()? })
     }
 
@@ -350,7 +386,7 @@ impl SimpleElement for ForcedPosition {
     const ID: u8 = id::FORCED_POSITION;
     const LEN: ElementLength = ElementLength::Fixed(38);
 
-    fn encode(&self, write: &mut impl Write) -> io::Result<()> {
+    fn encode(&self, write: &mut dyn Write) -> io::Result<()> {
         write.write_u32(self.entity_id)?;
         write.write_u32(self.space_id)?;
         write.write_u32(self.vehicle_entity_id)?;
@@ -358,7 +394,7 @@ impl SimpleElement for ForcedPosition {
         write.write_vec3(self.direction)
     }
 
-    fn decode(read: &mut impl Read, _len: usize) -> io::Result<Self> {
+    fn decode(read: &mut dyn Read, _len: usize) -> io::Result<Self> {
         Ok(Self {
             entity_id: read.read_u32()?,
             space_id: read.read_u32()?,
@@ -392,8 +428,89 @@ pub type VoiceData = DebugElementVariable16<{ id::VOICE_DATA }>;
 pub type RestoreClient = DebugElementVariable16<{ id::RESTORE_CLIENT }>;
 pub type SwitchBaseApp = DebugElementFixed<{ id::SWITCH_BASE_APP }, 9>;
 
-pub type ResourceHeader = DebugElementVariable16<{ id::RESOURCE_HEADER }>;
-pub type ResourceFragment = DebugElementVariable16<{ id::RESOURCE_FRAGMENT }>;
+
+/// Header describing a resource that will be downloaded in possibly many fragments.
+#[derive(Debug, Clone)]
+pub struct ResourceHeader {
+    pub id: u16,
+    pub description: String,
+}
+
+impl SimpleElement for ResourceHeader {
+    
+    const ID: u8 = id::RESOURCE_HEADER;
+    const LEN: ElementLength = ElementLength::Variable16;
+
+    fn encode(&self, write: &mut dyn Write) -> io::Result<()> {
+        write.write_u16(self.id)?;
+        write.write_string_variable(&self.description)?;
+        Ok(())
+    }
+
+    fn decode(read: &mut dyn Read, _len: usize) -> io::Result<Self> {
+        Ok(Self {
+            id: read.read_u16()?,
+            description: read.read_string_variable()?,
+        })
+    }
+
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResourceFlag {
+    None = 0,
+    First = 1,
+    Final = 2,
+}
+
+/// Header describing a resource that will be downloaded in possibly many fragments.
+#[derive(Clone)]
+pub struct ResourceFragment {
+    pub id: u16,
+    pub sequence_num: u8,
+    pub flag: ResourceFlag,
+    pub data: Vec<u8>,
+}
+
+impl SimpleElement for ResourceFragment {
+    
+    const ID: u8 = id::RESOURCE_FRAGMENT;
+    const LEN: ElementLength = ElementLength::Variable16;
+
+    fn encode(&self, write: &mut dyn Write) -> io::Result<()> {
+        write.write_u16(self.id)?;
+        write.write_u8(self.sequence_num)?;
+        write.write_u8(self.flag as u8)?;
+        write.write_blob(&self.data)?;
+        Ok(())
+    }
+
+    fn decode(read: &mut dyn Read, len: usize) -> io::Result<Self> {
+        Ok(Self {
+            id: read.read_u16()?,
+            sequence_num: read.read_u8()?,
+            flag: match read.read_u8()? {
+                0 => ResourceFlag::None,
+                1 => ResourceFlag::First,
+                2 => ResourceFlag::Final,
+                flags => return Err(io::Error::new(io::ErrorKind::InvalidData, format!("invalid resource flags: {flags}"))),
+            },
+            data: read.read_blob(len - 4)?,
+        })
+    }
+
+}
+
+impl fmt::Debug for ResourceFragment {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ResourceFragment")
+            .field("id", &self.id)
+            .field("sequence_num", &self.sequence_num)
+            .field("flag", &self.flag)
+            .field("data", &AsciiFmt(&self.data))
+            .finish()
+    }
+}
 
 pub type LoggedOff = DebugElementFixed<{ id::LOGGED_OFF }, 1>;
 
@@ -404,3 +521,49 @@ pub type SliceEntityProperty = DebugElementVariable16<{ id::SLICE_ENTITY_PROPERT
 pub type UpdateEntity = DebugElementVariable16<{ id::UPDATE_ENTITY }>;
 pub type SetCellAppExtAddress = DebugElementVariable16<{ id::SET_CELL_APP_EXT_ADDRESS }>;
 pub type LastProxyMessageAfterDirectCellAppConnection = DebugElementVariable16<{ id::LAST_PROXY_MESSAGE_AFTER_DIRECT_CELL_APP_CONNECTION }>;
+
+
+/// Decoding of a method call on an entity, the given method type should be the one of
+/// the entity being called.
+/// FIXME: For now, this doesn't support sub message id, but it's not a problem with
+/// the current version of the game which don't use it!
+#[derive(Debug, Clone)]
+pub struct EntityMethod<M: Method> {
+    pub inner: M,
+}
+
+impl<M: Method> Element for EntityMethod<M> {
+
+    type Config = ();
+
+    fn encode_length(&self, _config: &Self::Config) -> ElementLength {
+        // TODO: Support for sub-id
+        self.inner.encode_length()
+    }
+
+    fn encode(&self, write: &mut dyn Write, _config: &Self::Config) -> io::Result<u8> {
+        let exposed_id = self.inner.encode(write)?;
+        if exposed_id >= id::ENTITY_METHOD.slots_count() as u16 {
+            todo!("support for sub-id");
+        }
+        Ok(id::ENTITY_METHOD.first + exposed_id as u8)
+    }
+
+    fn decode_length(_config: &Self::Config, id: u8) -> ElementLength {
+        if !id::ENTITY_METHOD.contains(id) {
+            panic!("unexpected entity method element id: {id:02X}");
+        }
+        M::decode_length((id - id::ENTITY_METHOD.first) as u16)
+    }
+
+    fn decode(read: &mut dyn Read, _len: usize, _config: &Self::Config, id: u8) -> io::Result<Self> {
+        if !id::ENTITY_METHOD.contains(id) {
+            panic!("unexpected entity method element id: {id:02X}");
+        }
+        let inner = M::decode(read, (id - id::ENTITY_METHOD.first) as u16)?;
+        Ok(Self {
+            inner,
+        })
+    }
+
+}

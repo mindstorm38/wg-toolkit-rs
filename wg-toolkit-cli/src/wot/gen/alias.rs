@@ -7,7 +7,7 @@ pub type DB_ID = i64;
 pub type EXTRA_ID = u8;
 pub type VEH_TYPE_CD = u32;
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct SERVER_STATISTICS {
         pub clusterCCU: u32,
@@ -17,7 +17,7 @@ wgtk::struct_data_type! {
 
 pub type QUEUE_INFO = Python;
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct DEFAULT_QUEUE_INFO {
         pub classes: Vec<u32>,
@@ -25,21 +25,21 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct MAPS_TRAINING_QUEUE_INFO {
         pub queues: Python,
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct FUN_RANDOM_QUEUE_INFO {
         pub events: Python,
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct PUBLIC_ARENA_INFO {
         pub id: OBJECT_ID,
@@ -49,7 +49,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct ATTACK_RESULTS {
         pub targetID: OBJECT_ID,
@@ -95,21 +95,21 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct PREBATTLE_INVITE {
         pub createTime: u32,
         pub r#type: u16,
-        pub comment: String,
-        pub creator: String,
+        pub comment: RelaxString,
+        pub creator: RelaxString,
         pub creatorBadges: Python,
         pub creatorDBID: DB_ID,
-        pub creatorClanAbbrev: String,
+        pub creatorClanAbbrev: RelaxString,
         pub extraData: Python,
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct PREBATTLE_RESULTS {
         pub winner: u8,
@@ -119,27 +119,27 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct PUBLIC_CHAT_CHANNEL_INFO {
         pub id: OBJECT_ID,
-        pub channelName: String,
+        pub channelName: RelaxString,
         pub isReadOnly: BOOL,
         pub isSecured: BOOL,
         pub flags: u8,
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct PUBLIC_USERS_ROSTER_MEMBER_INFO {
         pub id: DB_ID,
-        pub nickName: String,
+        pub nickName: RelaxString,
         pub accessFlags: u8,
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct CHAT_ACTION_DATA {
         pub requestID: i64,
@@ -149,25 +149,25 @@ wgtk::struct_data_type! {
         pub sentTime: f64,
         pub channel: OBJECT_ID,
         pub originator: DB_ID,
-        pub originatorNickName: String,
+        pub originatorNickName: RelaxString,
         pub group: u8,
         pub data: Python,
         pub flags: u8,
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct GENERIC_MESSENGER_ARGS_chat2 {
         pub int32Arg1: i32,
         pub int64Arg1: i64,
         pub floatArg1: f64,
-        pub strArg1: String,
-        pub strArg2: String,
+        pub strArg1: RelaxString,
+        pub strArg2: RelaxString,
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct DISCLOSE_EVENT {
         pub vehicleID: OBJECT_ID,
@@ -176,7 +176,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct DOG_TAG_COMPONENT {
         pub id: i32,
@@ -185,14 +185,14 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct DOG_TAG {
         pub components: Vec<DOG_TAG_COMPONENT>,
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct BATTLE_DOG_TAG {
         pub dogTag: DOG_TAG,
@@ -201,7 +201,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct VEHICLE_DOG_TAG {
         pub vehicleId: OBJECT_ID,
@@ -209,7 +209,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct DOG_TAG_SETTINGS {
         pub showVictimsDogTag: BOOL,
@@ -217,12 +217,12 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct PUBLIC_VEHICLE_INFO {
-        pub name: String,
-        pub compDescr: String,
-        pub outfit: String,
+        pub name: RelaxString,
+        pub compDescr: RelaxString,
+        pub outfit: RelaxString,
         pub index: u8,
         pub team: u8,
         pub prebattleID: OBJECT_ID,
@@ -233,16 +233,16 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct ARENA_VEH_INFO {
         pub vehInvID: i32,
-        pub vehCompDescr: String,
-        pub vehOutfit: String,
+        pub vehCompDescr: RelaxString,
+        pub vehOutfit: RelaxString,
         pub vehAmmo: Vec<i32>,
         pub vehSetups: Python,
         pub vehSetupsIndexes: Python,
-        pub vehCrew: Vec<String>,
+        pub vehCrew: Vec<RelaxString>,
         pub vehCrewInvIDs: Vec<i32>,
         pub vehCrewSkins: Python,
         pub marksOnGun: u8,
@@ -262,7 +262,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct USER_EXTRA_SETTINGS {
         pub hideNonHistoric: u8,
@@ -283,14 +283,14 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct ARENA_ADDPLAYER_INFO {
-        pub name: String,
+        pub name: RelaxString,
         pub attrs: u64,
         pub databaseID: DB_ID,
         pub centerID: i32,
-        pub clanAbbrev: String,
+        pub clanAbbrev: RelaxString,
         pub clanDBID: DB_ID,
         pub prebattle: Mailbox,
         pub isPrebattleCreator: BOOL,
@@ -324,7 +324,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct AVATAR_VEHICLE_ROSTER {
         pub vehicleID: OBJECT_ID,
@@ -334,7 +334,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct ATTACKER_INFO {
         pub baseMB: Mailbox,
@@ -363,7 +363,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct DESTRUCTIBLE_ATTACK_INFO {
         pub hitPoint: Vec3,
@@ -372,7 +372,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct CLIENT_STATUS_STATISTICS {
         pub ping_lt_50: f32,
@@ -384,19 +384,19 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct VEHICLE_SPATIAL_INFO {
         pub vehicleID: OBJECT_ID,
         pub team: u8,
         pub position: Vec3,
         pub isAlive: BOOL,
-        pub vehClass: String,
+        pub vehClass: RelaxString,
         pub prebattleID: OBJECT_ID,
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct VEHICLE_SYNC_ATTRS {
         pub circularVisionRadius: u16,
@@ -405,14 +405,14 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct IS_OBSERVED_BY_ENEMY {
         pub endTime: f32,
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct SIEGE_STATE_STATUS {
         pub status: u8,
@@ -421,14 +421,14 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct BURNOUT_WARNING {
         pub status: u8,
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct DUAL_GUN_STATUS_TIMES {
         pub baseTime: f32,
@@ -437,7 +437,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct DUAL_GUN_STATUS {
         pub status: u8,
@@ -445,7 +445,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct DESTROYED_DEVICE_IS_REPAIRING {
         pub extraIndex: u8,
@@ -456,21 +456,21 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct IS_OTHER_VEHICLE_DAMAGED_DEVICES_VISIBLE {
         pub status: u8,
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct BURNOUT_UNAVAILABLE {
         pub status: BOOL,
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct OVERTURN_LEVEL {
         pub level: u8,
@@ -478,7 +478,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct IN_AOE_ZONE_STATUS {
         pub zoneID: OBJECT_ID,
@@ -489,7 +489,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct DROWN_LEVEL {
         pub level: u8,
@@ -497,7 +497,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct BATTLE_EVENT {
         pub eventType: u8,
@@ -507,7 +507,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct BATTLE_EVENTS_SUMMARY {
         pub damage: u32,
@@ -523,7 +523,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct REMOTE_CAMERA_DATA {
         pub time: f64,
@@ -535,7 +535,7 @@ wgtk::struct_data_type! {
 
 pub type STUN_INFO = f64;
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct FRONT_LINE_DATA {
         pub columnWidth: f32,
@@ -552,7 +552,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct AVATAR_AMMO_VIEWS {
         pub vehTypeCompDescrs: Vec<i32>,
@@ -560,7 +560,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct AVATAR_AMMO_FOR_CELL {
         pub abilitiesIDs: Python,
@@ -568,7 +568,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct POST_PROGRESSION_SETUPS {
         pub devicesSetups: Vec<Vec<u32>>,
@@ -578,11 +578,11 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct RESPAWN_AVAILABLE_VEHICLE {
-        pub compDescr: String,
-        pub crewCompactDescrs: Vec<String>,
+        pub compDescr: RelaxString,
+        pub crewCompactDescrs: Vec<RelaxString>,
         pub settings: u16,
         pub vehSetups: POST_PROGRESSION_SETUPS,
         pub vehSetupsIndexes: Vec<u8>,
@@ -592,7 +592,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct RESPAWN_COOLDOWN_ITEM {
         pub vehTypeCompDescr: VEH_TYPE_CD,
@@ -600,7 +600,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct RESPAWN_ZONE {
         pub position: Vec3,
@@ -608,10 +608,10 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct RESPAWN_INFO {
-        pub compDescr: String,
+        pub compDescr: RelaxString,
         pub respawnType: u8,
         pub autoRespawnPiT: f32,
         pub manualRespawnPiT: f32,
@@ -621,7 +621,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct RESPAWN_LIMITED_VEHICLES {
         pub group: u8,
@@ -629,11 +629,11 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct RESPAWN_INFO_VEHICLE {
-        pub compDescr: String,
-        pub crewCompactDescrs: Vec<String>,
+        pub compDescr: RelaxString,
+        pub crewCompactDescrs: Vec<RelaxString>,
         pub commanderSkinID: u16,
         pub marksOnGun: u8,
         pub index: u16,
@@ -644,7 +644,7 @@ wgtk::struct_data_type! {
         pub policyID: u8,
         pub onRespawnSettings: Python,
         pub ammo: Vec<i32>,
-        pub outfit: String,
+        pub outfit: RelaxString,
         pub vehPerks: Python,
         pub vehSetups: Python,
         pub vehSetupsIndexes: Python,
@@ -656,7 +656,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct BUFF_EFFECT {
         pub radius: f32,
@@ -666,7 +666,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct DOT_EFFECT {
         pub endTime: f64,
@@ -676,10 +676,10 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct BUFF_EFFECT_INACTIVATION {
-        pub senderKey: String,
+        pub senderKey: RelaxString,
         pub startTime: f64,
         pub endTime: f64,
         pub inactivationStartTime: f64,
@@ -687,10 +687,10 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct HOT_EFFECT {
-        pub senderKey: String,
+        pub senderKey: RelaxString,
         pub startTime: f64,
         pub endTime: f64,
         pub inactivationStartTime: f64,
@@ -699,7 +699,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct INSPIRED_EFFECT {
         pub primary: BOOL,
@@ -712,7 +712,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct SMOKE_INFO {
         pub smokeID: f64,
@@ -723,7 +723,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct VEHICLE_DETECTOR_INFO {
         pub detectorID: u16,
@@ -733,7 +733,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct COOLDOWN_INFO {
         pub id: u8,
@@ -743,19 +743,19 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct CLIENT_VEHICLE_PUBLIC_INFO {
         pub vehID: OBJECT_ID,
-        pub name: String,
-        pub realName: String,
-        pub compDescr: String,
+        pub name: RelaxString,
+        pub realName: RelaxString,
+        pub compDescr: RelaxString,
         pub team: i8,
         pub isAlive: i8,
         pub isAvatarReady: i8,
         pub isTeamKiller: i8,
         pub accountDBID: DB_ID,
-        pub clanAbbrev: String,
+        pub clanAbbrev: RelaxString,
         pub clanDBID: DB_ID,
         pub prebattleID: OBJECT_ID,
         pub isPrebattleCreator: i8,
@@ -765,8 +765,8 @@ wgtk::struct_data_type! {
         pub potapovQuestIDs: Vec<u16>,
         pub potapovQuestInfo: Python,
         pub ranked: Python,
-        pub outfit: String,
-        pub sessionID: String,
+        pub outfit: RelaxString,
+        pub sessionID: RelaxString,
         pub wtr: i16,
         pub badges: Python,
         pub overriddenBadge: u8,
@@ -780,7 +780,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct PLAY_LIMITS {
         pub curfew: i32,
@@ -790,7 +790,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct BATTLE_CHAT_RESTRICTION {
         pub isBattleChatDisabled: BOOL,
@@ -798,7 +798,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct VEHICLE_IN_DEATHZONE {
         pub vehicleId: OBJECT_ID,
@@ -807,7 +807,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct TIME_WITH_REASON {
         pub endTime: i32,
@@ -816,7 +816,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct PERK_INFO_HUD {
         pub perkID: OBJECT_ID,
@@ -826,7 +826,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct PERK_INFO_RIBBON {
         pub perkID: OBJECT_ID,
@@ -834,18 +834,18 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct TOURNAMEMT_PARTICIPANT {
         pub databaseID: DB_ID,
-        pub name: String,
+        pub name: RelaxString,
         pub role: u8,
         pub teamID: u8,
         pub typeCD: i32,
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct STEALTH_RADAR_INFO {
         pub equipmentID: u16,
@@ -855,7 +855,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct REGENERATION_KIT_INFO {
         pub isActive: BOOL,
@@ -864,7 +864,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct VEHICLE_HEALTH_INFO {
         pub id: OBJECT_ID,
@@ -876,7 +876,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct GUN_MARKER {
         pub gunPosition: Vec3,
@@ -885,7 +885,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct KILL_CAM_ATTACKER_SPOTTED {
         pub position: Vec3,
@@ -896,15 +896,15 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct KILL_CAM_ATTACKER_UNSPOTTED {
         pub health: u16,
-        pub vehicleType: String,
+        pub vehicleType: RelaxString,
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct KILL_CAM_ATTACKER {
         pub attackerID: OBJECT_ID,
@@ -913,7 +913,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct KILL_CAM_VICTIM {
         pub position: Vec3,
@@ -923,11 +923,11 @@ wgtk::struct_data_type! {
         pub victimIsNotSpotted: BOOL,
         pub siegeState: u16,
         pub damageStickers: Vec<u64>,
-        pub causeOfDeath: String,
+        pub causeOfDeath: RelaxString,
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct KILL_CAM_PROJECTILE_UNSPOTTED {
         pub shotID: SHOT_ID,
@@ -964,7 +964,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct KILL_CAM_PROJECTILE_SPOTTED {
         pub distanceOfShot: f32,
@@ -972,7 +972,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct KILL_CAM_PROJECTILE {
         pub unspottedData: KILL_CAM_PROJECTILE_UNSPOTTED,
@@ -980,7 +980,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct KILL_CAM_DATA {
         pub attacker: KILL_CAM_ATTACKER,
@@ -990,7 +990,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct TRACK_STATE {
         pub isBroken: BOOL,
@@ -999,7 +999,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct VEHICLE_HIT_DIRECTION {
         pub hitDirYaw: f32,
@@ -1013,7 +1013,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct VEHICLE_CLIP_RELOAD_TIME {
         pub endTime: f32,
@@ -1026,7 +1026,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct VEHICLE_GUN_RELOAD_TIME {
         pub endTime: f32,
@@ -1036,7 +1036,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct OWN_VEHICLE_POSITION {
         pub position: Vec3,
@@ -1046,14 +1046,14 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct TARGET_VEHICLE_ID {
         pub targetID: OBJECT_ID,
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct DUAL_GUN_STATE {
         pub activeGun: u8,
@@ -1062,7 +1062,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct VEHICLE_AMMO {
         pub compactDescr: i32,
@@ -1075,7 +1075,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct VEHICLE_DAMAGE_INFO {
         pub extraIndex: EXTRA_ID,
@@ -1086,7 +1086,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct VEHICLE_OPTIONAL_DEVICE_STATUS {
         pub deviceID: u8,
@@ -1094,7 +1094,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct VEHICLE_SETTING {
         pub vehicleID: OBJECT_ID,
@@ -1103,7 +1103,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct TARGETING_INFO {
         pub turretYaw: f32,
@@ -1118,7 +1118,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct BATTLE_EVENTS {
         pub events: Vec<BATTLE_EVENT>,
@@ -1126,7 +1126,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct WELCOME_TO_SECTOR {
         pub sectorID: u8,
@@ -1138,14 +1138,14 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct SECTOR_SHOOTING {
         pub sectorID: u8,
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct PLANE_TRAJECTORY {
         pub equipmentID: u16,
@@ -1160,7 +1160,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct FIRE_INFO {
         pub deviceExtraIndex: EXTRA_ID,
@@ -1171,7 +1171,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct DEBUFF_INFO {
         pub attackReasonID: u16,
@@ -1179,7 +1179,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct ROCKET_ACCELERATION_STATE_STATUS {
         pub status: u8,
@@ -1189,7 +1189,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct AUTO_SHOOT_GUN_STATE_STATUS {
         pub state: u8,
@@ -1201,7 +1201,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct GOODIE_RESOURCE {
         pub r#type: u8,
@@ -1210,7 +1210,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct GOODIE_STATE_INFO {
         pub state: u8,
@@ -1220,7 +1220,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct BATTLE_GOODIE_RECORD {
         pub goodieID: u32,
@@ -1231,7 +1231,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct ROLE_EQUIPMENT_STATE {
         pub level: u8,
@@ -1239,7 +1239,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct STATUS_WITH_TIME_INTERVAL {
         pub statusID: u8,
@@ -1248,7 +1248,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct TIME_INTERVAL {
         pub startTime: f32,
@@ -1256,7 +1256,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct STATE_WITH_TIME_INTERVAL {
         pub stateID: u8,
@@ -1265,7 +1265,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct VISUAL_SCRIPT_EQUIPMENT_STATE {
         pub quantity: i32,
@@ -1276,24 +1276,24 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct VISUAL_SCRIPT_EQUIPMENT_PUBLIC_STATE {
         pub stage: u8,
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct SPAWN_AVAILABLE_VEHICLE {
-        pub compDescr: String,
+        pub compDescr: RelaxString,
         pub settings: u16,
         pub isRent: BOOL,
         pub isElite: BOOL,
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct SPAWN_POINT_INFO {
         pub vehicleID: OBJECT_ID,
@@ -1301,41 +1301,41 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct SPAWN_KEY_POINT {
-        pub guid: String,
+        pub guid: RelaxString,
         pub position: Vec2,
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct TEAM_SPAWN_KEY_POINT {
         pub vehID: OBJECT_ID,
-        pub guid: String,
+        pub guid: RelaxString,
         pub placed: BOOL,
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct GAME_OBJECT_STATE {
-        pub id: String,
+        pub id: RelaxString,
         pub state: BOOL,
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct GAME_OBJECT_ACTIVATION {
-        pub id: String,
+        pub id: RelaxString,
         pub start: f32,
         pub end: f32,
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct POLYGON_TRIGGER_PARAMS {
         pub step: u16,
@@ -1346,15 +1346,15 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct SPAWNGROUP_INFO {
-        pub name: String,
+        pub name: RelaxString,
         pub position: Vec2,
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct TEAM_LIVES {
         pub vehicleID: OBJECT_ID,
@@ -1364,7 +1364,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct DEATH_INFO {
         pub victimID: OBJECT_ID,
@@ -1375,26 +1375,26 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct VEHICLES_INFO {
         pub vehicleID: OBJECT_ID,
         pub isAlive: BOOL,
-        pub outfitCD: String,
-        pub compDescr: String,
-        pub fakeName: String,
-        pub name: String,
+        pub outfitCD: RelaxString,
+        pub compDescr: RelaxString,
+        pub fakeName: RelaxString,
+        pub name: RelaxString,
         pub team: i8,
         pub isAvatarReady: BOOL,
         pub isTeamKiller: BOOL,
         pub accountDBID: u64,
-        pub clanAbbrev: String,
+        pub clanAbbrev: RelaxString,
         pub clanDBID: DB_ID,
         pub prebattleID: OBJECT_ID,
         pub isPrebattleCreator: BOOL,
         pub forbidInBattleInvitations: BOOL,
         pub igrType: i8,
-        pub avatarSessionID: String,
+        pub avatarSessionID: RelaxString,
         pub overriddenBadge: i8,
         pub customRoleSlotTypeId: i8,
         pub botDisplayStatus: i8,
@@ -1413,7 +1413,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct PVE_MINIMAP_DATA {
         pub minimapBorders: Box<[Vec2; 2]>,
@@ -1421,18 +1421,18 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct PVE_TARGET_MARKER {
         pub settingId: i16,
         pub targetId: i32,
-        pub visibleStyle: String,
-        pub invisibleStyle: String,
+        pub visibleStyle: RelaxString,
+        pub invisibleStyle: RelaxString,
         pub lastVisiblePosition: Vec3,
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct COMP7_PLAYER_STATS {
         pub damageDone: i16,
@@ -1445,10 +1445,10 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct COMP7_EQUIPMENT {
-        pub name: String,
+        pub name: RelaxString,
         pub compactDescr: i32,
         pub stage: u8,
         pub endTime: f64,
@@ -1458,7 +1458,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct GUN_RELOAD_INFO {
         pub activeGun: u8,
@@ -1471,26 +1471,26 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct COMP7_VEHICLE_INFO {
         pub vehicleID: OBJECT_ID,
         pub accountDBID: u64,
-        pub name: String,
-        pub fakeName: String,
+        pub name: RelaxString,
+        pub fakeName: RelaxString,
         pub team: i8,
         pub clanDBID: DB_ID,
-        pub clanAbbrev: String,
-        pub outfitCD: String,
-        pub compDescr: String,
+        pub clanAbbrev: RelaxString,
+        pub outfitCD: RelaxString,
+        pub compDescr: RelaxString,
         pub maxHealth: i16,
         pub curHealth: i16,
         pub isAlive: BOOL,
         pub deathInfo: DEATH_INFO,
         pub gunReloadInfo: GUN_RELOAD_INFO,
-        pub criticalDevices: Vec<String>,
-        pub destroyedDevices: Vec<String>,
-        pub injuredTankmen: Vec<String>,
+        pub criticalDevices: Vec<RelaxString>,
+        pub destroyedDevices: Vec<RelaxString>,
+        pub injuredTankmen: Vec<RelaxString>,
         pub vehicleAmmoList: Vec<VEHICLE_AMMO>,
         pub consumableEquipment: Vec<COMP7_EQUIPMENT>,
         pub deviceEquipment: Vec<COMP7_EQUIPMENT>,
@@ -1509,7 +1509,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct COMP7_POI_INFO {
         pub id: OBJECT_ID,
@@ -1519,7 +1519,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct INVADER_CAPTURE_POINTS {
         pub vehicleID: OBJECT_ID,
@@ -1527,7 +1527,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct COMP7_BASE_INFO {
         pub id: OBJECT_ID,
@@ -1540,14 +1540,14 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct ANON79 {
-        pub equipment: Vec<String>,
+        pub equipment: Vec<RelaxString>,
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct ANON172 {
         pub points: Vec<Vec3>,
@@ -1555,7 +1555,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct ANON174 {
         pub position: Vec3,
@@ -1563,7 +1563,7 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct ANON176 {
         pub position: Vec3,
@@ -1571,20 +1571,20 @@ wgtk::struct_data_type! {
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct ANON178 {
         pub position: Vec3,
-        pub text: String,
+        pub text: RelaxString,
         pub color: Vec4,
         pub textSize: f32,
     }
 }
 
-wgtk::struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct ANON180 {
-        pub name: String,
+        pub name: RelaxString,
         pub version: u32,
         pub destroyTime: f32,
         pub lines: Vec<ANON172>,

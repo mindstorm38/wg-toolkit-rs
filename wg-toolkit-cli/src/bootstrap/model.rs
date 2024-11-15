@@ -3,8 +3,6 @@ use std::sync::Arc;
 
 use indexmap::IndexMap;
 
-use wgtk::net::element::ElementLength;
-
 
 /// Type system, containing all named types.
 #[derive(Debug, Default)]
@@ -150,7 +148,8 @@ pub struct TyDict {
 pub struct TyDictProp {
     pub name: String,
     pub ty: Ty,
-    pub default: Option<String>,
+    #[allow(unused)]  // Not used for generation
+    pub default: Option<TyDefault>,
 }
 
 #[derive(Debug)]
@@ -160,8 +159,8 @@ pub struct TySeq {
 }
 
 /// Defines the default value for every type category.
-/// TODO:
 #[derive(Debug)]
+#[allow(unused)]  // Not used for generation
 pub enum TyDefault {
     Int8(i8),
     Int16(i16),
@@ -193,6 +192,7 @@ pub struct Entity {
     /// The actual storage for the entity, this has the same properties as an interface.
     pub interface: Interface,
     /// An optional parent entity to import all properties from.
+    #[allow(unused)]  // Not used for generation
     pub parent: Option<String>,
     /// The index for network protocol.
     pub id: usize,
@@ -234,10 +234,15 @@ pub struct Arg {
 pub struct Property {
     pub name: String,
     pub ty: Ty,
+    #[allow(unused)]  // Not used for generation
     pub persistent: bool,
+    #[allow(unused)]  // Not used for generation
     pub identifier: bool,
+    #[allow(unused)]  // Not used for generation
     pub indexed: bool,
+    #[allow(unused)]  // Not used for generation
     pub database_len: Option<u32>,
+    #[allow(unused)]  // Not used for generation
     pub default: Option<String>,
     pub flags: PropertyFlags,
 }

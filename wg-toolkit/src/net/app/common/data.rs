@@ -1,52 +1,105 @@
 //! Definition of common data types that can be transferred as entity or method calls.
 
 use std::io::{self, Read, Write};
+use std::fmt;
 
 pub use glam::{Vec2, Vec3, Vec4};
 
 use crate::util::io::{WgReadExt, WgWriteExt};
+use crate::util::AsciiFmt;
 
 
-/// This macro can be used to create simple aggregation of structures with all fields of
-/// type [`DataType`], the structure is both defined and trait is implemented.
-#[macro_export]
-macro_rules! struct_data_type {
-    (
-        $(
-            $(#[$attr:meta])* 
-            $struct_vis:vis struct $struct_name:ident {
-                $( $field_vis:vis $field_name:ident : $field_ty:ty ),*
-                $(,)?
-            }
-        )*
-    ) => {
-        $(
-            $(#[$attr])* 
-            $struct_vis struct $struct_name {
-                $( $field_vis $field_name : $field_ty,)*
-            }
+/// Represent an element data type
+pub trait DataType: Sized {
 
-            impl $crate::net::app::common::data::DataType for $struct_name {
-                fn write(&self, write: &mut impl std::io::Write) -> std::io::Result<()> {
-                    $( self.$field_name.write(&mut *write)?; )*
-                    Ok(())
-                }
-                fn read(read: &mut impl std::io::Read) -> std::io::Result<Self> {
-                    Ok(Self {
-                        $( $field_name: <$field_ty>::read(&mut *read)?, )*
-                    })
-                }
-            }
-        )*
-    };
+    fn write(&self, write: &mut dyn Write) -> io::Result<()>;
+
+    fn read(read: &mut dyn Read) -> io::Result<Self>;
+
 }
 
+impl DataType for () {
+
+    #[inline(always)]
+    fn write(&self, _write: &mut dyn Write) -> io::Result<()> {
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn read(_read: &mut dyn Read) -> io::Result<Self> {
+        Ok(())
+    }
+
+}
+
+impl DataType for String {
+
+    #[inline(always)]
+    fn write(&self, write: &mut dyn Write) -> io::Result<()> {
+        write.write_string_variable(self)
+    }
+
+    #[inline(always)]
+    fn read(read: &mut dyn Read) -> io::Result<Self> {
+        read.read_string_variable()
+    }
+
+}
+
+
+/// A string data type that may or may not successfully be decoded, if invalid UTF-8.
+#[derive(Clone, PartialEq, Eq)]
+pub enum RelaxString {
+    Utf8(String),
+    Raw(Vec<u8>),
+}
+
+impl fmt::Debug for RelaxString {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Utf8(string) => f.debug_tuple("Utf8").field(string).finish(),
+            Self::Raw(bytes) => f.debug_tuple("Raw").field(&AsciiFmt(&bytes)).finish(),
+        }
+    }
+}
+
+impl DataType for RelaxString {
+
+    fn write(&self, write: &mut dyn Write) -> io::Result<()> {
+        write.write_blob_variable(match self {
+            RelaxString::Utf8(s) => s.as_bytes(),
+            RelaxString::Raw(vec) => &vec[..],
+        })
+    }
+
+    fn read(read: &mut dyn Read) -> io::Result<Self> {
+        Ok(match read.read_string_variable_fallback()? {
+            Ok(string) => RelaxString::Utf8(string),
+            Err(bytes) => RelaxString::Raw(bytes),
+        })
+    }
+
+}
 
 /// The Python builtin data type.
 #[derive(Debug)]
 pub struct Python {
     /// Internal pickle value.
     pub value: serde_pickle::Value,
+}
+
+impl DataType for Python {
+
+    #[inline(always)]
+    fn write(&self, write: &mut dyn Write) -> io::Result<()> {
+        write.write_python_pickle(&self.value)
+    }
+
+    #[inline(always)]
+    fn read(read: &mut dyn Read) -> io::Result<Self> {
+        read.read_python_pickle().map(|value| Self { value })
+    }
+
 }
 
 /// The mailbox type used sparingly in method calls.
@@ -56,59 +109,16 @@ pub struct Mailbox {
     pub address: (), // TODO: 
 }
 
-/// Represent an element data type
-pub trait DataType: Sized {
-
-    fn write(&self, write: &mut impl Write) -> io::Result<()>;
-
-    fn read(read: &mut impl Read) -> io::Result<Self>;
-
-}
-
-impl DataType for () {
-
-    fn write(&self, _write: &mut impl Write) -> io::Result<()> {
-        Ok(())
-    }
-
-    fn read(_read: &mut impl Read) -> io::Result<Self> {
-        Ok(())
-    }
-
-}
-
-impl DataType for String {
-
-    fn write(&self, write: &mut impl Write) -> io::Result<()> {
-        write.write_string_variable(self)
-    }
-
-    fn read(read: &mut impl Read) -> io::Result<Self> {
-        read.read_string_variable()
-    }
-
-}
-
-impl DataType for Python {
-
-    fn write(&self, write: &mut impl Write) -> io::Result<()> {
-        write.write_python_pickle(&self.value)
-    }
-
-    fn read(read: &mut impl Read) -> io::Result<Self> {
-        read.read_python_pickle().map(|value| Self { value })
-    }
-
-}
-
 impl DataType for Mailbox {
 
-    fn write(&self, _write: &mut impl Write) -> io::Result<()> {
-        todo!("mailbox write")
+    #[inline]
+    fn write(&self, _write: &mut dyn Write) -> io::Result<()> {
+        Err(io::Error::new(io::ErrorKind::InvalidData, "mailbox write not yet supported"))
     }
 
-    fn read(_read: &mut impl Read) -> io::Result<Self> {
-        todo!("mailbox read")
+    #[inline]
+    fn read(_read: &mut dyn Read) -> io::Result<Self> {
+        Err(io::Error::new(io::ErrorKind::InvalidData, "mailbox write not yet supported"))
     }
 
 }
@@ -117,11 +127,13 @@ macro_rules! impl_builtin_copy {
     ($ty:ty, $write_method:ident, $read_method:ident) => {
         impl DataType for $ty {
 
-            fn write(&self, write: &mut impl Write) -> io::Result<()> {
+            #[inline(always)]
+            fn write(&self, write: &mut dyn Write) -> io::Result<()> {
                 write.$write_method(*self)
             }
         
-            fn read(read: &mut impl Read) -> io::Result<Self> {
+            #[inline(always)]
+            fn read(read: &mut dyn Read) -> io::Result<Self> {
                 read.$read_method()
             }
         
@@ -145,14 +157,14 @@ impl_builtin_copy!(Vec4, write_vec4, read_vec4);
 
 impl<const LEN: usize, D: DataType> DataType for Box<[D; LEN]> {
 
-    fn write(&self, write: &mut impl Write) -> io::Result<()> {
+    fn write(&self, write: &mut dyn Write) -> io::Result<()> {
         for comp in &**self {
             comp.write(&mut *write)?;
         }
         Ok(())
     }
 
-    fn read(read: &mut impl Read) -> io::Result<Self> {
+    fn read(read: &mut dyn Read) -> io::Result<Self> {
         
         let mut tmp = Vec::with_capacity(LEN);
         for _ in 0..LEN {
@@ -171,7 +183,7 @@ impl<const LEN: usize, D: DataType> DataType for Box<[D; LEN]> {
 
 impl<D: DataType> DataType for Vec<D> {
 
-    fn write(&self, write: &mut impl Write) -> io::Result<()> {
+    fn write(&self, write: &mut dyn Write) -> io::Result<()> {
         write.write_packed_u24(self.len() as u32)?;
         for comp in &**self {
             comp.write(&mut *write)?;
@@ -179,7 +191,7 @@ impl<D: DataType> DataType for Vec<D> {
         Ok(())
     }
 
-    fn read(read: &mut impl Read) -> io::Result<Self> {
+    fn read(read: &mut dyn Read) -> io::Result<Self> {
         let len = read.read_packed_u24()? as usize;
         let mut tmp = Vec::with_capacity(len);
         for _ in 0..len {
@@ -188,4 +200,39 @@ impl<D: DataType> DataType for Vec<D> {
         Ok(tmp)
     }
 
+}
+
+
+/// This macro can be used to create simple aggregation of structures with all fields of
+/// type [`DataType`], the structure is both defined and trait is implemented.
+#[macro_export]
+macro_rules! __bootstrap_struct_data_type {
+    (
+        $(
+            $(#[$attr:meta])* 
+            $struct_vis:vis struct $struct_name:ident {
+                $( $field_vis:vis $field_name:ident : $field_ty:ty ),*
+                $(,)?
+            }
+        )*
+    ) => {
+        $(
+            $(#[$attr])* 
+            $struct_vis struct $struct_name {
+                $( $field_vis $field_name : $field_ty,)*
+            }
+
+            impl $crate::net::app::common::data::DataType for $struct_name {
+                fn write(&self, write: &mut dyn std::io::Write) -> std::io::Result<()> {
+                    $( self.$field_name.write(&mut *write)?; )*
+                    Ok(())
+                }
+                fn read(read: &mut dyn std::io::Read) -> std::io::Result<Self> {
+                    Ok(Self {
+                        $( $field_name: <$field_ty>::read(&mut *read)?, )*
+                    })
+                }
+            }
+        )*
+    };
 }

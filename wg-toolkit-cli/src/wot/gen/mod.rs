@@ -4,9 +4,5 @@
 
 pub mod alias;
 
-pub mod client;
-pub mod base;
-pub mod cell;
-
 pub mod interface;
 pub mod entity;

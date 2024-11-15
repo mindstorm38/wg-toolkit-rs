@@ -225,16 +225,22 @@ impl App {
                 warn!(peer_addr = %peer.addr, real_addr = %peer.real_addr, "accept out failed");
             }
 
-            if let Some((bundle, channel)) = accept_channel.accept(packet, peer.addr) {
-                return Event::Bundle(BundleEvent {
-                    addr: peer.addr,
-                    bundle,
-                    direction,
-                    channel: channel.is_on().then(|| PacketChannel {
-                        index: channel.index(),
-                    }),
-                })
-            }
+            let Some(mut channel) = accept_channel.accept(packet, peer.addr) else {
+                continue;
+            };
+
+            let Some(bundle) = channel.next_bundle() else {
+                continue;
+            };
+
+            return Event::Bundle(BundleEvent {
+                addr: peer.addr,
+                bundle,
+                direction,
+                channel: channel.is_on().then(|| PacketChannel {
+                    index: channel.index(),
+                }),
+            })
 
         }
 

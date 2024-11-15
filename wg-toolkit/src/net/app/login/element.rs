@@ -42,11 +42,11 @@ impl SimpleElement for Ping {
     const ID: u8 = id::PING;
     const LEN: ElementLength = ElementLength::Fixed(1);
 
-    fn encode(&self, write: &mut impl Write) -> io::Result<()> {
+    fn encode(&self, write: &mut dyn Write) -> io::Result<()> {
         write.write_u8(self.num)
     }
 
-    fn decode(read: &mut impl Read, _len: usize) -> io::Result<Self> {
+    fn decode(read: &mut dyn Read, _len: usize) -> io::Result<Self> {
         Ok(Self { num: read.read_u8()? })
     }
 
@@ -96,7 +96,7 @@ impl Element for LoginRequest {
         ElementLength::Variable16
     }
 
-    fn encode(&self, write: &mut impl Write, config: &Self::Config) -> io::Result<u8> {
+    fn encode(&self, write: &mut dyn Write, config: &Self::Config) -> io::Result<u8> {
         write.write_u32(self.protocol)?;
         match config {
             LoginRequestEncryption::Clear => {
@@ -116,7 +116,7 @@ impl Element for LoginRequest {
         ElementLength::Variable16
     }
 
-    fn decode(read: &mut impl Read, _len: usize, config: &Self::Config, id: u8) -> io::Result<Self> {
+    fn decode(read: &mut dyn Read, _len: usize, config: &Self::Config, id: u8) -> io::Result<Self> {
         debug_assert_eq!(id, Self::ID);
         let protocol = read.read_u32()?;
         if read.read_u8()? != 0 {
@@ -265,7 +265,7 @@ impl Element for LoginResponse {
         ElementLength::ZERO
     }
 
-    fn encode(&self, write: &mut impl Write, config: &Self::Config) -> io::Result<u8> {
+    fn encode(&self, write: &mut dyn Write, config: &Self::Config) -> io::Result<u8> {
         
         match self {
             Self::Success(success) => {
@@ -307,7 +307,7 @@ impl Element for LoginResponse {
         ElementLength::ZERO
     }
 
-    fn decode(read: &mut impl Read, _len: usize, config: &Self::Config, _id: u8) -> io::Result<Self> {
+    fn decode(read: &mut dyn Read, _len: usize, config: &Self::Config, _id: u8) -> io::Result<Self> {
         
         let error = match read.read_u8()? {
             1 => {
@@ -415,7 +415,7 @@ impl<E: Element> Element for ChallengeResponse<E> {
         ElementLength::Variable16
     }
 
-    fn encode(&self, write: &mut impl Write, config: &Self::Config) -> io::Result<u8> {
+    fn encode(&self, write: &mut dyn Write, config: &Self::Config) -> io::Result<u8> {
         write.write_f32(self.duration.as_secs_f32())?;
         self.data.encode(write, config)
     }
@@ -424,7 +424,7 @@ impl<E: Element> Element for ChallengeResponse<E> {
         ElementLength::Variable16
     }
 
-    fn decode(read: &mut impl Read, len: usize, config: &Self::Config, id: u8) -> io::Result<Self> {
+    fn decode(read: &mut dyn Read, len: usize, config: &Self::Config, id: u8) -> io::Result<Self> {
         Ok(ChallengeResponse { 
             duration: Duration::from_secs_f32(read.read_f32()?), 
             data: E::decode(read, len - 4, config, id)?
@@ -438,7 +438,7 @@ impl SimpleElement for CuckooCycleResponse {
     const ID: u8 = id::CHALLENGE_RESPONSE;
     const LEN: ElementLength = ElementLength::ZERO;  // Not used by ChallengeResponse<E>
 
-    fn encode(&self, write: &mut impl Write) -> io::Result<()> {
+    fn encode(&self, write: &mut dyn Write) -> io::Result<()> {
         write.write_blob_variable(&self.key)?;
         for &nonce in &self.solution {
             write.write_u32(nonce)?;
@@ -446,7 +446,7 @@ impl SimpleElement for CuckooCycleResponse {
         Ok(())
     }
 
-    fn decode(read: &mut impl Read, _len: usize) -> io::Result<Self> {
+    fn decode(read: &mut dyn Read, _len: usize) -> io::Result<Self> {
 
         let key = read.read_blob_variable()?;
         let mut solution = Vec::with_capacity(42);

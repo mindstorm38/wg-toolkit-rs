@@ -29,7 +29,7 @@ pub fn cmd_bootstrap(args: BootstrapArgs) -> CliResult<()> {
     let model = load(fs)
         .map_err(|e| format!("Failed to load model, reason: {e}"))?;
     
-    let mut state = State::default();
+    let mut state = State::new();
     generate(&args.dest, &model, &mut state)
         .map_err(|e| format!("Failed to generate model, reason: {e}"))?;
 
@@ -89,6 +89,7 @@ fn generate(dest_dir: &Path, model: &Model, state: &mut State) -> io::Result<()>
 
 fn generate_mod(mod_dir: &Path, model: &Model, state: &mut State) -> io::Result<()> {
 
+    let _ = fs::remove_dir_all(&mod_dir);
     fs::create_dir_all(&mod_dir)?;
 
     println!("== Writing module...");
@@ -103,13 +104,12 @@ fn generate_mod(mod_dir: &Path, model: &Model, state: &mut State) -> io::Result<
 
     generate_alias(mod_dir, model)?;
 
-    for app in &APPS {
-        writeln!(writer, "pub mod {};", app.mod_name)?;
-        let app_mod_dir = mod_dir.join(app.mod_name);
-        generate_app_mod(&app_mod_dir, app, model, &mut *state)?;
-    }
+    // for app in &APPS {
+    //     writeln!(writer, "pub mod {};", app.mod_name)?;
+    //     let app_mod_dir = mod_dir.join(app.mod_name);
+    //     generate_app_mod(&app_mod_dir, app, model, &mut *state)?;
+    // }
 
-    writeln!(writer)?;
     writeln!(writer, "pub mod interface;")?;
     writeln!(writer, "pub mod entity;")?;
     generate_interfaces(mod_dir, model, &mut *state)?;
@@ -145,7 +145,7 @@ fn generate_alias(mod_dir: &Path, model: &Model) -> io::Result<()> {
             TyKind::Dict(ty_dict) => {
                 prev_dict = true;
                 writeln!(writer)?;
-                writeln!(writer, "wgtk::struct_data_type! {{")?;
+                writeln!(writer, "wgtk::__bootstrap_struct_data_type! {{")?;
                 writeln!(writer, "    #[derive(Debug)]")?;
                 writeln!(writer, "    pub struct {identifier} {{")?;
                 for prop in &ty_dict.properties {
@@ -185,7 +185,7 @@ fn generate_type_ref(ty: &Ty) -> Cow<'_, str> {
         TyKind::Vector2 => "Vec2",
         TyKind::Vector3 => "Vec3",
         TyKind::Vector4 => "Vec4",
-        TyKind::String => "String",
+        TyKind::String => "RelaxString",
         TyKind::Python => "Python",
         TyKind::Mailbox => "Mailbox",
         TyKind::Array(ty_seq) |
@@ -212,212 +212,6 @@ fn generate_rust_identifier(name: &str) -> Cow<'_, str> {
     }
 }
 
-fn generate_app_mod(mod_dir: &Path, app: &'static App, model: &Model, state: &mut State) -> io::Result<()> {
-
-    fs::create_dir_all(&mod_dir)?;
-    
-    println!("== Writing {} module...", app.mod_name);
-    let mod_file = mod_dir.join("mod.rs");
-    let mut writer = BufWriter::new(File::create(&mod_file)?);
-    
-    writeln!(writer, "pub mod interface;")?;
-    writeln!(writer, "pub mod entity;")?;
-
-    generate_app_interfaces(mod_dir, app, model, &mut *state)?;
-    generate_app_entities(mod_dir, app, model, &mut *state)?;
-
-    Ok(())
-
-}
-
-fn generate_app_interfaces(mod_dir: &Path, app: &'static App, model: &Model, state: &mut State) -> io::Result<()> {
-    
-    println!(" = Writing {} interfaces...", app.mod_name);
-    let interface_file = mod_dir.join("interface.rs");
-    let mut writer = BufWriter::new(File::create(&interface_file)?);
-
-    writeln!(writer, "use super::super::alias::*;")?;
-    writeln!(writer)?;
-
-    for interface in &model.interfaces {
-        generate_app_interface(&mut writer, app, model, interface, &mut *state)?;
-    }
-
-    Ok(())
-
-}
-
-fn generate_app_entities(mod_dir: &Path, app: &'static App, model: &Model, state: &mut State) -> io::Result<()> {
-
-    println!(" = Writing {} entities...", app.mod_name);
-    let entity_file = mod_dir.join("entity.rs");
-    let mut writer = BufWriter::new(File::create(&entity_file)?);
-
-    // writeln!(writer, "use wgtk::net::app::common::element::Method;")?;  FIXME:
-    writeln!(writer)?;
-    writeln!(writer, "use super::super::alias::*;")?;
-    writeln!(writer, "use super::interface::*;")?;
-    writeln!(writer)?;
-    
-    for entity in &model.entities {
-        generate_app_entity(&mut writer, app, model, entity, &mut *state)?;
-    }
-    
-    Ok(())
-
-}
-
-fn generate_app_entity(
-    mut writer: impl Write, 
-    app: &'static App,
-    model: &Model, 
-    entity: &Entity,
-    state: &mut State,
-) -> io::Result<()> {
-    
-    writeln!(writer, "/// Entity 0x{:02X}", entity.id)?;
-    generate_app_interface(&mut writer, app, model, &entity.interface, state)?;
-
-    /// This method recursively register all methods for the entity in order to sort them
-    /// later depending on their arguments' size and then compute there exposed id for
-    /// the network protocol.
-    /// 
-    /// IMPORTANT: The initial order of the exposed method is really important because we
-    /// will use a stable sort, and some orders should not be changed.
-    fn add_internal_methods<'m>(
-        app: &App, 
-        exposed_methods: &mut Vec<ExposedMethod<'m>>, 
-        model: &'m Model, 
-        interface: &'m Interface,
-        path: &[String],
-    ) {
-
-        let mut path = path.to_vec();
-        
-        for interface_name in &interface.implements {
-
-            let interface = model.interfaces.iter()
-                .find(|i| &i.name == interface_name)
-                .expect("unknown implemented interface");
-
-            path.push(interface_name.clone());
-            add_internal_methods(app, exposed_methods, model, interface, &path);
-            path.pop();
-
-        }
-        
-        for method in (app.interface_methods)(interface) {
-            if method.exposed_to_all_clients | method.exposed_to_own_client {
-                exposed_methods.push(ExposedMethod {
-                    method,
-                    path: path.to_vec(),
-                    stream_size: compute_method_stream_size(method),
-                });
-            }
-        }
-
-    }
-
-    let mut methods = Vec::new();
-    add_internal_methods(app, &mut methods, model, &entity.interface, &[]);
-
-    // We want to sort fixed methods first and variable last, and then sort between
-    // their configured fixed or variable size.
-    methods.sort_by(|a, b| {
-        match (a.stream_size, b.stream_size) {
-            (StreamSize::Variable(a_size), StreamSize::Variable(b_size)) => 
-                a_size.cmp(&b_size),
-            (StreamSize::Fixed(a_size), StreamSize::Fixed(b_size)) =>
-                a_size.cmp(&b_size),
-            (StreamSize::Fixed(_), StreamSize::Variable(_)) =>
-                Ordering::Less,
-            (StreamSize::Variable(_), StreamSize::Fixed(_)) =>
-                Ordering::Greater,
-        }
-    });
-
-    for (exposed_id, method) in methods.iter().enumerate() {
-        writeln!(writer, "// {exposed_id}: {} [{:?}] @ {:?}", method.method.name, method.stream_size, method.path)?;
-    }
-    writeln!(writer)?;
-
-    // writeln!(writer, "impl Method for {}Method {{", entity.interface.name)?;
-    // writeln!(writer, "}}")?;
-    // writeln!(writer)?;
-    
-    Ok(())
-
-}
-
-fn generate_app_interface(
-    writer: impl Write, 
-    app: &'static App,
-    model: &Model, 
-    interface: &Interface,
-    state: &mut State,
-) -> io::Result<()> {
-    generate_app_interface_methods(writer, app, model, interface, state)?;
-    Ok(())
-}
-
-fn generate_app_interface_methods(
-    mut writer: impl Write, 
-    app: &'static App,
-    _model: &Model, 
-    interface: &Interface,
-    state: &mut State,
-) -> io::Result<()> {
-
-    let methods = (app.interface_methods)(interface);
-    
-    writeln!(writer, "/// Methods for {} on {} component", interface.name, app.mod_name)?;
-    writeln!(writer, "pub enum {}Method {{ ", interface.name)?;
-
-    for interface_name in &interface.implements {
-        if !(app.state)(&mut *state).empty_methods_interfaces.contains(interface_name) {
-            writeln!(writer, "    {interface_name}({interface_name}Method),")?;
-        }
-    }
-
-    let mut unique_names = HashSet::new();
-
-    for (idx, method) in methods.iter().enumerate() {
-        
-        // Ignoring methods that are not exposed, we only care about methods exposed for
-        // the network protocol.
-        if !method.exposed_to_all_clients && !method.exposed_to_own_client {
-            continue;
-        }
-
-        if !unique_names.insert(method.name.as_str()) {
-            panic!("function name present multiple times: {}", method.name);
-        }
-
-        write!(writer, "    {}(", method.name)?;
-        for (arg_idx, arg) in method.args.iter().enumerate() {
-            if arg_idx != 0 {
-                write!(writer, ", ")?;
-            }
-            write!(writer, "{}", generate_type_ref(&arg.ty))?;
-        }
-        write!(writer, "), // idx({idx})")?;
-
-        writeln!(writer)?;
-        
-    }
-
-    if unique_names.is_empty() {
-        // Note: It's safe to get this reference as a ptr because it lives for 'static.
-        (app.state)(&mut *state).empty_methods_interfaces.insert(interface.name.clone());
-    }
-
-    writeln!(writer, "}}")?;
-    writeln!(writer)?;
-
-    Ok(())
-
-}
-
 fn generate_interfaces(mod_dir: &Path, model: &Model, state: &mut State) -> io::Result<()> {
 
     println!("== Writing interfaces...");
@@ -425,7 +219,6 @@ fn generate_interfaces(mod_dir: &Path, model: &Model, state: &mut State) -> io::
     let mut writer = BufWriter::new(File::create(&interface_file)?);
 
     writeln!(writer, "use super::alias::*;")?;
-    writeln!(writer, "use super::{{base, cell, client}};")?;
     writeln!(writer)?;
 
     for interface in &model.interfaces {
@@ -446,23 +239,22 @@ fn generate_entities(mod_dir: &Path, model: &Model, state: &mut State) -> io::Re
     writeln!(writer)?;
     writeln!(writer, "use super::alias::*;")?;
     writeln!(writer, "use super::interface::*;")?;
-    writeln!(writer, "use super::{{base, cell, client}};")?;
     writeln!(writer)?;
 
     for entity in &model.entities {
         generate_entity(&mut writer, model, entity, &mut *state)?;
     }
 
-    writeln!(writer, "wgtk::enum_entity! {{")?;
-    writeln!(writer, "    /// Generic entity type enumeration allowing decoding of any entities.")?;
-    writeln!(writer, "    #[derive(Debug)]")?;
-    writeln!(writer, "    pub enum Generic {{")?;
-    for entity in &model.entities {
-        writeln!(writer, "        {} = 0x{:02X},", entity.interface.name, entity.id)?;
-    }
-    writeln!(writer, "    }}")?;
-    writeln!(writer, "}}")?;
-    writeln!(writer)?;
+    // writeln!(writer, "wgtk::__bootstrap_enum_entities! {{")?;
+    // writeln!(writer, "    /// Generic entity type enumeration allowing decoding of any entities.")?;
+    // writeln!(writer, "    #[derive(Debug)]")?;
+    // writeln!(writer, "    pub enum Generic: Generic_Client, Generic_Base, Generic_Cell {{")?;
+    // for entity in &model.entities {
+    //     writeln!(writer, "        {} = 0x{:02X},", entity.interface.name, entity.id)?;
+    // }
+    // writeln!(writer, "    }}")?;
+    // writeln!(writer, "}}")?;
+    // writeln!(writer)?;
 
     Ok(())
 
@@ -475,36 +267,136 @@ fn generate_entity(
     state: &mut State,
 ) -> io::Result<()> {
 
-    writeln!(writer, "/// Entity 0x{:02X}", entity.id)?;
+    writeln!(writer, "// Entity 0x{:02X}", entity.id)?;
     generate_interface(&mut writer, model, &entity.interface, state)?;
     
-    writeln!(writer, "impl DataTypeEntity for {} {{", entity.interface.name)?;
+    for app_state in &mut state.apps {
+        generate_entity_methods(&mut writer, model, entity, app_state)?;
+    }
+    
+    writeln!(writer, "impl {} {{", entity.interface.name)?;
     writeln!(writer, "    const TYPE_ID: u16 = 0x{:02X};", entity.id)?;
     writeln!(writer, "}}")?;
     writeln!(writer)?;
 
-    // FIXME:?
-    // writeln!(writer, "impl Entity for {} {{", entity.interface.name)?;
-    // writeln!(writer, "    const ID: u16 = {};", entity.id)?;
-    // writeln!(writer, "    type ClientMethod = client::entity::{}Method;", entity.interface.name)?;
-    // writeln!(writer, "    type BaseMethod = base::entity::{}Method;", entity.interface.name)?;
-    // writeln!(writer, "    type CellMethod = cell::entity::{}Method;", entity.interface.name)?;
-    // writeln!(writer, "}}")?;
-    // writeln!(writer)?;
+    writeln!(writer, "impl DataTypeEntity for {} {{", entity.interface.name)?;
+    writeln!(writer, "    type ClientMethod = {}_Client;", entity.interface.name)?;
+    writeln!(writer, "    type BaseMethod = {}_Base;", entity.interface.name)?;
+    writeln!(writer, "    type CellMethod = {}_Cell;", entity.interface.name)?;
+    writeln!(writer, "}}")?;
+    writeln!(writer)?;
+
+    Ok(())
+
+}
+
+fn generate_entity_methods(
+    mut writer: impl Write,
+    model: &Model, 
+    entity: &Entity,
+    app_state: &mut AppState,
+)  -> io::Result<()> {
+
+    /// An exposed method for the network protocol, this is used to list all exposed 
+    /// methods on an entity and then compute the methods' exposed ids by sorting them.
+    #[derive(Debug)]
+    struct ExposedMethod<'a> {
+        interface: &'a Interface,
+        method: &'a Method,
+        stream_size: StreamSize,
+    }
+
+    /// This method recursively register all methods for the entity in order to sort them
+    /// later depending on their arguments' size and then compute there exposed id for
+    /// the network protocol.
+    /// 
+    /// IMPORTANT: The initial order of the exposed method is really important because we
+    /// will use a stable sort, and some orders should not be changed.
+    fn add_internal_methods<'m>(
+        exposed_methods: &mut Vec<ExposedMethod<'m>>, 
+        model: &'m Model, 
+        interface: &'m Interface,
+        app_state: &mut AppState,
+    ) {
+
+        for interface_name in &interface.implements {
+
+            let interface = model.interfaces.iter()
+                .find(|i| &i.name == interface_name)
+                .expect("unknown implemented interface");
+
+            add_internal_methods(exposed_methods, model, interface, &mut *app_state);
+
+        }
+        
+        for method in (app_state.interface_methods)(interface) {
+            if is_method_exposed(method) {
+                exposed_methods.push(ExposedMethod {
+                    interface,
+                    method,
+                    stream_size: compute_method_stream_size(method),
+                });
+            }
+        }
+
+    }
+
+    let mut methods = Vec::new();
+    add_internal_methods(&mut methods, model, &entity.interface, &mut *app_state);
+
+    // We want to sort fixed methods first and variable last, and then sort between
+    // their configured fixed or variable size.
+    methods.sort_by(|a, b| {
+        match (a.stream_size, b.stream_size) {
+            (StreamSize::Variable(a_size), StreamSize::Variable(b_size)) => 
+                a_size.cmp(&b_size),
+            (StreamSize::Fixed(a_size), StreamSize::Fixed(b_size)) =>
+                a_size.cmp(&b_size),
+            (StreamSize::Fixed(_), StreamSize::Variable(_)) =>
+                Ordering::Less,
+            (StreamSize::Variable(_), StreamSize::Fixed(_)) =>
+                Ordering::Greater,
+        }
+    });
+
+    writeln!(writer, "// Entity methods for {} on {}", entity.interface.name, app_state.name)?;
+    writeln!(writer, "wgtk::__bootstrap_enum_methods! {{")?;
+    writeln!(writer, "    #[derive(Debug)]")?;
+    writeln!(writer, "    pub enum {}_{} {{", 
+        entity.interface.name, app_state.suffix)?;
+
+    for (exposed_id, method) in methods.iter().enumerate() {
+
+        let element_length = match method.stream_size {
+            StreamSize::Fixed(length) => Cow::Owned(format!("{length}")),
+            StreamSize::Variable(VariableHeaderSize::Variable8) => Cow::Borrowed("var8"),
+            StreamSize::Variable(VariableHeaderSize::Variable16) => Cow::Borrowed("var16"),
+            StreamSize::Variable(VariableHeaderSize::Variable24) => Cow::Borrowed("var24"),
+            StreamSize::Variable(VariableHeaderSize::Variable32) => Cow::Borrowed("var32"),
+        };
+
+        writeln!(writer, "        {}_{}(0x{exposed_id:02X}, {element_length}),", 
+            method.interface.name, method.method.name)?;
+
+    }
     
+    writeln!(writer, "    }}")?;
+    writeln!(writer, "}}")?;
+    writeln!(writer)?;
+
     Ok(())
 
 }
 
 fn generate_interface(
     mut writer: impl Write, 
-    _model: &Model, 
+    model: &Model, 
     interface: &Interface,
     state: &mut State,
 ) -> io::Result<()> {
     
-    writeln!(writer, "/// Interface {}", interface.name)?;
-    writeln!(writer, "wgtk::struct_data_type! {{")?;
+    writeln!(writer, "// Interface {}", interface.name)?;
+    writeln!(writer, "wgtk::__bootstrap_struct_data_type! {{")?;
     writeln!(writer, "    #[derive(Debug)]")?;
     writeln!(writer, "    pub struct {} {{", interface.name)?;
     
@@ -514,7 +406,6 @@ fn generate_interface(
         }
     }
 
-    // TODO: client-side fields... (continue)
     let mut count = 0;
     for property in &interface.properties {
         if matches!(property.flags, PropertyFlags::AllClients | PropertyFlags::OwnClient | PropertyFlags::BaseAndClient) {
@@ -528,6 +419,52 @@ fn generate_interface(
     }
 
     writeln!(writer, "    }}")?;
+    writeln!(writer, "}}")?;
+    writeln!(writer)?;
+
+    for app_state in &mut state.apps {
+        generate_interface_methods(&mut writer, model, interface, app_state)?;
+    }
+
+    Ok(())
+
+}
+
+fn generate_interface_methods(
+    mut writer: impl Write,
+    _model: &Model, 
+    interface: &Interface,
+    app_state: &mut AppState,
+)  -> io::Result<()> {
+
+    let mut unique_names = HashSet::new();
+    
+    writeln!(writer, "// Method for {} on {}", interface.name, app_state.name)?;
+    writeln!(writer, "wgtk::__bootstrap_struct_data_type! {{")?;
+    writeln!(writer)?;
+
+    for method in (app_state.interface_methods)(interface) {
+
+        if !is_method_exposed(method) {
+            continue;
+        }
+
+        if !unique_names.insert(method.name.as_str()) {
+            panic!("function name present multiple times: {}", method.name);
+        }
+
+        writeln!(writer, "    #[derive(Debug)]")?;
+        writeln!(writer, "    pub struct {}_{} {{", interface.name, method.name)?;
+
+        for (arg_idx, arg) in method.args.iter().enumerate() {
+            writeln!(writer, "        pub a{arg_idx}: {},", generate_type_ref(&arg.ty))?;
+        }
+
+        writeln!(writer, "    }}")?;
+        writeln!(writer)?;
+
+    }
+
     writeln!(writer, "}}")?;
     writeln!(writer)?;
 
@@ -579,60 +516,48 @@ fn compute_method_stream_size(method: &Method) -> StreamSize {
 
 }
 
-/// Definition of a type of application, this type is used to create one module per 
-/// application to register their interfaces and entities.
-#[derive(Debug)]
-struct App {
-    mod_name: &'static str,
-    interface_methods: fn(&Interface) -> &[Method],
-    state: fn(&mut State) -> &mut AppState,
+fn is_method_exposed(method: &Method) -> bool {
+    method.exposed_to_all_clients || method.exposed_to_own_client
 }
 
-static APPS: [App; 3] = [
-    App {
-        mod_name: "client",
-        interface_methods: |i| &i.client_methods,
-        state: |s| &mut s.client_state,
-    },
-    App {
-        mod_name: "base",
-        interface_methods: |i| &i.base_methods,
-        state: |s| &mut s.base_state,
-    },
-    App {
-        mod_name: "cell",
-        interface_methods: |i| &i.cell_methods,
-        state: |s| &mut s.cell_state,
-    },
-];
 
 /// Internal state when bootstrapping.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct State {
     /// A set of interfaces without any fields (sizeof=0) for which it's useless to 
     /// generate variants.
     empty_interfaces: HashSet<String>,
-    client_state: AppState,
-    base_state: AppState,
-    cell_state: AppState,
+    apps: [AppState; 3],
 }
 
-#[derive(Debug, Default)]
-struct AppState {
-    empty_methods_interfaces: HashSet<String>,
-}
-
-/// An exposed method for the network protocol, this is used to list all exposed methods
-/// on an entity and then compute the methods' exposed ids.
 #[derive(Debug)]
-struct ExposedMethod<'a> {
-    /// The actual method definition.
-    method: &'a Method,
-    /// The path to this method, containing a hierarchy of interfaces name where the
-    /// function is actually located.
-    path: Vec<String>,
-    /// Stream size for this method arguments.
-    stream_size: StreamSize,
+struct AppState {
+    name: &'static str,
+    suffix: &'static str,
+    interface_methods: fn(&Interface) -> &[Method],
+}
+
+impl State {
+    fn new() -> Self {
+        Self { 
+            empty_interfaces: HashSet::new(), 
+            apps: [
+                AppState::new("client", "Client", |i| &i.client_methods),
+                AppState::new("base", "Base", |i| &i.base_methods),
+                AppState::new("cell", "Cell", |i| &i.cell_methods),
+            ],
+        }
+    }
+}
+
+impl AppState {
+    fn new(name: &'static str, suffix: &'static str, interface_methods: fn(&Interface) -> &[Method]) -> Self {
+        Self {
+            name,
+            suffix,
+            interface_methods,
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

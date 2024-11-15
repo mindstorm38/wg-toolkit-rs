@@ -249,7 +249,11 @@ impl App {
 
             peer.last_time = now;
 
-            let Some((bundle, _)) = channel.accept(packet, peer.addr) else {
+            let Some(mut channel) = channel.accept(packet, peer.addr) else {
+                continue;
+            };
+
+            let Some(bundle) = channel.next_bundle() else {
                 continue;
             };
 

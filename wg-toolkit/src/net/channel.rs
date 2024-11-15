@@ -127,8 +127,9 @@ impl ChannelTracker {
     /// is also returned but the packet is internally queued and can later be retrieved 
     /// with the error using [`Self::take_rejected_packets()`].
     #[instrument(level = "trace", skip(self, packet))]
-    pub fn accept(&mut self, packet: Packet, addr: SocketAddr) -> Option<(Bundle, Channel<'_>)> {
+    pub fn accept(&mut self, packet: Packet, addr: SocketAddr) -> Option<Channel<'_>> {
 
+        let time = Instant::now();
         let locked = match packet.read_config_locked() {
             Ok(locked) => locked,
             Err((error, packet)) => {
@@ -223,7 +224,8 @@ impl ChannelTracker {
         }
 
         // If the received packet is reliable, we'll need to send a ack for it in future.
-        if locked.config().reliable() {
+        let reliable = locked.config().reliable();
+        if reliable {
             channel.add_received_reliable_packet(locked.config().sequence_num());
         }
 
@@ -235,53 +237,9 @@ impl ChannelTracker {
         }
 
         // TODO: Check that the sequence range is not too wide: denial of service.
-        
-        let instant = Instant::now();
+        channel.buffer_packet(locked, time);
 
-        match locked.config().sequence_range() {
-            // Only if there is a range and this range is not a single num.
-            Some((first_num, last_num)) => {
-
-                let num = locked.config().sequence_num();
-                let relative_num = num - first_num;
-                trace!("Fragment: {num} ({first_num}..={last_num})");
-
-                match channel.off.fragments.entry(first_num) {
-                    hash_map::Entry::Occupied(mut o) => {
-
-                        // If this fragments is too old, timeout every packet in it
-                        // and start again with the packet.
-                        // FIXME: Maybe dumb?
-                        if o.get().is_old(instant, FRAGMENT_TIMEOUT) {
-                            // let mut fragments = o.remove();
-                            // self.rejected_packets.extend(fragments.drain()
-                            //     .map(|packet| (addr, packet, PacketRejectionError::TimedOut)));
-                            return None;
-                        }
-
-                        o.get_mut().set(relative_num, locked);
-
-                        // When all fragments are collected, remove entry and return.
-                        if o.get().is_full() {
-                            return Some((o.remove().into_bundle(), Channel { inner: channel }));
-                        }
-
-                    },
-                    hash_map::Entry::Vacant(v) => {
-                        let mut fragments = Fragments::new(last_num - first_num + 1);
-                        fragments.set(relative_num, locked);
-                        v.insert(fragments);
-                    }
-                }
-
-            }
-            // Not sequence range in the packet, create a bundle only with it.
-            _ => {
-                return Some((Bundle::new_with_single(locked), Channel { inner: channel }));
-            }
-        }
-
-        None
+        Some(Channel { inner: channel })
 
     }
 
@@ -293,6 +251,7 @@ impl ChannelTracker {
     #[instrument(level = "trace", skip(self, packet))]
     pub fn accept_out(&mut self, packet: &Packet, addr: SocketAddr) -> bool {
 
+        let time = Instant::now();
         let locked = match packet.read_config_locked_ref() {
             Ok(locked) => locked,
             Err(_error) => {
@@ -355,7 +314,7 @@ impl ChannelTracker {
         }
 
         if locked.config().reliable() {
-            channel.add_reliable_packet_unordered(locked.config().sequence_num());
+            channel.add_reliable_packet_unordered(locked.config().sequence_num(), time);
         }
 
         true
@@ -389,12 +348,22 @@ impl Channel<'_> {
         self.inner.on.as_deref().and_then(|on| on.index)
     }
 
+    /// Pop the next bundle able to be received, if any, this ensures that bundles are
+    /// received in the correct order!
+    pub fn next_bundle(&mut self) -> Option<Bundle> {
+        self.inner.pop_buffered_bundle()
+    }
+
     /// Prepare a bundle to be sent, adding acks and other configuration required by this
     /// tracker into all packets. After this function, all packets are ready to be sent
     /// and the bundle should not be touched for this to remain true.
+    /// 
+    /// NOTE: FIXME: It's said that external interfaces don't allow off-channel reliable 
+    /// communication (see packet_receiver.cpp, line 977).
     #[instrument(level = "trace", skip(self, bundle))]
     pub fn prepare(&mut self, bundle: &mut Bundle, reliable: bool) {
 
+        let time = Instant::now();
         let bundle_len = bundle.len() as u32;
         trace!("Count: {bundle_len}");
         
@@ -407,7 +376,7 @@ impl Channel<'_> {
             packet_config.set_sequence_num(self.inner.alloc_sequence_num(bundle_len));
             if reliable {
                 for num in packet_config.sequence_num()..packet_config.sequence_num() + bundle_len {
-                    self.inner.add_reliable_packet(num);
+                    self.inner.add_reliable_packet(num, time);
                 }
             }
         }
@@ -499,6 +468,8 @@ struct OffChannelData {
     received_reliable_packets: VecDeque<u32>,
     /// Bundle fragments tracking, mapped to the first sequence.
     fragments: HashMap<u32, Fragments>,
+    /// Buffered bundles that are not reliable.
+    buffered_bundles: VecDeque<Bundle>,
 }
 
 /// Data specific to on-channel communication.
@@ -515,18 +486,22 @@ struct OnChannelData {
     /// excluding) this number has been received.
     /// 
     /// NOTE: This is the same as `inSeqAt_`, `bufferedReceives_` in BigWorld source.
-    received_reliable_packets_cumulative: u32,
-    /// Last value of `received_reliable_packets_cumulative` popped, used to avoid 
-    /// multiple identical cumulative ack.
     /// 
-    /// NOTE: The BigWorld implementation seems to add cumulative ack even if there was
-    /// no progress, see `UDPChannel::writeFlags` in BigWorld source.
-    received_reliable_packets_cumulative_pop: u32,
+    /// FIXME: This might cause issues if unreliable packets are sent in-channel... Maybe
+    /// add some kind of timeout on the cumulative number, after what we just jump to the
+    /// next sequence number?
+    received_reliable_packets_cumulative: u32,
     /// If a packet is received out-of-order and cannot increment the cumulative sequence
     /// number (in `received_reliable_packets_cumulative`), then we should buffer it in
     /// this **ordered** dequeue, if the gap is filled then we'll be able to increment 
     /// the cumulative sequence number properly.
     received_reliable_packets_buffered: VecDeque<u32>,
+    /// A queue of completed bundles that are waiting for the user to pop them, the
+    /// last sequence id is kept and bundles are sorted so the first bundle is the
+    /// first one to be returned. Note that with when on channel with reliable 
+    /// communication, there is a control to not allow the first bundle to be picked
+    /// if any bundle is being waited for prior to the pending ones.
+    reliable_buffered_bundles: VecDeque<(u32, Bundle)>,
 }
 
 /// A reliable packet that we sent at given time and waiting for an acknowledgment.
@@ -557,6 +532,7 @@ impl OffChannelData {
             reliable_packets: Vec::new(),
             received_reliable_packets: VecDeque::new(),
             fragments: HashMap::new(),
+            buffered_bundles: VecDeque::new(),
         }
     }
 }
@@ -569,8 +545,9 @@ impl OnChannelData {
             sequence_num_alloc: SequenceNumAllocator::new(0),
             received_create_packet: false,
             received_reliable_packets_cumulative: 0,
-            received_reliable_packets_cumulative_pop: u32::MAX, // to force pop first call
+            // received_reliable_packets_cumulative_pop: u32::MAX, // to force pop first call
             received_reliable_packets_buffered: VecDeque::new(),
+            reliable_buffered_bundles: VecDeque::new(),
         }
     }
 
@@ -609,7 +586,7 @@ impl GenericChannel<'_> {
 
     /// TODO: We'll also need to automatically resend the packet's content after some 
     /// time.
-    fn add_reliable_packet(&mut self, sequence_num: u32) {
+    fn add_reliable_packet(&mut self, sequence_num: u32, time: Instant) {
     
         // We are keeping reliable packets ordered by their sequence number and also by
         // their time (Instant::now() can only grow).
@@ -621,7 +598,7 @@ impl GenericChannel<'_> {
         trace!("Add reliable packet: {sequence_num}");
         self.off.reliable_packets.push(ReliablePacket {
             sequence_num,
-            time: Instant::now(),
+            time,
         });
 
     }
@@ -630,15 +607,15 @@ impl GenericChannel<'_> {
     /// this is used by [`PacketTracker::accept_out`] and proxy. *The insertion is still
     /// more performant when inserting a sequence number that is almost the largest in
     /// the set.*
-    fn add_reliable_packet_unordered(&mut self, sequence_num: u32) {
+    fn add_reliable_packet_unordered(&mut self, sequence_num: u32, time: Instant) {
 
         trace!("Add reliable packet (unordered): {sequence_num}");
         
         let mut insert_index = 0;
         for (i, packet) in self.off.reliable_packets.iter().enumerate().rev() {
-            if packet.sequence_num == sequence_num {
+            if sequence_num == packet.sequence_num {
                 return;  // Ignore duplicate.
-            } else if packet.sequence_num < sequence_num {
+            } else if sequence_num > packet.sequence_num {
                 insert_index = i + 1;
                 break;
             }
@@ -646,7 +623,7 @@ impl GenericChannel<'_> {
         
         self.off.reliable_packets.insert(insert_index, ReliablePacket {
             sequence_num,
-            time: Instant::now(),
+            time,
         });
 
     }
@@ -713,8 +690,8 @@ impl GenericChannel<'_> {
                 // following the previous one, it will be recovered in the future when
                 // the gap will be filled.
                 match on.received_reliable_packets_buffered.binary_search(&sequence_num) {
-                    Ok(index) => on.received_reliable_packets_buffered.insert(index, sequence_num),
-                    Err(_) => return  // Ignore already existing packets.
+                    Ok(_) => return, // Ignore already existing packets.
+                    Err(index) => on.received_reliable_packets_buffered.insert(index, sequence_num),
                 }
             }
 
@@ -736,17 +713,17 @@ impl GenericChannel<'_> {
         let on = self.on.as_deref_mut()?;
         let ret = on.received_reliable_packets_cumulative;
 
-        if on.received_reliable_packets_cumulative_pop == ret {
-            trace!("Pop received reliable packet cumulative: none");
-            return None;
-        }
+        // if on.received_reliable_packets_cumulative_pop == ret {
+        //     trace!("Pop received reliable packet cumulative: none");
+        //     return None;
+        // }
 
         // Remove all single acks that are before the cumulative ack: 
         // retain all sequence numbers after or equal
         self.off.received_reliable_packets.retain(|&num| num >= ret);
 
-        on.received_reliable_packets_cumulative_pop = ret;
-        trace!("Pop received reliable packet cumulative: {ret}");
+        // on.received_reliable_packets_cumulative_pop = ret;
+        // trace!("Pop received reliable packet cumulative: {ret}");
         Some(ret)
 
     }
@@ -761,6 +738,7 @@ impl GenericChannel<'_> {
 
     }
     
+    /// For proxy and accept_out...
     fn acknowledge_received_reliable_packet_cumulative(&mut self, sequence_num: u32) {
         
         self.off.received_reliable_packets.retain(|&num| num >= sequence_num);
@@ -768,6 +746,104 @@ impl GenericChannel<'_> {
         if let Some(_on) = self.on.as_deref_mut() {
             // TODO: ?
         }
+
+    }
+
+    /// Buffer a packet into this channel, if this packet is part of a fragmented bundle
+    /// then it's added to the partial bundle.
+    fn buffer_packet(&mut self, locked: PacketLocked, time: Instant) {
+
+        let reliable = locked.config().reliable();
+        let seq_num = locked.config().sequence_num();
+
+        let (last_num, bundle) = match locked.config().sequence_range() {
+            Some((first_num, last_num)) => {
+
+                let relative_num = seq_num - first_num;
+                trace!("Fragment: {seq_num} ({first_num}..={last_num})");
+
+                match self.off.fragments.entry(first_num) {
+                    hash_map::Entry::Occupied(mut o) => {
+
+                        // If this fragments is too old, timeout every packet in it
+                        // and start again with the packet.
+                        // FIXME: Maybe dumb?
+                        if o.get().is_old(time, FRAGMENT_TIMEOUT) {
+                            // let mut fragments = o.remove();
+                            // self.rejected_packets.extend(fragments.drain()
+                            //     .map(|packet| (addr, packet, PacketRejectionError::TimedOut)));
+                            return;
+                        }
+
+                        o.get_mut().set(relative_num, locked);
+
+                        // When all fragments are collected, remove entry and return.
+                        if !o.get().is_full() {
+                            return;
+                        }
+
+                        (last_num, o.remove().into_bundle())
+
+                    },
+                    hash_map::Entry::Vacant(v) => {
+                        let mut fragments = Fragments::new(last_num - first_num + 1);
+                        fragments.set(relative_num, locked);
+                        v.insert(fragments);
+                        return;
+                    }
+                }
+
+            }
+            _ => (seq_num, Bundle::new_with_single(locked))
+        };
+
+        // If on a channel, 
+        if let Some(on) = self.on.as_deref_mut() {
+            if reliable {
+
+                // Here we need to queue the buffer, we intentionally don't use binary 
+                // search here because bundle usually don't arrives out of order and are 
+                // quickly unbuffered (even quicker with off-channel because the order is
+                // not checked). Because of this, we also start searching from the end.
+                let mut insert_index = 0;
+                for (i, seq) in on.reliable_buffered_bundles.iter().map(|&(seq, _)| seq).enumerate().rev() {
+                    if last_num == seq {
+                        // Weird? Received same packet twice.
+                        return;
+                    } else if last_num > seq {
+                        insert_index = i + 1;
+                        break;
+                    }
+                }
+
+                on.reliable_buffered_bundles.insert(insert_index, (last_num, bundle));
+                return;
+
+            }
+        }
+
+        // We land here if the packet isn't reliable, which means that the bundle return
+        // order don't matter.
+        self.off.buffered_bundles.push_back(bundle);
+
+    }
+
+    /// Pop a buffered bundle.
+    fn pop_buffered_bundle(&mut self) -> Option<Bundle> {
+        
+        // Prioritize reliable buffered bundles.
+        if let Some(on) = self.on.as_deref_mut() {
+            // Only return the next bundle if its sequence number is contained in the
+            // channel's cumulative sequence number, which is contiguous, which ensure 
+            // that any previous packet has already been processed.
+            let &(seq, _) = on.reliable_buffered_bundles.front()?;
+            trace!("trying to pop buffered: seq={seq}, cumulative={}", on.received_reliable_packets_cumulative);
+            if seq < on.received_reliable_packets_cumulative {
+                return Some(on.reliable_buffered_bundles.pop_front().unwrap().1);
+            }
+        }
+
+        self.off.buffered_bundles.pop_front()
 
     }
 
@@ -835,8 +911,8 @@ impl Fragments {
     }
 
     #[inline]
-    fn is_old(&self, instant: Instant, timeout: Duration) -> bool {
-        instant - self.last_update > timeout
+    fn is_old(&self, time: Instant, timeout: Duration) -> bool {
+        time - self.last_update > timeout
     }
 
     #[inline]
