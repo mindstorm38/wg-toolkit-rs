@@ -587,9 +587,9 @@ impl<'a> SliceCursor<'a> {
         Some(ret)
     }
 
-    pub fn pop_front_read(&mut self, len: usize) -> Option<impl Read + 'a> {
-        self.pop_front(len).map(Cursor::new)
-    }
+    // pub fn pop_front_read(&mut self, len: usize) -> Option<impl Read + 'a> {
+    //     self.pop_front(len).map(Cursor::new)
+    // }
 
     pub fn pop_back(&mut self, len: usize) -> Option<&'a [u8]> {
         if len  > self.0.len() { return None; }
@@ -598,8 +598,8 @@ impl<'a> SliceCursor<'a> {
         Some(ret)
     }
 
-    pub fn pop_back_read(&mut self, len: usize) -> Option<impl Read + 'a> {
-        self.pop_back(len).map(Cursor::new)
-    }
+    // pub fn pop_back_read(&mut self, len: usize) -> Option<impl Read + 'a> {
+    //     self.pop_back(len).map(Cursor::new)
+    // }
 
 }

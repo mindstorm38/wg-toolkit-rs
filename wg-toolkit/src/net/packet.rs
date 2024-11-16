@@ -319,6 +319,9 @@ pub struct PacketConfig {
     /// 
     /// Used when `flags::HAS_CUMULATIVE_ACK` is set.
     cumulative_ack: u32,
+    /// A queue of packets to piggyback in the footer of the packet, packets are extracted
+    /// from the front of dequeue when there is enough place to put them.
+    piggybacks: VecDeque<Packet>,
     /// A queue of single acks to put on the packet if space allows it, there should be
     /// at least one ack put on the packet, acks are extracted from the front of dequeue.
     single_acks: VecDeque<u32>,
@@ -348,6 +351,7 @@ impl PacketConfig {
             sequence_first_num: 0,
             sequence_last_num: 0,
             cumulative_ack: 0,
+            piggybacks: VecDeque::new(),
             single_acks: VecDeque::new(),
             channel_index: NonZero::new(1).unwrap(),
             channel_version: NonZero::new(1).unwrap(),
@@ -606,7 +610,8 @@ impl PacketConfig {
             flags::IS_FRAGMENT |
             flags::ON_CHANNEL |
             flags::IS_RELIABLE |
-            flags::CREATE_CHANNEL;
+            flags::CREATE_CHANNEL |
+            flags::HAS_PIGGYBACKS;
 
         if self.flags & !KNOWN_FLAGS != 0 {
             return Err(PacketConfigError::UnknownFlags(self.flags & !KNOWN_FLAGS));
@@ -616,7 +621,7 @@ impl PacketConfig {
 
             // We shrink the packet to read the checksum and then compute the checksum 
             // from the body data, which no longer contains the checksum itself!
-            let expected_checksum = data.pop_back_read(4)
+            let expected_checksum = data.pop_back(4)
                 .ok_or(PacketConfigError::Corrupted)?
                 .read_u32().unwrap();
 
@@ -629,9 +634,40 @@ impl PacketConfig {
 
         }
 
+        if self.has_flags(flags::HAS_PIGGYBACKS) {
+            loop {
+
+                let piggyback_len = data.pop_back(2)
+                    .ok_or(PacketConfigError::Corrupted)?
+                    .read_i16().unwrap();
+                
+                // The last piggy back has a negative length, which is equivalent to having
+                // the most significant bit set to 1, but we don't simply invert the length
+                // because it would not be possible to represent zero-length, so we do 
+                // '-len - 1' which is equivalent to inverting all bits. Like if we didn't
+                // used two's complement in the first place.
+                let piggyback_done = piggyback_len < 0;
+                let piggyback_len = if piggyback_done { !piggyback_len } else { piggyback_len } as u16;
+
+                let piggyback_slice = data.pop_back(piggyback_len as usize)
+                    .ok_or(PacketConfigError::Corrupted)?;
+
+                // Create the new packet, copy the content and just set length.
+                let mut piggyback_packet = Packet::new();
+                piggyback_packet.buf_mut()[..piggyback_slice.len()].copy_from_slice(piggyback_slice);
+                piggyback_packet.set_len(piggyback_slice.len());
+                self.piggybacks.push_back(piggyback_packet);
+
+                if piggyback_done {
+                    break;
+                }
+
+            }
+        }
+
         if self.has_flags(flags::INDEXED_CHANNEL) {
 
-            let mut cursor = data.pop_back_read(8).ok_or(PacketConfigError::Corrupted)?;
+            let mut cursor = data.pop_back(8).ok_or(PacketConfigError::Corrupted)?;
             let version = cursor.read_u32().unwrap();
             let index = cursor.read_u32().unwrap();
 
@@ -641,7 +677,7 @@ impl PacketConfig {
         }
 
         if self.has_flags(flags::HAS_CUMULATIVE_ACK) {
-            self.cumulative_ack = data.pop_back_read(4)
+            self.cumulative_ack = data.pop_back(4)
                 .ok_or(PacketConfigError::Corrupted)?
                 .read_u32().unwrap();
         }
@@ -654,7 +690,7 @@ impl PacketConfig {
             }
 
             for _ in 0..count {
-                let ack = data.pop_back_read(4)
+                let ack = data.pop_back(4)
                     .ok_or(PacketConfigError::Corrupted)?
                     .read_u32().unwrap();
                 self.single_acks.push_back(ack);
@@ -664,20 +700,20 @@ impl PacketConfig {
 
         if self.has_flags(flags::HAS_SEQUENCE_NUMBER) {
             // NOTE: This will be really used if IS_RELIABLE or IS_FRAGMENT.
-            self.sequence_num = data.pop_back_read(4)
+            self.sequence_num = data.pop_back(4)
                 .ok_or(PacketConfigError::Corrupted)?
                 .read_u32().unwrap();
         }
 
         if self.has_flags(flags::UNK_1000) {
-            self.unk_1000 = data.pop_back_read(4)
+            self.unk_1000 = data.pop_back(4)
                 .ok_or(PacketConfigError::Corrupted)?
                 .read_u32().unwrap();
         }
 
         if self.has_flags(flags::HAS_REQUESTS) {
             
-            self.first_request_offset = data.pop_back_read(2)
+            self.first_request_offset = data.pop_back(2)
                 .ok_or(PacketConfigError::Corrupted)?
                 .read_u16().unwrap();
 
@@ -691,7 +727,7 @@ impl PacketConfig {
 
         if self.has_flags(flags::IS_FRAGMENT) {
             
-            let mut cursor = data.pop_back_read(8).ok_or(PacketConfigError::Corrupted)?;
+            let mut cursor = data.pop_back(8).ok_or(PacketConfigError::Corrupted)?;
             self.sequence_first_num = cursor.read_u32().unwrap();
             self.sequence_last_num = cursor.read_u32().unwrap();
             
@@ -710,7 +746,7 @@ impl PacketConfig {
 
     /// Write the current configuration to the given packet, the footers will be written
     /// after the packet length, growing it. The free data length should also be greater
-    /// or equal to `PACKET_MIN_FOOTER_LEN`.
+    /// or equal to `PACKET_RESERVED_FOOTER_LEN`.
     fn write(&mut self, packet: &mut Packet) {
 
         debug_assert!(packet.len() >= PACKET_HEADER_LEN);
@@ -788,6 +824,30 @@ impl PacketConfig {
             cursor.write_u32(version.get()).unwrap();
             cursor.write_u32(id.get()).unwrap();
         }
+
+        // Now add as many piggyback packets as possible!
+        let mut has_piggyback = false;
+        while let Some(piggyback_packet) = self.piggybacks.front() {
+            // Check if the packet can be safely added, ending with its own length (i16),
+            // we must also consider checksum!
+            let piggyback_slice = piggyback_packet.slice();
+            if packet.free() >= piggyback_slice.len() + 2 + if self.has_checksum() { 4 } else { 0 } {
+                packet.grow(piggyback_slice.len()).copy_from_slice(piggyback_slice);
+                packet.grow(2).write_i16(piggyback_slice.len() as i16).unwrap();
+                self.piggybacks.pop_front().unwrap();
+                has_piggyback = true;
+            } else {
+                if has_piggyback {
+                    // When breaking, we must mark any previously inserted piggyback to be
+                    // the last one, so we negate of its bits.
+                    for byte in packet.slice_mut().split_last_chunk_mut::<2>().unwrap().1 {
+                        *byte = !*byte;
+                    }
+                }
+                break;
+            }
+        }
+        self.switch_flags(flags::HAS_PIGGYBACKS, has_piggyback);
 
         // Write flags just before computing any checksum.
         packet.write_flags(self.flags);
