@@ -298,7 +298,21 @@ impl BaseProxyThread {
                 assert!(elt.request_id.is_none());
                 info!(%addr, "-> Session key: 0x{:08X}", elt.element.session_key);
             }
-            // TODO: Account::doCmdInt3 (AccountCommands.CMD_SYNC_DATA), exposed id: 0x0E, message id: 0x95
+            id if id::BASE_ENTITY_METHOD.contains(id) => {
+
+                // Account::doCmdInt3 (AccountCommands.CMD_SYNC_DATA), exposed id: 0x0E, message id: 0x95
+
+                if let Some(entity_id) = self.player_entity_id {
+                    // Unwrap because selected entity should exist!
+                    let entity_type = *self.entities.get(&entity_id).unwrap();
+                    return (entity_type.base_entity_method)(addr, entity_id, elt);
+                }
+
+                let elt = elt.read_simple::<DebugElementUndefined<0>>()?;
+                warn!(%addr, "-> Base entity method (unknown selected entity): msg#{} {:?} (request: {:?})", id - id::BASE_ENTITY_METHOD.first, elt.element, elt.request_id);
+                return Ok(false);
+
+            }
             id => {
                 let elt = elt.read_simple::<DebugElementUndefined<0>>()?;
                 error!(%addr, "-> Top element #{id} {:?} (request: {:?})", elt.element, elt.request_id);
@@ -457,6 +471,7 @@ impl BaseProxyThread {
 struct ProxyEntityType {
     create_base_player: fn(SocketAddr, TopElementReader) -> io::Result<bool>,
     entity_method: fn(SocketAddr, u32, TopElementReader) -> io::Result<bool>,
+    base_entity_method: fn(SocketAddr, u32, TopElementReader) -> io::Result<bool>,
 }
 
 impl ProxyEntityType {
@@ -465,6 +480,7 @@ impl ProxyEntityType {
     where
         E: Entity + Debug,
         E::ClientMethod: Debug,
+        E::BaseMethod: Debug,
     {
         Self {
             create_base_player: |addr, elt| {
@@ -477,6 +493,12 @@ impl ProxyEntityType {
                 use client::element::EntityMethod;
                 let em = elt.read_simple::<EntityMethod<E::ClientMethod>>()?;
                 info!(%addr, "<- Entity method: ({entity_id}) {:?}", em.element.inner);
+                Ok(true)
+            },
+            base_entity_method: |addr, entity_id, elt| {
+                use base::element::BaseEntityMethod;
+                let em = elt.read_simple::<BaseEntityMethod<E::BaseMethod>>()?;
+                info!(%addr, "-> Base entity method: ({entity_id}) {:?}", em.element.inner);
                 Ok(true)
             },
         }

@@ -523,7 +523,7 @@ pub type SetCellAppExtAddress = DebugElementVariable16<{ id::SET_CELL_APP_EXT_AD
 pub type LastProxyMessageAfterDirectCellAppConnection = DebugElementVariable16<{ id::LAST_PROXY_MESSAGE_AFTER_DIRECT_CELL_APP_CONNECTION }>;
 
 
-/// Decoding of a method call on an entity, the given method type should be the one of
+/// Codec for a method call on an entity, the given method type should be the one of
 /// the entity being called.
 /// FIXME: For now, this doesn't support sub message id, but it's not a problem with
 /// the current version of the game which don't use it!

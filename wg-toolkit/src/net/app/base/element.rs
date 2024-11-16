@@ -5,7 +5,8 @@
 
 use std::io::{self, Read, Write};
 
-use crate::net::element::{SimpleElement, ElementLength};
+use crate::net::app::common::entity::Method;
+use crate::net::element::{Element, ElementLength, SimpleElement};
 use crate::util::io::*;
 
 
@@ -85,6 +86,47 @@ impl SimpleElement for ClientSessionKey {
 
     fn decode(read: &mut dyn Read, _len: usize) -> io::Result<Self> {
         Ok(Self { session_key: read.read_u32()? })
+    }
+
+}
+
+
+/// Codec for a base entity method call.
+///
+/// FIXME: For now, this doesn't support sub message id.
+#[derive(Debug, Clone)]
+pub struct BaseEntityMethod<M: Method> {
+    pub inner: M,
+}
+
+impl<M: Method> Element for BaseEntityMethod<M> {
+
+    type Config = ();
+
+    fn encode_length(&self, _config: &Self::Config) -> ElementLength {
+        ElementLength::Variable16
+    }
+
+    fn encode(&self, write: &mut dyn Write, _config: &Self::Config) -> io::Result<u8> {
+        let exposed_id = self.inner.encode(write)?;
+        if exposed_id >= id::BASE_ENTITY_METHOD.slots_count() as u16 {
+            todo!("support for sub-id");
+        }
+        Ok(id::BASE_ENTITY_METHOD.first + exposed_id as u8)
+    }
+
+    fn decode_length(_config: &Self::Config, _id: u8) -> ElementLength {
+        ElementLength::Variable16
+    }
+
+    fn decode(read: &mut dyn Read, _len: usize, _config: &Self::Config, id: u8) -> io::Result<Self> {
+        if !id::BASE_ENTITY_METHOD.contains(id) {
+            panic!("unexpected base entity method element id: {id:02X}");
+        }
+        let inner = M::decode(read, (id - id::BASE_ENTITY_METHOD.first) as u16)?;
+        Ok(Self {
+            inner,
+        })
     }
 
 }
