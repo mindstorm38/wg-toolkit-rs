@@ -1047,17 +1047,17 @@ wgtk::__bootstrap_struct_data_type! {
 
     #[derive(Debug)]
     pub struct ClientCommandsPort_onCmdResponse {
-        pub a0: i16,
-        pub a1: i16,
-        pub a2: RelaxString,
+        pub request_id: i16,
+        pub result_id: i16,
+        pub error: RelaxString,
     }
 
     #[derive(Debug)]
     pub struct ClientCommandsPort_onCmdResponseExt {
-        pub a0: i16,
-        pub a1: i16,
-        pub a2: RelaxString,
-        pub a3: RelaxString,
+        pub request_id: i16,
+        pub result_id: i16,
+        pub error: RelaxString,
+        pub ext: RelaxString,
     }
 
 }
@@ -1067,106 +1067,106 @@ wgtk::__bootstrap_struct_data_type! {
 
     #[derive(Debug)]
     pub struct ClientCommandsPort_doCmdNoArgs {
-        pub a0: i16,
-        pub a1: i16,
+        pub request_id: i16,
+        pub cmd_id: i16,
     }
 
     #[derive(Debug)]
     pub struct ClientCommandsPort_doCmdStr {
-        pub a0: i16,
-        pub a1: i16,
-        pub a2: RelaxString,
+        pub request_id: i16,
+        pub cmd_id: i16,
+        pub arg0: RelaxString,
     }
 
     #[derive(Debug)]
     pub struct ClientCommandsPort_doCmdInt {
-        pub a0: i16,
-        pub a1: i16,
-        pub a2: i64,
+        pub request_id: i16,
+        pub cmd_id: i16,
+        pub arg0: i64,
     }
 
     #[derive(Debug)]
     pub struct ClientCommandsPort_doCmdInt2 {
-        pub a0: i16,
-        pub a1: i16,
-        pub a2: i64,
-        pub a3: i64,
+        pub request_id: i16,
+        pub cmd_id: i16,
+        pub arg0: i64,
+        pub arg1: i64,
     }
 
     #[derive(Debug)]
     pub struct ClientCommandsPort_doCmdInt3 {
-        pub a0: i16,
-        pub a1: i16,
-        pub a2: i64,
-        pub a3: i64,
-        pub a4: i64,
+        pub request_id: i16,
+        pub cmd_id: i16,
+        pub arg0: i64,
+        pub arg1: i64,
+        pub arg2: i64,
     }
 
     #[derive(Debug)]
     pub struct ClientCommandsPort_doCmdInt4 {
-        pub a0: i16,
-        pub a1: i16,
-        pub a2: i64,
-        pub a3: i64,
-        pub a4: i32,
-        pub a5: i32,
+        pub request_id: i16,
+        pub cmd_id: i16,
+        pub arg0: i64,
+        pub arg1: i64,
+        pub arg2: i32,
+        pub arg3: i32,
     }
 
     #[derive(Debug)]
     pub struct ClientCommandsPort_doCmdInt2Str {
-        pub a0: i16,
-        pub a1: i16,
-        pub a2: i64,
-        pub a3: i64,
-        pub a4: RelaxString,
+        pub request_id: i16,
+        pub cmd_id: i16,
+        pub arg0: i64,
+        pub arg1: i64,
+        pub arg2: RelaxString,
     }
 
     #[derive(Debug)]
     pub struct ClientCommandsPort_doCmdInt3Str {
-        pub a0: i16,
-        pub a1: i16,
-        pub a2: i64,
-        pub a3: i64,
-        pub a4: i64,
-        pub a5: RelaxString,
+        pub request_id: i16,
+        pub cmd_id: i16,
+        pub arg0: i64,
+        pub arg1: i64,
+        pub arg2: i64,
+        pub arg3: RelaxString,
     }
 
     #[derive(Debug)]
     pub struct ClientCommandsPort_doCmdIntArr {
-        pub a0: i16,
-        pub a1: i16,
-        pub a2: Vec<i32>,
+        pub request_id: i16,
+        pub cmd_id: i16,
+        pub arg0: Vec<i32>,
     }
 
     #[derive(Debug)]
     pub struct ClientCommandsPort_doCmdIntStr {
-        pub a0: i16,
-        pub a1: i16,
-        pub a2: i64,
-        pub a3: RelaxString,
+        pub request_id: i16,
+        pub cmd_id: i16,
+        pub arg0: i64,
+        pub arg1: RelaxString,
     }
 
     #[derive(Debug)]
     pub struct ClientCommandsPort_doCmdIntStrArr {
-        pub a0: i16,
-        pub a1: i16,
-        pub a2: i64,
-        pub a3: Vec<RelaxString>,
+        pub request_id: i16,
+        pub cmd_id: i16,
+        pub arg0: i64,
+        pub arg1: Vec<RelaxString>,
     }
 
     #[derive(Debug)]
     pub struct ClientCommandsPort_doCmdIntArrStrArr {
-        pub a0: i16,
-        pub a1: i16,
-        pub a2: Vec<i64>,
-        pub a3: Vec<RelaxString>,
+        pub request_id: i16,
+        pub cmd_id: i16,
+        pub arg0: Vec<i64>,
+        pub arg1: Vec<RelaxString>,
     }
 
     #[derive(Debug)]
     pub struct ClientCommandsPort_doCmdStrArr {
-        pub a0: i16,
-        pub a1: i16,
-        pub a2: Vec<RelaxString>,
+        pub request_id: i16,
+        pub cmd_id: i16,
+        pub arg0: Vec<RelaxString>,
     }
 
 }
@@ -1198,33 +1198,33 @@ wgtk::__bootstrap_struct_data_type! {
 
     #[derive(Debug)]
     pub struct Chat_chatCommandFromClient {
-        pub a0: i64,
-        pub a1: u8,
-        pub a2: OBJECT_ID,
-        pub a3: i64,
-        pub a4: i16,
-        pub a5: RelaxString,
-        pub a6: RelaxString,
+        pub request_id: i64,
+        pub command_id: u8,
+        pub channel_id: OBJECT_ID,
+        pub i64_arg: i64,
+        pub i16_arg: i16,
+        pub str_arg0: RelaxString,
+        pub str_arg1: RelaxString,
     }
 
     #[derive(Debug)]
     pub struct Chat_inviteCommand {
-        pub a0: i64,
-        pub a1: u8,
-        pub a2: i8,
-        pub a3: RelaxString,
-        pub a4: i64,
-        pub a5: i16,
-        pub a6: RelaxString,
-        pub a7: RelaxString,
+        pub request_id: i64,
+        pub command_id: u8,
+        pub invalid_type: i8,
+        pub receiver_name: RelaxString,
+        pub i64_arg: i64,
+        pub i16_arg: i16,
+        pub str_arg0: RelaxString,
+        pub str_arg1: RelaxString,
     }
 
     #[derive(Debug)]
     pub struct Chat_ackCommand {
-        pub a0: i64,
-        pub a1: u8,
-        pub a2: f64,
-        pub a3: i64,
+        pub request_id: i64,
+        pub command_id: u8,
+        pub time: f64,
+        pub invite_id: i64,
         pub a4: i64,
     }
 
@@ -1576,8 +1576,8 @@ wgtk::__bootstrap_struct_data_type! {
 
     #[derive(Debug)]
     pub struct AccountUnitBrowser_accountUnitBrowser_subscribe {
-        pub a0: i16,
-        pub a1: BOOL,
+        pub unit_type_flags: i16,
+        pub show_other_locations: BOOL,
     }
 
     #[derive(Debug)]
@@ -1908,9 +1908,9 @@ wgtk::__bootstrap_struct_data_type! {
 
     #[derive(Debug)]
     pub struct AccountAuthTokenProviderClient_onTokenReceived {
-        pub a0: u16,
-        pub a1: u8,
-        pub a2: RelaxString,
+        pub request_id: u16,
+        pub token_type: u8,
+        pub data: Python,
     }
 
 }

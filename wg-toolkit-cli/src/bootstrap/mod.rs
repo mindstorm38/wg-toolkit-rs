@@ -409,8 +409,27 @@ fn generate_interface(
     let mut count = 0;
     for property in &interface.properties {
         if matches!(property.flags, PropertyFlags::AllClients | PropertyFlags::OwnClient | PropertyFlags::BaseAndClient) {
-            writeln!(writer, "        pub {}: {},", property.name, generate_type_ref(&property.ty))?;
+
+            let mut name = Cow::Borrowed("");
+            let mut ty = Cow::Borrowed("");
+
+            for patch in PATCHES {
+                if let Patch::InterfaceProperty(func) = patch {
+                    (func)(&interface.name, &property.name, &mut name, &mut ty);
+                }
+            }
+
+            if name.is_empty() {
+                name = Cow::Borrowed(&property.name);
+            }
+
+            if ty.is_empty() {
+                ty = generate_type_ref(&property.ty);
+            }
+
+            writeln!(writer, "        pub {name}: {ty},")?;
             count += 1;
+
         }
     }
 
@@ -457,7 +476,26 @@ fn generate_interface_methods(
         writeln!(writer, "    pub struct {}_{} {{", interface.name, method.name)?;
 
         for (arg_idx, arg) in method.args.iter().enumerate() {
-            writeln!(writer, "        pub a{arg_idx}: {},", generate_type_ref(&arg.ty))?;
+
+            let mut name = Cow::Borrowed("");
+            let mut ty = Cow::Borrowed("");
+
+            for patch in PATCHES {
+                if let Patch::InterfaceMethodArg(func) = patch {
+                    (func)(&interface.name, &method.name, arg_idx, &mut name, &mut ty);
+                }
+            }
+
+            if name.is_empty() {
+                name = Cow::Owned(format!("a{arg_idx}"));
+            }
+
+            if ty.is_empty() {
+                ty = generate_type_ref(&arg.ty);
+            }
+
+            writeln!(writer, "        pub {name}: {ty},")?;
+
         }
 
         writeln!(writer, "    }}")?;
@@ -565,3 +603,96 @@ enum StreamSize {
     Fixed(usize),
     Variable(VariableHeaderSize),
 }
+
+
+#[derive(Debug, Clone)]
+enum Patch {
+    InterfaceProperty(fn(interface: &str, field: &str, name: &mut Cow<str>, ty: &mut Cow<str>)),
+    InterfaceMethodArg(fn(interface: &str, method: &str, index: usize, name: &mut Cow<str>, ty: &mut Cow<str>)),
+}
+
+/// Patches to apply when generating code for World of Tanks.
+const PATCHES: &[Patch] = &[
+    Patch::InterfaceMethodArg(|interface, method, index, name, ty| {
+        match (interface, method, index) {
+            ("ClientCommandsPort", _, _) if method.starts_with("doCmd") => {
+                *name = match index {
+                    0 => "request_id".into(),
+                    1 => "cmd_id".into(),
+                    _ => format!("arg{}", index - 2).into(),
+                };
+            }
+            ("ClientCommandsPort", _, _) if method.starts_with("onCmdResponse") => {
+                *name = match index {
+                    0 => "request_id".into(),
+                    1 => "result_id".into(),
+                    2 => "error".into(),
+                    3 => "ext".into(),
+                    _ => return,
+                };
+            }
+            ("Account", "showGUI", 0) => {
+                *name = "ctx".into();
+                *ty = "Python".into();
+            }
+            ("Chat", "chatCommandFromClient", _) => {
+                *name = match index {
+                    0 => "request_id".into(),
+                    1 => "command_id".into(),
+                    2 => "channel_id".into(),
+                    3 => "i64_arg".into(),
+                    4 => "i16_arg".into(),
+                    5 => "str_arg0".into(),
+                    6 => "str_arg1".into(),
+                    _ => return,
+                };
+            }
+            ("Chat", "inviteCommand", _) => {
+                *name = match index {
+                    0 => "request_id".into(),
+                    1 => "command_id".into(),
+                    2 => "invalid_type".into(),
+                    3 => "receiver_name".into(),
+                    4 => "i64_arg".into(),
+                    5 => "i16_arg".into(),
+                    6 => "str_arg0".into(),
+                    7 => "str_arg1".into(),
+                    _ => return,
+                };
+            }
+            ("Chat", "ackCommand", _) => {
+                *name = match index {
+                    0 => "request_id".into(),
+                    1 => "command_id".into(),
+                    2 => "time".into(),
+                    3 => "invite_id".into(),
+                    _ => return,
+                };
+            }
+            ("Account", "onClanInfoReceived", _) => {
+                *name = match index {
+                    0 => "id".into(),
+                    1 => "name".into(),
+                    2 => "abbrev".into(),
+                    3 => "motto".into(),
+                    4 => "description".into(),
+                    _ => return,
+                };
+            }
+            ("AccountUnitBrowser", "accountUnitBrowser_subscribe", 0) => *name = "unit_type_flags".into(),
+            ("AccountUnitBrowser", "accountUnitBrowser_subscribe", 1) => *name = "show_other_locations".into(),
+            ("AccountAuthTokenProviderClient", "onTokenReceived", _) => {
+                *name = match index {
+                    0 => "request_id".into(),
+                    1 => "token_type".into(),  // See TOKEN_TYPE in constants.py
+                    2 => "data".into(),
+                    _ => return,
+                };
+                if index == 2 {
+                    *ty = "Python".into();
+                }
+            }
+            _ => {}
+        }
+    })
+];

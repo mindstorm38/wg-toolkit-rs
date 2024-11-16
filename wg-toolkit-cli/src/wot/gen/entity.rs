@@ -93,7 +93,7 @@ wgtk::__bootstrap_struct_data_type! {
 
     #[derive(Debug)]
     pub struct Account_showGUI {
-        pub a0: RelaxString,
+        pub ctx: Python,
     }
 
     #[derive(Debug)]
@@ -200,11 +200,11 @@ wgtk::__bootstrap_struct_data_type! {
 
     #[derive(Debug)]
     pub struct Account_onClanInfoReceived {
-        pub a0: DB_ID,
-        pub a1: RelaxString,
-        pub a2: RelaxString,
-        pub a3: RelaxString,
-        pub a4: RelaxString,
+        pub id: DB_ID,
+        pub name: RelaxString,
+        pub abbrev: RelaxString,
+        pub motto: RelaxString,
+        pub description: RelaxString,
     }
 
     #[derive(Debug)]
