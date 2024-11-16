@@ -1,12 +1,13 @@
 //! Definition of common data types that can be transferred as entity or method calls.
 
+use std::borrow::Cow;
 use std::io::{self, Read, Write};
 use std::fmt;
 
 pub use glam::{Vec2, Vec3, Vec4};
 
 use crate::util::io::{WgReadExt, WgWriteExt};
-use crate::util::AsciiFmt;
+use crate::util::{AsciiFmt, TruncateFmt};
 
 
 /// Represent an element data type
@@ -47,42 +48,53 @@ impl DataType for String {
 }
 
 
-/// A string data type that may or may not successfully be decoded, if invalid UTF-8.
-#[derive(Clone, PartialEq, Eq)]
-pub enum RelaxString {
-    Utf8(String),
+/// The string data type used by default for all STRING types, it will try to 
+#[derive(Clone)]
+pub enum AutoString {
+    String(String),
+    Python(serde_pickle::Value),
     Raw(Vec<u8>),
 }
 
-impl fmt::Debug for RelaxString {
+impl fmt::Debug for AutoString {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Utf8(string) => f.debug_tuple("Utf8").field(string).finish(),
+            Self::String(string) => f.debug_tuple("Utf8").field(string).finish(),
+            Self::Python(value) => f.debug_tuple("Python").field(&format_args!("{}", TruncateFmt(value, 3000))).finish(),
             Self::Raw(bytes) => f.debug_tuple("Raw").field(&AsciiFmt(&bytes)).finish(),
         }
     }
 }
 
-impl DataType for RelaxString {
+impl DataType for AutoString {
 
     fn write(&self, write: &mut dyn Write) -> io::Result<()> {
-        write.write_blob_variable(match self {
-            RelaxString::Utf8(s) => s.as_bytes(),
-            RelaxString::Raw(vec) => &vec[..],
-        })
+        write.write_blob_variable(&*(match self {
+            AutoString::String(v) => Cow::Borrowed(v.as_bytes()),
+            AutoString::Python(v) => Cow::Owned(serde_pickle::value_to_vec(v, serde_pickle::SerOptions::new().proto_v2()).unwrap()),
+            AutoString::Raw(v) => Cow::Borrowed(&v[..]),
+        }))
     }
 
     fn read(read: &mut dyn Read) -> io::Result<Self> {
-        Ok(match read.read_string_variable_fallback()? {
-            Ok(string) => RelaxString::Utf8(string),
-            Err(bytes) => RelaxString::Raw(bytes),
-        })
+        
+        let raw = read.read_blob_variable()?;
+
+        if let Ok(v) = serde_pickle::value_from_reader(&raw[..], serde_pickle::DeOptions::new().decode_strings_relaxed()) {
+            return Ok(Self::Python(v));
+        }
+
+        match String::from_utf8(raw) {
+            Ok(s) => Ok(Self::String(s)),
+            Err(e) => Ok(Self::Raw(e.into_bytes())),
+        }
+
     }
 
 }
 
+
 /// The Python builtin data type.
-#[derive(Debug)]
 pub struct Python {
     /// Internal pickle value.
     pub value: serde_pickle::Value,
@@ -101,6 +113,15 @@ impl DataType for Python {
     }
 
 }
+
+impl fmt::Debug for Python {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("Python")
+            .field(&format_args!("{}", TruncateFmt(&self.value, 3000)))
+            .finish()
+    }
+}
+
 
 /// The mailbox type used sparingly in method calls.
 #[derive(Debug)]
@@ -122,6 +143,7 @@ impl DataType for Mailbox {
     }
 
 }
+
 
 macro_rules! impl_builtin_copy {
     ($ty:ty, $write_method:ident, $read_method:ident) => {
@@ -211,7 +233,7 @@ macro_rules! __bootstrap_struct_data_type {
         $(
             $(#[$attr:meta])* 
             $struct_vis:vis struct $struct_name:ident {
-                $( $field_vis:vis $field_name:ident : $field_ty:ty ),*
+                $( $(#[$field_attr:meta])* $field_vis:vis $field_name:ident : $field_ty:ty ),*
                 $(,)?
             }
         )*
@@ -219,7 +241,7 @@ macro_rules! __bootstrap_struct_data_type {
         $(
             $(#[$attr])* 
             $struct_vis struct $struct_name {
-                $( $field_vis $field_name : $field_ty,)*
+                $( $(#[$field_attr])* $field_vis $field_name : $field_ty,)*
             }
 
             impl $crate::net::app::common::data::DataType for $struct_name {

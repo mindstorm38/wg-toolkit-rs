@@ -85,9 +85,11 @@ pub fn cmd_wot(args: WotArgs) -> CliResult<()> {
         let base_thread = BaseProxyThread {
             app: base_app,
             shared,
+            next_tick: None,
             entities: HashMap::new(),
             selected_entity_id: None,
             player_entity_id: None,
+            partial_resources: HashMap::new(),
         };
         
         thread::scope(move |scope| {
@@ -156,9 +158,11 @@ struct LoginProxyThread {
 struct BaseProxyThread {
     app: proxy::App,
     shared: Arc<ProxyShared>,
+    next_tick: Option<u8>,
     entities: HashMap<u32, &'static ProxyEntityType>,
     selected_entity_id: Option<u32>,
     player_entity_id: Option<u32>,
+    partial_resources: HashMap<u16, ProxyPartialResource>,
 }
 
 #[derive(Debug)]
@@ -295,7 +299,6 @@ impl BaseProxyThread {
         match elt.id() {
             ClientSessionKey::ID => {
                 let elt = elt.read_simple::<ClientSessionKey>()?;
-                assert!(elt.request_id.is_none());
                 info!(%addr, "-> Session key: 0x{:08X}", elt.element.session_key);
             }
             id if id::BASE_ENTITY_METHOD.contains(id) => {
@@ -354,18 +357,20 @@ impl BaseProxyThread {
         match elt.id() {
             UpdateFrequencyNotification::ID => {
                 let ufn = elt.read_simple::<UpdateFrequencyNotification>()?;
-                assert!(ufn.request_id.is_none());
                 info!(%addr, "<- Update frequency: {} Hz, game time: {}", ufn.element.frequency, ufn.element.game_time);
             }
             TickSync::ID => {
                 let ts = elt.read_simple::<TickSync>()?;
-                assert!(ts.request_id.is_none());
-                info!(%addr, "<- Tick sync: {}", ts.element.tick);
+                if let Some(next_tick) = self.next_tick {
+                    if next_tick != ts.element.tick {
+                        warn!(%addr, "<- Tick missed, expected {next_tick}, got {}", ts.element.tick);
+                    }
+                }
+                self.next_tick = Some(ts.element.tick.wrapping_add(1));
             }
             ResetEntities::ID => {
 
                 let re = elt.read_simple::<ResetEntities>()?;
-                assert!(re.request_id.is_none());
 
                 info!(%addr, "<- Reset entities, keep player on base: {}, entities: {}", 
                     re.element.keep_player_on_base, self.entities.len());
@@ -388,10 +393,13 @@ impl BaseProxyThread {
                 }
 
             }
+            LoggedOff::ID => {
+                let lo = elt.read_simple::<LoggedOff>()?;
+                info!(%addr, "<- Logged off: {lo:?}");
+            }
             CreateBasePlayerHeader::ID => {
 
                 let cbp = elt.read_simple_stable::<CreateBasePlayerHeader>()?;
-                assert!(cbp.request_id.is_none());
 
                 if let Some(entity_type) = cbp.element.entity_type_id.checked_sub(1).and_then(|i| ENTITY_TYPES.get(i as usize)) {
                     self.entities.insert(cbp.element.entity_id, entity_type);
@@ -408,12 +416,10 @@ impl BaseProxyThread {
             }
             CreateCellPlayer::ID => {
                 let ccp = elt.read_simple::<CreateCellPlayer>()?;
-                assert!(ccp.request_id.is_none());
                 warn!(%addr, "<- Create cell player: {:?}", ccp.element);
             }
             SelectPlayerEntity::ID => {
                 let spe = elt.read_simple::<SelectPlayerEntity>()?;
-                assert!(spe.request_id.is_none());
                 if let Some(player_entity_id) = self.player_entity_id {
                     info!(%addr, "<- Select player entity: {player_entity_id}");
                 } else {
@@ -422,14 +428,55 @@ impl BaseProxyThread {
                 self.selected_entity_id = self.player_entity_id;
             }
             ResourceHeader::ID => {
+
+                // TODO: The resource description is a python pickle that decodes to a 
+                //       tuple containing (total len, crc32).
+                // See: scripts/client/game.py#L223
                 let rh = elt.read_simple::<ResourceHeader>()?;
-                assert!(rh.request_id.is_none());
-                info!(%addr, "<- Resource header: {:?}", rh.element);
+                info!(%addr, "<- Resource header: {}", rh.element.id);
+
+                // Intentionally overwrite any previous downloading resource!
+                self.partial_resources.insert(rh.element.id, ProxyPartialResource {
+                    description: rh.element.description,
+                    sequence_num: 0,
+                    data: Vec::new(),
+                });
+
             }
             ResourceFragment::ID => {
+
                 let rf = elt.read_simple::<ResourceFragment>()?;
-                assert!(rf.request_id.is_none());
-                info!(%addr, "<- Resource fragment: {:?}", rf.element);
+                let res_id = rf.element.id;
+
+                let Some(partial_resource) = self.partial_resources.get_mut(&res_id) else {
+                    warn!(%addr, "<- Resource fragment: {res_id}, len: {}, missing header", rf.element.data.len());
+                    return Ok(true);
+                };
+
+                if rf.element.sequence_num != partial_resource.sequence_num {
+                    // Just forgetting about the resource!
+                    warn!(%addr, "<- Resource fragment: {res_id}, len: {}, invalid sequence number, expected {}, got {}", 
+                    rf.element.data.len(), partial_resource.sequence_num, rf.element.sequence_num);
+                    let _ = self.partial_resources.remove(&res_id);
+                    return Ok(true);
+                }
+
+                partial_resource.sequence_num += 1;
+                partial_resource.data.extend_from_slice(&rf.element.data);
+                info!(%addr, "<- Resource fragment: {res_id}, len: {}, sequence number: {}", 
+                    rf.element.data.len(), partial_resource.sequence_num);
+                
+                if rf.element.last {
+
+                    let resource = self.partial_resources.remove(&rf.element.id).unwrap();
+                    info!(%addr, "<- Resource completed: {res_id}, len: {}", resource.data.len());
+                    
+                    // TODO: The full data looks like to be a zlib-compressed pickle.
+                    // TODO: onCmdResponse for requested SYNC use RES_SUCCESS=0, RES_STREAM=1, RES_CACHE=2 for result_id
+                    //       When RES_STREAM is used, then a resource (header+fragment) is expected with the associated request_id.
+
+                }
+
             }
             id if id::ENTITY_METHOD.contains(id) => {
 
@@ -465,6 +512,17 @@ impl BaseProxyThread {
 
 }
 
+/// Describe a partial resource being download, a header must have been sent.
+#[derive(Debug)]
+struct ProxyPartialResource {
+    /// The byte description sent in the resource header.
+    description: Vec<u8>,
+    /// The next sequence number expected, any other sequence number abort the download
+    /// with an error.
+    sequence_num: u8,
+    /// The full assembled data.
+    data: Vec<u8>,
+}
 
 /// Represent an entity type and its associated static functions.
 #[derive(Debug)]

@@ -185,7 +185,7 @@ fn generate_type_ref(ty: &Ty) -> Cow<'_, str> {
         TyKind::Vector2 => "Vec2",
         TyKind::Vector3 => "Vec3",
         TyKind::Vector4 => "Vec4",
-        TyKind::String => "RelaxString",
+        TyKind::String => "AutoString",
         TyKind::Python => "Python",
         TyKind::Mailbox => "Mailbox",
         TyKind::Array(ty_seq) |
@@ -267,7 +267,6 @@ fn generate_entity(
     state: &mut State,
 ) -> io::Result<()> {
 
-    writeln!(writer, "// Entity 0x{:02X}", entity.id)?;
     generate_interface(&mut writer, model, &entity.interface, state)?;
     
     for app_state in &mut state.apps {
@@ -359,8 +358,7 @@ fn generate_entity_methods(
         }
     });
 
-    writeln!(writer, "// Entity methods for {} on {}", entity.interface.name, app_state.name)?;
-    writeln!(writer, "wgtk::__bootstrap_enum_methods! {{")?;
+    writeln!(writer, "wgtk::__bootstrap_enum_methods! {{  // Entity methods on {}", app_state.name)?;
     writeln!(writer, "    #[derive(Debug)]")?;
     writeln!(writer, "    pub enum {}_{} {{", 
         entity.interface.name, app_state.suffix)?;
@@ -395,7 +393,11 @@ fn generate_interface(
     state: &mut State,
 ) -> io::Result<()> {
     
-    writeln!(writer, "// Interface {}", interface.name)?;
+    writeln!(writer, "// ============================================== //")?;
+    writeln!(writer, "// ====== {:^32} ====== //", interface.name)?;
+    writeln!(writer, "// ============================================== //")?;
+    writeln!(writer)?;
+    
     writeln!(writer, "wgtk::__bootstrap_struct_data_type! {{")?;
     writeln!(writer, "    #[derive(Debug)]")?;
     writeln!(writer, "    pub struct {} {{", interface.name)?;
@@ -458,8 +460,7 @@ fn generate_interface_methods(
 
     let mut unique_names = HashSet::new();
     
-    writeln!(writer, "// Method for {} on {}", interface.name, app_state.name)?;
-    writeln!(writer, "wgtk::__bootstrap_struct_data_type! {{")?;
+    writeln!(writer, "wgtk::__bootstrap_struct_data_type! {{  // Methods on {}", app_state.name)?;
     writeln!(writer)?;
 
     for method in (app_state.interface_methods)(interface) {
@@ -618,7 +619,7 @@ const PATCHES: &[Patch] = &[
             ("ClientCommandsPort", _, _) if method.starts_with("doCmd") => {
                 *name = match index {
                     0 => "request_id".into(),
-                    1 => "cmd_id".into(),
+                    1 => "cmd".into(),
                     _ => format!("arg{}", index - 2).into(),
                 };
             }
@@ -630,10 +631,6 @@ const PATCHES: &[Patch] = &[
                     3 => "ext".into(),
                     _ => return,
                 };
-            }
-            ("Account", "showGUI", 0) => {
-                *name = "ctx".into();
-                *ty = "Python".into();
             }
             ("Chat", "chatCommandFromClient", _) => {
                 *name = match index {
@@ -669,18 +666,12 @@ const PATCHES: &[Patch] = &[
                     _ => return,
                 };
             }
-            ("Account", "onClanInfoReceived", _) => {
-                *name = match index {
-                    0 => "id".into(),
-                    1 => "name".into(),
-                    2 => "abbrev".into(),
-                    3 => "motto".into(),
-                    4 => "description".into(),
-                    _ => return,
-                };
-            }
             ("AccountUnitBrowser", "accountUnitBrowser_subscribe", 0) => *name = "unit_type_flags".into(),
             ("AccountUnitBrowser", "accountUnitBrowser_subscribe", 1) => *name = "show_other_locations".into(),
+            ("AccountUnitBrowser", "accountUnitBrowser_recenter", 0) => *name = "target_rating".into(),
+            ("AccountUnitBrowser", "accountUnitBrowser_recenter", 1) => *name = "unit_type_flags".into(),
+            ("AccountUnitBrowser", "accountUnitBrowser_recenter", 2) => *name = "show_other_locations".into(),
+            ("AccountUnitBrowser", "accountUnitBrowser_doCmd", 0) => *name = "cmd".into(),
             ("AccountAuthTokenProviderClient", "onTokenReceived", _) => {
                 *name = match index {
                     0 => "request_id".into(),
@@ -692,6 +683,159 @@ const PATCHES: &[Patch] = &[
                     *ty = "Python".into();
                 }
             }
+            ("RespawnController_Avatar", "redrawVehicleOnRespawn", 0) => *name = "vehicle_id".into(),
+            ("RespawnController_Avatar", "redrawVehicleOnRespawn", 1) => *name = "new_vehicle_compact_description".into(),
+            ("RespawnController_Avatar", "redrawVehicleOnRespawn", 2) => *name = "new_vehicle_outfit_compact_description".into(),
+            ("RespawnController_Avatar", "explodeVehicleBeforeRespawn", 0) => *name = "vehicle_id".into(),
+            ("RespawnController_Avatar", "updateRespawnVehicles", 0) => *name = "vehicles".into(),
+            ("RespawnController_Avatar", "updateRespawnCooldowns", 0) => *name = "cooldowns".into(),
+            ("RespawnController_Avatar", "updateRespawnInfo", 0) => *name = "info".into(),
+            ("RespawnController_Avatar", "updateVehicleLimits", 0) => *name = "limits".into(),
+            ("RespawnController_Avatar", "updatePlayerLives", 0) => *name = "lives".into(),
+            ("RespawnController_Avatar", "onTeamLivesRestored", 0) => *name = "teams".into(),
+            ("RespawnController_Avatar", "respawnController_requestRespawnGroupChange", 0) => *name = "lane_id".into(),
+            ("RespawnController_Avatar", "respawnController_chooseVehicleForRespawn", 0) => *name = "int_cd".into(),
+            ("RespawnController_Avatar", "respawnController_chooseRespawnZone", 0) => *name = "respawn_zone".into(),
+            ("RespawnController_Avatar", "respawnController_switchSetup", 0) => *name = "vehicle_id".into(),
+            ("RespawnController_Avatar", "respawnController_switchSetup", 1) => *name = "group_id".into(),
+            ("RespawnController_Avatar", "respawnController_switchSetup", 2) => *name = "layout_index".into(),
+            ("RecoveryMechanic_Avatar", "updateState", 0) => *name = "activated".into(),
+            ("RecoveryMechanic_Avatar", "updateState", 1) => *name = "state".into(),
+            ("RecoveryMechanic_Avatar", "updateState", 2) => *name = "timer_duration".into(),
+            ("RecoveryMechanic_Avatar", "updateState", 3) => *name = "end_of_timer".into(),
+            ("PlayerMessenger_chat2", "messenger_onActionByServer_chat2" | "messenger_onActionByClient_chat2", 0) => *name = "action_id".into(),
+            ("PlayerMessenger_chat2", "messenger_onActionByServer_chat2" | "messenger_onActionByClient_chat2", 1) => *name = "request_id".into(),
+            ("PlayerMessenger_chat2", "messenger_onActionByServer_chat2" | "messenger_onActionByClient_chat2", 2) => *name = "args".into(),
+            ("AvatarEpic", "welcomeToSector", _) => {
+                *name = match index {
+                    0 => "sector_id".into(),
+                    1 => "group_id".into(),
+                    2 => "group_state".into(),
+                    3 => "good_group".into(),
+                    4 => "action_time".into(),
+                    5 => "action_duration".into(),
+                    _ => return,
+                };
+            }
+            ("AvatarEpic", "onStepRepairPointAction", _) => {
+                *name = match index {
+                    0 => "repair_point_index".into(),
+                    1 => "action".into(),
+                    2 => "next_action_time".into(),
+                    3 => "points_healed".into(),
+                    _ => return,
+                };
+            }
+            ("AvatarEpic", "onSectorBaseAction", 0) => *name = "sector_base_id".into(),
+            ("AvatarEpic", "onSectorBaseAction", 1) => *name = "action".into(),
+            ("AvatarEpic", "onSectorBaseAction", 2) => *name = "next_action_time".into(),
+            ("AvatarEpic", 
+                "enteringProtectionZone" | 
+                "leavingProtectionZone" | 
+                "protectionZoneShooting", 0) => *name = "zone_id".into(),
+            ("AvatarEpic", "onSectorShooting", 0) => *name = "sector_id".into(),
+            ("AvatarEpic", "onXPUpdated", 0) => *name = "xp".into(),
+            ("AvatarEpic", "onCrewRoleFactorAndRankUpdate", 0) => *name = "new_factor".into(),
+            ("AvatarEpic", "onCrewRoleFactorAndRankUpdate", 1) => *name = "ally_vehicle_id".into(),
+            ("AvatarEpic", "onCrewRoleFactorAndRankUpdate", 2) => *name = "ally_new_rank".into(),
+            ("AvatarEpic", "syncPurchasedAbilities", 0) => *name = "abilities".into(),
+            ("AvatarEpic", "onRandomReserveOffer", 0) => *name = "offer".into(),
+            ("AvatarEpic", "onRandomReserveOffer", 1) => *name = "level".into(),
+            ("AvatarEpic", "onRandomReserveOffer", 2) => *name = "slot_index".into(),
+            ("AvatarEpic", "onRankUpdate", 0) => *name = "new_rank".into(),
+            ("AvatarEpic", "showDestructibleShotResults" | "onDestructibleDestroyed", 0) => *name = "destructible_entity_id".into(),
+            ("AvatarEpic", "showDestructibleShotResults", 1) => *name = "hit_flags".into(),
+            ("AvatarEpic", "onDestructibleDestroyed", 1) => *name = "shooter_id".into(),
+            ("AccountPrebattle", "accountPrebattle_createTraining", 0) => *name = "arena_type_id".into(),
+            ("AccountPrebattle", "accountPrebattle_createTraining", 1) => *name = "round_length".into(),
+            ("AccountPrebattle", "accountPrebattle_createTraining", 2) => *name = "is_opened".into(),
+            ("AccountPrebattle", "accountPrebattle_createTraining", 3) => *name = "comment".into(),
+            ("AccountPrebattle", "accountPrebattle_createDevPrebattle", 0) => *name = "bonus_type".into(),
+            ("AccountPrebattle", "accountPrebattle_createDevPrebattle", 1) => *name = "arena_gui_type".into(),
+            ("AccountPrebattle", "accountPrebattle_createDevPrebattle", 2) => *name = "arena_type_id".into(),
+            ("AccountPrebattle", "accountPrebattle_createDevPrebattle", 3) => *name = "round_length".into(),
+            ("AccountPrebattle", "accountPrebattle_createDevPrebattle", 4) => *name = "comment".into(),
+            ("AccountPrebattle", "accountPrebattle_sendPrebattleInvites", 0) => *name = "accounts".into(),
+            ("AccountPrebattle", "accountPrebattle_sendPrebattleInvites", 1) => *name = "comment".into(),
+            ("AccountGlobalMapConnector", "accountGlobalMapConnector_callGlobalMapMethod", 0) => *name = "request_id".into(),
+            ("AccountGlobalMapConnector", "accountGlobalMapConnector_callGlobalMapMethod", 1) => *name = "method".into(),  // See GM_CLIENT_METHOD
+            ("AccountGlobalMapConnector", "accountGlobalMapConnector_callGlobalMapMethod", 2) => *name = "i64_arg".into(), // See scripts/client/ClientGlobalMap.py
+            ("AccountGlobalMapConnector", "accountGlobalMapConnector_callGlobalMapMethod", 3) => *name = "str_arg".into(),
+            ("AccountAuthTokenProvider", "requestToken", 0) => *name = "request_id".into(),
+            ("AccountAuthTokenProvider", "requestToken", 1) => *name = "token_type".into(),
+            ("Account", "onKickedFromServer", 0) => *name = "reason".into(),
+            ("Account", "onKickedFromServer", 1) => *name = "kick_reason_type".into(),
+            ("Account", "onKickedFromServer", 2) => *name = "expiry_time".into(),
+            ("Account", 
+                "onEnqueued" | 
+                "onDequeued" | 
+                "onEnqueueFailure" | 
+                "onKickedFromQueue", 0) => *name = "queue_type".into(),
+            ("Account", "onEnqueueFailure", 1) => *name = "error_code".into(),
+            ("Account", "onEnqueueFailure", 2) => *name = "error_str".into(),
+            ("Account", "onIGRTypeChanged" | "showGUI", 0) => {
+                *name = "data".into();
+                *ty = "Python".into();
+            }
+            ("Account", "onArenaJoinFailure", 0) => *name = "error_code".into(),
+            ("Account", "onArenaJoinFailure", 1) => *name = "error_str".into(),
+            ("Account", "onPrebattleJoined", 0) => *name = "prebattle_id".into(),
+            ("Account", "onPrebattleJoinFailure", 0) => *name = "error_code".into(),
+            ("Account", "onKickedFromArena" | "onKickedFromPrebattle", 0) => *name = "reason_code".into(),
+            ("Account", "onCenterIsLongDisconnected", 0) => *name = "is_long_disconnected".into(),
+            ("Account", "receiveActiveArenas", 0) => *name = "arenas".into(),
+            ("Account", "receiveServerStats", 0) => *name = "stats".into(),
+            ("Account", "receiveQueueInfo", 0) => *name = "info".into(),
+            ("Account", "updatePrebattle", 0) => *name = "update_type".into(),
+            ("Account", "updatePrebattle", 1) => *name = "str_arg".into(),
+            ("Account", "update", 0) => *name = "diff".into(),
+            ("Account", "resyncDossiers", 0) => *name = "is_full_resync".into(),
+            ("Account", "onUnitUpdate", 0) => *name = "unit_manager_id".into(),
+            ("Account", "onUnitUpdate", 1) => *name = "packed_unit".into(),
+            ("Account", "onUnitUpdate", 2) => *name = "packed_ops".into(),
+            ("Account", "onUnitCallOk", 0) => *name = "request_id".into(),
+            ("Account", "onUnitNotify", 0) => *name = "unit_manager_id".into(),
+            ("Account", "onUnitNotify", 1) => *name = "notify_code".into(),
+            ("Account", "onUnitNotify", 2) => *name = "notify_str".into(),
+            ("Account", "onUnitNotify", 3) => *name = "args".into(),
+            ("Account", "onUnitError", 0) => *name = "request_id".into(),
+            ("Account", "onUnitError", 1) => *name = "unit_manager_id".into(),
+            ("Account", "onUnitError", 2) => *name = "error_code".into(),
+            ("Account", "onUnitError", 3) => *name = "error_str".into(),
+            ("Account", "onUnitBrowserError", 0) => *name = "error_code".into(),
+            ("Account", "onUnitBrowserError", 1) => *name = "error_str".into(),
+            ("Account", "onUnitBrowserResultsSet", 0) => {
+                *name = "browser_results".into();
+                *ty = "Python".into();
+            }
+            ("Account", "onUnitBrowserResultsUpdate", 0) => {
+                *name = "browser_updates".into();
+                *ty = "Python".into();
+            }
+            ("Account", "onGlobalMapUpdate", 0) => *name = "packed_ops".into(),
+            ("Account", "onGlobalMapUpdate", 1) => *name = "packed_update".into(),
+            ("Account", "onGlobalMapReply", 0) => *name = "request_id".into(),
+            ("Account", "onGlobalMapReply", 1) => *name = "result_code".into(),
+            ("Account", "onGlobalMapReply", 2) => *name = "result_str".into(),
+            ("Account", "onSendPrebattleInvites", 0) => *name = "id".into(),
+            ("Account", "onSendPrebattleInvites", 1) => *name = "name".into(),
+            ("Account", "onSendPrebattleInvites", 2) => *name = "clan_id".into(),
+            ("Account", "onSendPrebattleInvites", 3) => *name = "clan_abbrev".into(),
+            ("Account", "onSendPrebattleInvites", 4) => *name = "prebattle_id".into(),
+            ("Account", "onSendPrebattleInvites", 5) => *name = "status".into(),
+            ("Account", "onClanInfoReceived", 0) => *name = "id".into(),
+            ("Account", "onClanInfoReceived", 1) => *name = "name".into(),
+            ("Account", "onClanInfoReceived", 2) => *name = "abbrev".into(),
+            ("Account", "onClanInfoReceived", 3) => *name = "motto".into(),
+            ("Account", "onClanInfoReceived", 4) => *name = "description".into(),
+            ("Account", "receiveNotification", 0) => *name = "notification".into(),
+            ("Account", "requestToken", 0) => *name = "request_id".into(),
+            ("Account", "requestToken", 1) => *name = "token_type".into(),
+            ("Account", "logStreamCorruption", 0) => *name = "stream_id".into(),
+            ("Account", "logStreamCorruption", 1) => *name = "original_packet_len".into(),
+            ("Account", "logStreamCorruption", 2) => *name = "packet_len".into(),
+            ("Account", "logStreamCorruption", 3) => *name = "original_crc32".into(),
+            ("Account", "logStreamCorruption", 4) => *name = "crc32".into(),
             _ => {}
         }
     })

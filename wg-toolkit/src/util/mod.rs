@@ -102,7 +102,7 @@ impl fmt::Debug for AsciiFmt<'_> {
 }
 
 /// A helper structure to truncate the output of some display implementor, adding 
-/// trailing '..' if necessary.
+/// trailing '...' if necessary.
 pub struct TruncateFmt<F>(pub F, pub usize);
 
 impl<F: fmt::Display> fmt::Display for TruncateFmt<F> {
@@ -110,8 +110,8 @@ impl<F: fmt::Display> fmt::Display for TruncateFmt<F> {
         let mut buf = String::new();
         buf.write_fmt(format_args!("{}", self.0))?;
         if buf.len() > self.1 {
-            buf.truncate(self.1 - 2);
-            buf.push_str("..");
+            buf.truncate(self.1 - 3);
+            buf.push_str("...");
         }
         f.write_str(&buf)
     }

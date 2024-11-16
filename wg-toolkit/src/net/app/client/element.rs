@@ -430,10 +430,10 @@ pub type SwitchBaseApp = DebugElementFixed<{ id::SWITCH_BASE_APP }, 9>;
 
 
 /// Header describing a resource that will be downloaded in possibly many fragments.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ResourceHeader {
     pub id: u16,
-    pub description: String,
+    pub description: Vec<u8>,
 }
 
 impl SimpleElement for ResourceHeader {
@@ -443,24 +443,26 @@ impl SimpleElement for ResourceHeader {
 
     fn encode(&self, write: &mut dyn Write) -> io::Result<()> {
         write.write_u16(self.id)?;
-        write.write_string_variable(&self.description)?;
+        write.write_blob_variable(&self.description)?;
         Ok(())
     }
 
     fn decode(read: &mut dyn Read, _len: usize) -> io::Result<Self> {
         Ok(Self {
             id: read.read_u16()?,
-            description: read.read_string_variable()?,
+            description: read.read_blob_variable()?,
         })
     }
 
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ResourceFlag {
-    None = 0,
-    First = 1,
-    Final = 2,
+impl fmt::Debug for ResourceHeader {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ResourceHeader")
+            .field("id", &self.id)
+            .field("description", &AsciiFmt(&self.description))
+            .finish()
+    }
 }
 
 /// Header describing a resource that will be downloaded in possibly many fragments.
@@ -468,7 +470,7 @@ pub enum ResourceFlag {
 pub struct ResourceFragment {
     pub id: u16,
     pub sequence_num: u8,
-    pub flag: ResourceFlag,
+    pub last: bool,
     pub data: Vec<u8>,
 }
 
@@ -480,7 +482,7 @@ impl SimpleElement for ResourceFragment {
     fn encode(&self, write: &mut dyn Write) -> io::Result<()> {
         write.write_u16(self.id)?;
         write.write_u8(self.sequence_num)?;
-        write.write_u8(self.flag as u8)?;
+        write.write_bool(self.last)?;
         write.write_blob(&self.data)?;
         Ok(())
     }
@@ -489,12 +491,7 @@ impl SimpleElement for ResourceFragment {
         Ok(Self {
             id: read.read_u16()?,
             sequence_num: read.read_u8()?,
-            flag: match read.read_u8()? {
-                0 => ResourceFlag::None,
-                1 => ResourceFlag::First,
-                2 => ResourceFlag::Final,
-                flags => return Err(io::Error::new(io::ErrorKind::InvalidData, format!("invalid resource flags: {flags}"))),
-            },
+            last: read.read_bool()?,
             data: read.read_blob(len - 4)?,
         })
     }
@@ -506,7 +503,7 @@ impl fmt::Debug for ResourceFragment {
         f.debug_struct("ResourceFragment")
             .field("id", &self.id)
             .field("sequence_num", &self.sequence_num)
-            .field("flag", &self.flag)
+            .field("last", &self.last)
             .field("data", &AsciiFmt(&self.data))
             .finish()
     }

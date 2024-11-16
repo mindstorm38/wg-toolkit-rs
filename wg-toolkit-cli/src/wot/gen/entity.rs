@@ -3,48 +3,49 @@ use wgtk::net::app::common::entity::{Entity, DataTypeEntity};
 use super::alias::*;
 use super::interface::*;
 
-// Entity 0x01
-// Interface Account
+// ============================================== //
+// ======             Account              ====== //
+// ============================================== //
+
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct Account {
         pub i_AccountVersion: AccountVersion,
-        pub name: RelaxString,
+        pub name: AutoString,
         pub incarnationID: u64,
         pub initialServerSettings: Python,
     }
 }
 
-// Method for Account on client
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
     #[derive(Debug)]
     pub struct Account_onKickedFromServer {
-        pub a0: RelaxString,
-        pub a1: u8,
-        pub a2: u32,
+        pub reason: AutoString,
+        pub kick_reason_type: u8,
+        pub expiry_time: u32,
     }
 
     #[derive(Debug)]
     pub struct Account_onEnqueued {
-        pub a0: u8,
+        pub queue_type: u8,
     }
 
     #[derive(Debug)]
     pub struct Account_onEnqueueFailure {
-        pub a0: u8,
-        pub a1: u8,
-        pub a2: RelaxString,
+        pub queue_type: u8,
+        pub error_code: u8,
+        pub error_str: AutoString,
     }
 
     #[derive(Debug)]
     pub struct Account_onDequeued {
-        pub a0: u8,
+        pub queue_type: u8,
     }
 
     #[derive(Debug)]
     pub struct Account_onKickedFromQueue {
-        pub a0: u8,
+        pub queue_type: u8,
     }
 
     #[derive(Debug)]
@@ -53,23 +54,23 @@ wgtk::__bootstrap_struct_data_type! {
 
     #[derive(Debug)]
     pub struct Account_onIGRTypeChanged {
-        pub a0: RelaxString,
+        pub data: Python,
     }
 
     #[derive(Debug)]
     pub struct Account_onArenaJoinFailure {
-        pub a0: u8,
-        pub a1: RelaxString,
+        pub error_code: u8,
+        pub error_str: AutoString,
     }
 
     #[derive(Debug)]
     pub struct Account_onPrebattleJoined {
-        pub a0: OBJECT_ID,
+        pub prebattle_id: OBJECT_ID,
     }
 
     #[derive(Debug)]
     pub struct Account_onPrebattleJoinFailure {
-        pub a0: u8,
+        pub error_code: u8,
     }
 
     #[derive(Debug)]
@@ -78,53 +79,53 @@ wgtk::__bootstrap_struct_data_type! {
 
     #[derive(Debug)]
     pub struct Account_onKickedFromArena {
-        pub a0: u8,
+        pub reason_code: u8,
     }
 
     #[derive(Debug)]
     pub struct Account_onKickedFromPrebattle {
-        pub a0: u8,
+        pub reason_code: u8,
     }
 
     #[derive(Debug)]
     pub struct Account_onCenterIsLongDisconnected {
-        pub a0: BOOL,
+        pub is_long_disconnected: BOOL,
     }
 
     #[derive(Debug)]
     pub struct Account_showGUI {
-        pub ctx: Python,
+        pub data: Python,
     }
 
     #[derive(Debug)]
     pub struct Account_receiveActiveArenas {
-        pub a0: Vec<PUBLIC_ARENA_INFO>,
+        pub arenas: Vec<PUBLIC_ARENA_INFO>,
     }
 
     #[derive(Debug)]
     pub struct Account_receiveServerStats {
-        pub a0: SERVER_STATISTICS,
+        pub stats: SERVER_STATISTICS,
     }
 
     #[derive(Debug)]
     pub struct Account_receiveQueueInfo {
-        pub a0: QUEUE_INFO,
+        pub info: QUEUE_INFO,
     }
 
     #[derive(Debug)]
     pub struct Account_updatePrebattle {
-        pub a0: u8,
-        pub a1: RelaxString,
+        pub update_type: u8,
+        pub str_arg: AutoString,
     }
 
     #[derive(Debug)]
     pub struct Account_update {
-        pub a0: RelaxString,
+        pub diff: AutoString,
     }
 
     #[derive(Debug)]
     pub struct Account_resyncDossiers {
-        pub a0: BOOL,
+        pub is_full_resync: BOOL,
     }
 
     #[derive(Debug)]
@@ -133,89 +134,88 @@ wgtk::__bootstrap_struct_data_type! {
 
     #[derive(Debug)]
     pub struct Account_onUnitUpdate {
-        pub a0: u64,
-        pub a1: RelaxString,
-        pub a2: RelaxString,
+        pub unit_manager_id: u64,
+        pub packed_unit: AutoString,
+        pub packed_ops: AutoString,
     }
 
     #[derive(Debug)]
     pub struct Account_onUnitCallOk {
-        pub a0: i32,
+        pub request_id: i32,
     }
 
     #[derive(Debug)]
     pub struct Account_onUnitNotify {
-        pub a0: u64,
-        pub a1: i32,
-        pub a2: RelaxString,
-        pub a3: Python,
+        pub unit_manager_id: u64,
+        pub notify_code: i32,
+        pub notify_str: AutoString,
+        pub args: Python,
     }
 
     #[derive(Debug)]
     pub struct Account_onUnitError {
-        pub a0: i32,
-        pub a1: u64,
-        pub a2: i32,
-        pub a3: RelaxString,
+        pub request_id: i32,
+        pub unit_manager_id: u64,
+        pub error_code: i32,
+        pub error_str: AutoString,
     }
 
     #[derive(Debug)]
     pub struct Account_onUnitBrowserError {
-        pub a0: i32,
-        pub a1: RelaxString,
+        pub error_code: i32,
+        pub error_str: AutoString,
     }
 
     #[derive(Debug)]
     pub struct Account_onUnitBrowserResultsSet {
-        pub a0: RelaxString,
+        pub browser_results: Python,
     }
 
     #[derive(Debug)]
     pub struct Account_onUnitBrowserResultsUpdate {
-        pub a0: RelaxString,
+        pub browser_updates: Python,
     }
 
     #[derive(Debug)]
     pub struct Account_onGlobalMapUpdate {
-        pub a0: RelaxString,
-        pub a1: RelaxString,
+        pub packed_ops: AutoString,
+        pub packed_update: AutoString,
     }
 
     #[derive(Debug)]
     pub struct Account_onGlobalMapReply {
-        pub a0: u64,
-        pub a1: i32,
-        pub a2: RelaxString,
+        pub request_id: u64,
+        pub result_code: i32,
+        pub result_str: AutoString,
     }
 
     #[derive(Debug)]
     pub struct Account_onSendPrebattleInvites {
-        pub a0: DB_ID,
-        pub a1: RelaxString,
-        pub a2: DB_ID,
-        pub a3: RelaxString,
-        pub a4: u64,
-        pub a5: u8,
+        pub id: DB_ID,
+        pub name: AutoString,
+        pub clan_id: DB_ID,
+        pub clan_abbrev: AutoString,
+        pub prebattle_id: u64,
+        pub status: u8,
     }
 
     #[derive(Debug)]
     pub struct Account_onClanInfoReceived {
         pub id: DB_ID,
-        pub name: RelaxString,
-        pub abbrev: RelaxString,
-        pub motto: RelaxString,
-        pub description: RelaxString,
+        pub name: AutoString,
+        pub abbrev: AutoString,
+        pub motto: AutoString,
+        pub description: AutoString,
     }
 
     #[derive(Debug)]
     pub struct Account_receiveNotification {
-        pub a0: RelaxString,
+        pub notification: AutoString,
     }
 
 }
 
-// Method for Account on base
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
     #[derive(Debug)]
     pub struct Account_makeDenunciation {
@@ -229,41 +229,39 @@ wgtk::__bootstrap_struct_data_type! {
         pub a0: DB_ID,
         pub a1: u8,
         pub a2: u32,
-        pub a3: RelaxString,
+        pub a3: AutoString,
         pub a4: i8,
     }
 
     #[derive(Debug)]
     pub struct Account_requestToken {
-        pub a0: u16,
-        pub a1: u8,
+        pub request_id: u16,
+        pub token_type: u8,
     }
 
     #[derive(Debug)]
     pub struct Account_logStreamCorruption {
-        pub a0: i16,
-        pub a1: i32,
-        pub a2: i32,
-        pub a3: i32,
-        pub a4: i32,
+        pub stream_id: i16,
+        pub original_packet_len: i32,
+        pub packet_len: i32,
+        pub original_crc32: i32,
+        pub crc32: i32,
     }
 
     #[derive(Debug)]
     pub struct Account_setKickAtTime {
         pub a0: i64,
-        pub a1: RelaxString,
-        pub a2: RelaxString,
+        pub a1: AutoString,
+        pub a2: AutoString,
     }
 
 }
 
-// Method for Account on cell
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 
 }
 
-// Entity methods for Account on client
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on client
     #[derive(Debug)]
     pub enum Account_Client {
         Account_onArenaCreated(0x00, 0),
@@ -309,8 +307,7 @@ wgtk::__bootstrap_enum_methods! {
     }
 }
 
-// Entity methods for Account on base
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on base
     #[derive(Debug)]
     pub enum Account_Base {
         AccountUnitBrowser_accountUnitBrowser_unsubscribe(0x00, 0),
@@ -356,8 +353,7 @@ wgtk::__bootstrap_enum_methods! {
     }
 }
 
-// Entity methods for Account on cell
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on cell
     #[derive(Debug)]
     pub enum Account_Cell {
     }
@@ -373,14 +369,16 @@ impl DataTypeEntity for Account {
     type CellMethod = Account_Cell;
 }
 
-// Entity 0x02
-// Interface Avatar
+// ============================================== //
+// ======              Avatar              ====== //
+// ============================================== //
+
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct Avatar {
         pub i_AvatarObserver: AvatarObserver,
-        pub name: RelaxString,
-        pub sessionID: RelaxString,
+        pub name: AutoString,
+        pub sessionID: AutoString,
         pub arenaUniqueID: u64,
         pub arenaTypeID: i32,
         pub arenaBonusType: u8,
@@ -388,7 +386,7 @@ wgtk::__bootstrap_struct_data_type! {
         pub arenaExtraData: Python,
         pub weatherPresetID: u8,
         pub denunciationsLeft: i16,
-        pub clientCtx: RelaxString,
+        pub clientCtx: AutoString,
         pub tkillIsSuspected: BOOL,
         pub team: u8,
         pub playerVehicleID: OBJECT_ID,
@@ -407,24 +405,23 @@ wgtk::__bootstrap_struct_data_type! {
     }
 }
 
-// Method for Avatar on client
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
     #[derive(Debug)]
     pub struct Avatar_update {
-        pub a0: RelaxString,
+        pub a0: AutoString,
     }
 
     #[derive(Debug)]
     pub struct Avatar_onKickedFromServer {
-        pub a0: RelaxString,
+        pub a0: AutoString,
         pub a1: u8,
         pub a2: u32,
     }
 
     #[derive(Debug)]
     pub struct Avatar_onIGRTypeChanged {
-        pub a0: RelaxString,
+        pub a0: AutoString,
     }
 
     #[derive(Debug)]
@@ -435,7 +432,7 @@ wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct Avatar_receiveAccountStats {
         pub a0: u32,
-        pub a1: RelaxString,
+        pub a1: AutoString,
     }
 
     #[derive(Debug)]
@@ -517,7 +514,7 @@ wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct Avatar_showDevelopmentInfo {
         pub a0: u8,
-        pub a1: RelaxString,
+        pub a1: AutoString,
     }
 
     #[derive(Debug)]
@@ -589,7 +586,7 @@ wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct Avatar_updateArena {
         pub a0: u8,
-        pub a1: RelaxString,
+        pub a1: AutoString,
     }
 
     #[derive(Debug)]
@@ -600,7 +597,7 @@ wgtk::__bootstrap_struct_data_type! {
 
     #[derive(Debug)]
     pub struct Avatar_receivePhysicsDebugInfo {
-        pub a0: RelaxString,
+        pub a0: AutoString,
     }
 
     #[derive(Debug)]
@@ -611,7 +608,7 @@ wgtk::__bootstrap_struct_data_type! {
 
     #[derive(Debug)]
     pub struct Avatar_receiveNotification {
-        pub a0: RelaxString,
+        pub a0: AutoString,
     }
 
     #[derive(Debug)]
@@ -623,7 +620,7 @@ wgtk::__bootstrap_struct_data_type! {
 
     #[derive(Debug)]
     pub struct Avatar_updateAvatarPrivateStats {
-        pub a0: RelaxString,
+        pub a0: AutoString,
     }
 
     #[derive(Debug)]
@@ -658,7 +655,7 @@ wgtk::__bootstrap_struct_data_type! {
 
     #[derive(Debug)]
     pub struct Avatar_updateQuestProgress {
-        pub a0: RelaxString,
+        pub a0: AutoString,
         pub a1: Python,
     }
 
@@ -681,11 +678,11 @@ wgtk::__bootstrap_struct_data_type! {
 
     #[derive(Debug)]
     pub struct Avatar_handleScriptEventFromServer {
-        pub a0: RelaxString,
-        pub a1: RelaxString,
-        pub a2: RelaxString,
-        pub a3: RelaxString,
-        pub a4: RelaxString,
+        pub a0: AutoString,
+        pub a1: AutoString,
+        pub a2: AutoString,
+        pub a3: AutoString,
+        pub a4: AutoString,
     }
 
     #[derive(Debug)]
@@ -695,13 +692,12 @@ wgtk::__bootstrap_struct_data_type! {
 
     #[derive(Debug)]
     pub struct Avatar_onRandomEvent {
-        pub a0: RelaxString,
+        pub a0: AutoString,
     }
 
 }
 
-// Method for Avatar on base
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
     #[derive(Debug)]
     pub struct Avatar_logLag {
@@ -735,7 +731,7 @@ wgtk::__bootstrap_struct_data_type! {
         pub a0: DB_ID,
         pub a1: u8,
         pub a2: u32,
-        pub a3: RelaxString,
+        pub a3: AutoString,
         pub a4: i8,
     }
 
@@ -748,12 +744,12 @@ wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct Avatar_sendAccountStats {
         pub a0: u32,
-        pub a1: Vec<RelaxString>,
+        pub a1: Vec<AutoString>,
     }
 
     #[derive(Debug)]
     pub struct Avatar_setClientCtx {
-        pub a0: RelaxString,
+        pub a0: AutoString,
     }
 
     #[derive(Debug)]
@@ -769,16 +765,16 @@ wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct Avatar_setDevelopmentFeature {
         pub a0: OBJECT_ID,
-        pub a1: RelaxString,
+        pub a1: AutoString,
         pub a2: i32,
-        pub a3: RelaxString,
+        pub a3: AutoString,
     }
 
     #[derive(Debug)]
     pub struct Avatar_addBotToArena {
-        pub a0: RelaxString,
+        pub a0: AutoString,
         pub a1: u8,
-        pub a2: RelaxString,
+        pub a2: AutoString,
         pub a3: Vec3,
         pub a4: u8,
     }
@@ -803,8 +799,7 @@ wgtk::__bootstrap_struct_data_type! {
 
 }
 
-// Method for Avatar on cell
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 
     #[derive(Debug)]
     pub struct Avatar_autoAim {
@@ -904,8 +899,7 @@ wgtk::__bootstrap_struct_data_type! {
 
 }
 
-// Entity methods for Avatar on client
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on client
     #[derive(Debug)]
     pub enum Avatar_Client {
         RecoveryMechanic_Avatar_notifyCannotStartRecovering(0x00, 0),
@@ -990,8 +984,7 @@ wgtk::__bootstrap_enum_methods! {
     }
 }
 
-// Entity methods for Avatar on base
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on base
     #[derive(Debug)]
     pub enum Avatar_Base {
         RespawnController_Avatar_respawnController_performRespawn(0x00, 0),
@@ -1037,8 +1030,7 @@ wgtk::__bootstrap_enum_methods! {
     }
 }
 
-// Entity methods for Avatar on cell
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on cell
     #[derive(Debug)]
     pub enum Avatar_Cell {
         Avatar_vehicle_shoot(0x00, 0),
@@ -1073,8 +1065,10 @@ impl DataTypeEntity for Avatar {
     type CellMethod = Avatar_Cell;
 }
 
-// Entity 0x03
-// Interface ArenaInfo
+// ============================================== //
+// ======            ArenaInfo             ====== //
+// ============================================== //
+
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct ArenaInfo {
@@ -1082,8 +1076,7 @@ wgtk::__bootstrap_struct_data_type! {
     }
 }
 
-// Method for ArenaInfo on client
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
     #[derive(Debug)]
     pub struct ArenaInfo_showCarpetBombing {
@@ -1095,33 +1088,28 @@ wgtk::__bootstrap_struct_data_type! {
 
 }
 
-// Method for ArenaInfo on base
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-// Method for ArenaInfo on cell
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 
 }
 
-// Entity methods for ArenaInfo on client
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on client
     #[derive(Debug)]
     pub enum ArenaInfo_Client {
         ArenaInfo_showCarpetBombing(0x00, 30),
     }
 }
 
-// Entity methods for ArenaInfo on base
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on base
     #[derive(Debug)]
     pub enum ArenaInfo_Base {
     }
 }
 
-// Entity methods for ArenaInfo on cell
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on cell
     #[derive(Debug)]
     pub enum ArenaInfo_Cell {
     }
@@ -1137,52 +1125,48 @@ impl DataTypeEntity for ArenaInfo {
     type CellMethod = ArenaInfo_Cell;
 }
 
-// Entity 0x04
-// Interface ClientSelectableObject
+// ============================================== //
+// ======      ClientSelectableObject      ====== //
+// ============================================== //
+
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct ClientSelectableObject {
-        pub modelName: RelaxString,
-        pub selectionId: RelaxString,
-        pub mouseOverSoundName: RelaxString,
+        pub modelName: AutoString,
+        pub selectionId: AutoString,
+        pub mouseOverSoundName: AutoString,
         pub isOver3DSound: BOOL,
-        pub clickSoundName: RelaxString,
+        pub clickSoundName: AutoString,
         pub isClick3DSound: BOOL,
         pub edgeMode: u8,
     }
 }
 
-// Method for ClientSelectableObject on client
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
 }
 
-// Method for ClientSelectableObject on base
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-// Method for ClientSelectableObject on cell
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 
 }
 
-// Entity methods for ClientSelectableObject on client
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on client
     #[derive(Debug)]
     pub enum ClientSelectableObject_Client {
     }
 }
 
-// Entity methods for ClientSelectableObject on base
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on base
     #[derive(Debug)]
     pub enum ClientSelectableObject_Base {
     }
 }
 
-// Entity methods for ClientSelectableObject on cell
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on cell
     #[derive(Debug)]
     pub enum ClientSelectableObject_Cell {
     }
@@ -1198,45 +1182,41 @@ impl DataTypeEntity for ClientSelectableObject {
     type CellMethod = ClientSelectableObject_Cell;
 }
 
-// Entity 0x05
-// Interface HangarVehicle
+// ============================================== //
+// ======          HangarVehicle           ====== //
+// ============================================== //
+
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct HangarVehicle {
     }
 }
 
-// Method for HangarVehicle on client
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
 }
 
-// Method for HangarVehicle on base
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-// Method for HangarVehicle on cell
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 
 }
 
-// Entity methods for HangarVehicle on client
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on client
     #[derive(Debug)]
     pub enum HangarVehicle_Client {
     }
 }
 
-// Entity methods for HangarVehicle on base
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on base
     #[derive(Debug)]
     pub enum HangarVehicle_Base {
     }
 }
 
-// Entity methods for HangarVehicle on cell
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on cell
     #[derive(Debug)]
     pub enum HangarVehicle_Cell {
     }
@@ -1252,8 +1232,10 @@ impl DataTypeEntity for HangarVehicle {
     type CellMethod = HangarVehicle_Cell;
 }
 
-// Entity 0x06
-// Interface Vehicle
+// ============================================== //
+// ======             Vehicle              ====== //
+// ============================================== //
+
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct Vehicle {
@@ -1261,7 +1243,7 @@ wgtk::__bootstrap_struct_data_type! {
         pub i_Wheels: Wheels,
         pub i_Perks_Vehicle: Perks_Vehicle,
         pub isStrafing: BOOL,
-        pub postmortemViewPointName: RelaxString,
+        pub postmortemViewPointName: AutoString,
         pub isHidden: BOOL,
         pub physicsMode: u8,
         pub siegeState: u8,
@@ -1273,7 +1255,7 @@ wgtk::__bootstrap_struct_data_type! {
         pub damageStickers: Vec<u64>,
         pub publicStateModifiers: Vec<EXTRA_ID>,
         pub stunInfo: STUN_INFO,
-        pub crewCompactDescrs: Vec<RelaxString>,
+        pub crewCompactDescrs: Vec<AutoString>,
         pub enhancements: Python,
         pub setups: Python,
         pub setupsIndexes: Python,
@@ -1305,8 +1287,7 @@ wgtk::__bootstrap_struct_data_type! {
     }
 }
 
-// Method for Vehicle on client
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
     #[derive(Debug)]
     pub struct Vehicle_onVehiclePickup {
@@ -1337,7 +1318,7 @@ wgtk::__bootstrap_struct_data_type! {
     pub struct Vehicle_updateLaserSight {
         pub a0: OBJECT_ID,
         pub a1: BOOL,
-        pub a2: RelaxString,
+        pub a2: AutoString,
     }
 
     #[derive(Debug)]
@@ -1391,13 +1372,11 @@ wgtk::__bootstrap_struct_data_type! {
 
 }
 
-// Method for Vehicle on base
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-// Method for Vehicle on cell
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 
     #[derive(Debug)]
     pub struct Vehicle_moveWith {
@@ -1444,8 +1423,7 @@ wgtk::__bootstrap_struct_data_type! {
 
 }
 
-// Entity methods for Vehicle on client
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on client
     #[derive(Debug)]
     pub enum Vehicle_Client {
         Vehicle_onVehiclePickup(0x00, 0),
@@ -1462,15 +1440,13 @@ wgtk::__bootstrap_enum_methods! {
     }
 }
 
-// Entity methods for Vehicle on base
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on base
     #[derive(Debug)]
     pub enum Vehicle_Base {
     }
 }
 
-// Entity methods for Vehicle on cell
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on cell
     #[derive(Debug)]
     pub enum Vehicle_Cell {
         RecoveryMechanic_Vehicle_recoveryMechanic_startRecovering(0x00, 0),
@@ -1497,8 +1473,10 @@ impl DataTypeEntity for Vehicle {
     type CellMethod = Vehicle_Cell;
 }
 
-// Entity 0x07
-// Interface AreaDestructibles
+// ============================================== //
+// ======        AreaDestructibles         ====== //
+// ============================================== //
+
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct AreaDestructibles {
@@ -1509,37 +1487,31 @@ wgtk::__bootstrap_struct_data_type! {
     }
 }
 
-// Method for AreaDestructibles on client
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
 }
 
-// Method for AreaDestructibles on base
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-// Method for AreaDestructibles on cell
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 
 }
 
-// Entity methods for AreaDestructibles on client
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on client
     #[derive(Debug)]
     pub enum AreaDestructibles_Client {
     }
 }
 
-// Entity methods for AreaDestructibles on base
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on base
     #[derive(Debug)]
     pub enum AreaDestructibles_Base {
     }
 }
 
-// Entity methods for AreaDestructibles on cell
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on cell
     #[derive(Debug)]
     pub enum AreaDestructibles_Cell {
     }
@@ -1555,45 +1527,41 @@ impl DataTypeEntity for AreaDestructibles {
     type CellMethod = AreaDestructibles_Cell;
 }
 
-// Entity 0x08
-// Interface OfflineEntity
+// ============================================== //
+// ======          OfflineEntity           ====== //
+// ============================================== //
+
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct OfflineEntity {
     }
 }
 
-// Method for OfflineEntity on client
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
 }
 
-// Method for OfflineEntity on base
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-// Method for OfflineEntity on cell
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 
 }
 
-// Entity methods for OfflineEntity on client
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on client
     #[derive(Debug)]
     pub enum OfflineEntity_Client {
     }
 }
 
-// Entity methods for OfflineEntity on base
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on base
     #[derive(Debug)]
     pub enum OfflineEntity_Base {
     }
 }
 
-// Entity methods for OfflineEntity on cell
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on cell
     #[derive(Debug)]
     pub enum OfflineEntity_Cell {
     }
@@ -1609,13 +1577,15 @@ impl DataTypeEntity for OfflineEntity {
     type CellMethod = OfflineEntity_Cell;
 }
 
-// Entity 0x09
-// Interface Flock
+// ============================================== //
+// ======              Flock               ====== //
+// ============================================== //
+
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct Flock {
-        pub modelName: RelaxString,
-        pub modelName2: RelaxString,
+        pub modelName: AutoString,
+        pub modelName2: AutoString,
         pub modelCount: u8,
         pub yawSpeed: f32,
         pub pitchSpeed: f32,
@@ -1632,37 +1602,31 @@ wgtk::__bootstrap_struct_data_type! {
     }
 }
 
-// Method for Flock on client
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
 }
 
-// Method for Flock on base
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-// Method for Flock on cell
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 
 }
 
-// Entity methods for Flock on client
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on client
     #[derive(Debug)]
     pub enum Flock_Client {
     }
 }
 
-// Entity methods for Flock on base
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on base
     #[derive(Debug)]
     pub enum Flock_Base {
     }
 }
 
-// Entity methods for Flock on cell
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on cell
     #[derive(Debug)]
     pub enum Flock_Cell {
     }
@@ -1678,16 +1642,18 @@ impl DataTypeEntity for Flock {
     type CellMethod = Flock_Cell;
 }
 
-// Entity 0x0A
-// Interface FlockExotic
+// ============================================== //
+// ======           FlockExotic            ====== //
+// ============================================== //
+
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct FlockExotic {
         pub animSpeedMax: f32,
         pub animSpeedMin: f32,
         pub modelCount: u8,
-        pub modelName: RelaxString,
-        pub modelName2: RelaxString,
+        pub modelName: AutoString,
+        pub modelName2: AutoString,
         pub speed: f32,
         pub initSpeedRandom: Vec2,
         pub speedRandom: Vec2,
@@ -1703,41 +1669,35 @@ wgtk::__bootstrap_struct_data_type! {
         pub flightOffsetFromOrigin: f32,
         pub lifeTime: f32,
         pub respawnTime: f32,
-        pub flightSound: RelaxString,
+        pub flightSound: AutoString,
     }
 }
 
-// Method for FlockExotic on client
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
 }
 
-// Method for FlockExotic on base
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-// Method for FlockExotic on cell
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 
 }
 
-// Entity methods for FlockExotic on client
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on client
     #[derive(Debug)]
     pub enum FlockExotic_Client {
     }
 }
 
-// Entity methods for FlockExotic on base
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on base
     #[derive(Debug)]
     pub enum FlockExotic_Base {
     }
 }
 
-// Entity methods for FlockExotic on cell
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on cell
     #[derive(Debug)]
     pub enum FlockExotic_Cell {
     }
@@ -1753,17 +1713,18 @@ impl DataTypeEntity for FlockExotic {
     type CellMethod = FlockExotic_Cell;
 }
 
-// Entity 0x0B
-// Interface Login
+// ============================================== //
+// ======              Login               ====== //
+// ============================================== //
+
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct Login {
-        pub accountDBID_s: RelaxString,
+        pub accountDBID_s: AutoString,
     }
 }
 
-// Method for Login on client
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
     #[derive(Debug)]
     pub struct Login_onKickedFromServer {
@@ -1777,24 +1738,21 @@ wgtk::__bootstrap_struct_data_type! {
 
     #[derive(Debug)]
     pub struct Login_setPeripheryRoutingGroup {
-        pub a0: RelaxString,
+        pub a0: AutoString,
         pub a1: Python,
     }
 
 }
 
-// Method for Login on base
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-// Method for Login on cell
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 
 }
 
-// Entity methods for Login on client
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on client
     #[derive(Debug)]
     pub enum Login_Client {
         Login_onKickedFromServer(0x00, 4),
@@ -1803,15 +1761,13 @@ wgtk::__bootstrap_enum_methods! {
     }
 }
 
-// Entity methods for Login on base
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on base
     #[derive(Debug)]
     pub enum Login_Base {
     }
 }
 
-// Entity methods for Login on cell
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on cell
     #[derive(Debug)]
     pub enum Login_Cell {
     }
@@ -1827,21 +1783,22 @@ impl DataTypeEntity for Login {
     type CellMethod = Login_Cell;
 }
 
-// Entity 0x0C
-// Interface DetachedTurret
+// ============================================== //
+// ======          DetachedTurret          ====== //
+// ============================================== //
+
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct DetachedTurret {
-        pub vehicleCompDescr: RelaxString,
-        pub outfitCD: RelaxString,
+        pub vehicleCompDescr: AutoString,
+        pub outfitCD: AutoString,
         pub isUnderWater: BOOL,
         pub isCollidingWithWorld: BOOL,
         pub vehicleID: i32,
     }
 }
 
-// Method for DetachedTurret on client
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
     #[derive(Debug)]
     pub struct DetachedTurret_onStaticCollision {
@@ -1858,18 +1815,15 @@ wgtk::__bootstrap_struct_data_type! {
 
 }
 
-// Method for DetachedTurret on base
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-// Method for DetachedTurret on cell
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 
 }
 
-// Entity methods for DetachedTurret on client
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on client
     #[derive(Debug)]
     pub enum DetachedTurret_Client {
         DetachedTurret_onStaticCollision(0x00, 28),
@@ -1877,15 +1831,13 @@ wgtk::__bootstrap_enum_methods! {
     }
 }
 
-// Entity methods for DetachedTurret on base
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on base
     #[derive(Debug)]
     pub enum DetachedTurret_Base {
     }
 }
 
-// Entity methods for DetachedTurret on cell
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on cell
     #[derive(Debug)]
     pub enum DetachedTurret_Cell {
     }
@@ -1901,8 +1853,10 @@ impl DataTypeEntity for DetachedTurret {
     type CellMethod = DetachedTurret_Cell;
 }
 
-// Entity 0x0D
-// Interface DebugDrawEntity
+// ============================================== //
+// ======         DebugDrawEntity          ====== //
+// ============================================== //
+
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct DebugDrawEntity {
@@ -1910,37 +1864,31 @@ wgtk::__bootstrap_struct_data_type! {
     }
 }
 
-// Method for DebugDrawEntity on client
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
 }
 
-// Method for DebugDrawEntity on base
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-// Method for DebugDrawEntity on cell
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 
 }
 
-// Entity methods for DebugDrawEntity on client
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on client
     #[derive(Debug)]
     pub enum DebugDrawEntity_Client {
     }
 }
 
-// Entity methods for DebugDrawEntity on base
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on base
     #[derive(Debug)]
     pub enum DebugDrawEntity_Base {
     }
 }
 
-// Entity methods for DebugDrawEntity on cell
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on cell
     #[derive(Debug)]
     pub enum DebugDrawEntity_Cell {
     }
@@ -1956,45 +1904,41 @@ impl DataTypeEntity for DebugDrawEntity {
     type CellMethod = DebugDrawEntity_Cell;
 }
 
-// Entity 0x0E
-// Interface ClientSelectableCameraObject
+// ============================================== //
+// ======   ClientSelectableCameraObject   ====== //
+// ============================================== //
+
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct ClientSelectableCameraObject {
     }
 }
 
-// Method for ClientSelectableCameraObject on client
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
 }
 
-// Method for ClientSelectableCameraObject on base
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-// Method for ClientSelectableCameraObject on cell
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 
 }
 
-// Entity methods for ClientSelectableCameraObject on client
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on client
     #[derive(Debug)]
     pub enum ClientSelectableCameraObject_Client {
     }
 }
 
-// Entity methods for ClientSelectableCameraObject on base
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on base
     #[derive(Debug)]
     pub enum ClientSelectableCameraObject_Base {
     }
 }
 
-// Entity methods for ClientSelectableCameraObject on cell
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on cell
     #[derive(Debug)]
     pub enum ClientSelectableCameraObject_Cell {
     }
@@ -2010,46 +1954,42 @@ impl DataTypeEntity for ClientSelectableCameraObject {
     type CellMethod = ClientSelectableCameraObject_Cell;
 }
 
-// Entity 0x0F
-// Interface ClientSelectableCameraVehicle
+// ============================================== //
+// ======  ClientSelectableCameraVehicle   ====== //
+// ============================================== //
+
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct ClientSelectableCameraVehicle {
-        pub modelName: RelaxString,
+        pub modelName: AutoString,
     }
 }
 
-// Method for ClientSelectableCameraVehicle on client
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
 }
 
-// Method for ClientSelectableCameraVehicle on base
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-// Method for ClientSelectableCameraVehicle on cell
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 
 }
 
-// Entity methods for ClientSelectableCameraVehicle on client
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on client
     #[derive(Debug)]
     pub enum ClientSelectableCameraVehicle_Client {
     }
 }
 
-// Entity methods for ClientSelectableCameraVehicle on base
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on base
     #[derive(Debug)]
     pub enum ClientSelectableCameraVehicle_Base {
     }
 }
 
-// Entity methods for ClientSelectableCameraVehicle on cell
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on cell
     #[derive(Debug)]
     pub enum ClientSelectableCameraVehicle_Cell {
     }
@@ -2065,46 +2005,42 @@ impl DataTypeEntity for ClientSelectableCameraVehicle {
     type CellMethod = ClientSelectableCameraVehicle_Cell;
 }
 
-// Entity 0x10
-// Interface ClientSelectableWebLinksOpener
+// ============================================== //
+// ======  ClientSelectableWebLinksOpener  ====== //
+// ============================================== //
+
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct ClientSelectableWebLinksOpener {
-        pub url: RelaxString,
+        pub url: AutoString,
     }
 }
 
-// Method for ClientSelectableWebLinksOpener on client
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
 }
 
-// Method for ClientSelectableWebLinksOpener on base
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-// Method for ClientSelectableWebLinksOpener on cell
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 
 }
 
-// Entity methods for ClientSelectableWebLinksOpener on client
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on client
     #[derive(Debug)]
     pub enum ClientSelectableWebLinksOpener_Client {
     }
 }
 
-// Entity methods for ClientSelectableWebLinksOpener on base
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on base
     #[derive(Debug)]
     pub enum ClientSelectableWebLinksOpener_Base {
     }
 }
 
-// Entity methods for ClientSelectableWebLinksOpener on cell
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on cell
     #[derive(Debug)]
     pub enum ClientSelectableWebLinksOpener_Cell {
     }
@@ -2120,49 +2056,45 @@ impl DataTypeEntity for ClientSelectableWebLinksOpener {
     type CellMethod = ClientSelectableWebLinksOpener_Cell;
 }
 
-// Entity 0x11
-// Interface ClientSelectableEasterEgg
+// ============================================== //
+// ======    ClientSelectableEasterEgg     ====== //
+// ============================================== //
+
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct ClientSelectableEasterEgg {
-        pub imageName: RelaxString,
+        pub imageName: AutoString,
         pub multiLanguageSupport: BOOL,
-        pub outlineModelName: RelaxString,
-        pub animationSequence: RelaxString,
+        pub outlineModelName: AutoString,
+        pub animationSequence: AutoString,
     }
 }
 
-// Method for ClientSelectableEasterEgg on client
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
 }
 
-// Method for ClientSelectableEasterEgg on base
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-// Method for ClientSelectableEasterEgg on cell
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 
 }
 
-// Entity methods for ClientSelectableEasterEgg on client
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on client
     #[derive(Debug)]
     pub enum ClientSelectableEasterEgg_Client {
     }
 }
 
-// Entity methods for ClientSelectableEasterEgg on base
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on base
     #[derive(Debug)]
     pub enum ClientSelectableEasterEgg_Base {
     }
 }
 
-// Entity methods for ClientSelectableEasterEgg on cell
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on cell
     #[derive(Debug)]
     pub enum ClientSelectableEasterEgg_Cell {
     }
@@ -2178,45 +2110,41 @@ impl DataTypeEntity for ClientSelectableEasterEgg {
     type CellMethod = ClientSelectableEasterEgg_Cell;
 }
 
-// Entity 0x12
-// Interface EmptyEntity
+// ============================================== //
+// ======           EmptyEntity            ====== //
+// ============================================== //
+
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct EmptyEntity {
     }
 }
 
-// Method for EmptyEntity on client
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
 }
 
-// Method for EmptyEntity on base
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-// Method for EmptyEntity on cell
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 
 }
 
-// Entity methods for EmptyEntity on client
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on client
     #[derive(Debug)]
     pub enum EmptyEntity_Client {
     }
 }
 
-// Entity methods for EmptyEntity on base
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on base
     #[derive(Debug)]
     pub enum EmptyEntity_Base {
     }
 }
 
-// Entity methods for EmptyEntity on cell
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on cell
     #[derive(Debug)]
     pub enum EmptyEntity_Cell {
     }
@@ -2232,45 +2160,41 @@ impl DataTypeEntity for EmptyEntity {
     type CellMethod = EmptyEntity_Cell;
 }
 
-// Entity 0x13
-// Interface LimitedVisibilityEntity
+// ============================================== //
+// ======     LimitedVisibilityEntity      ====== //
+// ============================================== //
+
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct LimitedVisibilityEntity {
     }
 }
 
-// Method for LimitedVisibilityEntity on client
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
 }
 
-// Method for LimitedVisibilityEntity on base
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-// Method for LimitedVisibilityEntity on cell
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 
 }
 
-// Entity methods for LimitedVisibilityEntity on client
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on client
     #[derive(Debug)]
     pub enum LimitedVisibilityEntity_Client {
     }
 }
 
-// Entity methods for LimitedVisibilityEntity on base
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on base
     #[derive(Debug)]
     pub enum LimitedVisibilityEntity_Base {
     }
 }
 
-// Entity methods for LimitedVisibilityEntity on cell
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on cell
     #[derive(Debug)]
     pub enum LimitedVisibilityEntity_Cell {
     }
@@ -2286,8 +2210,10 @@ impl DataTypeEntity for LimitedVisibilityEntity {
     type CellMethod = LimitedVisibilityEntity_Cell;
 }
 
-// Entity 0x14
-// Interface HeroTank
+// ============================================== //
+// ======             HeroTank             ====== //
+// ============================================== //
+
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct HeroTank {
@@ -2297,37 +2223,31 @@ wgtk::__bootstrap_struct_data_type! {
     }
 }
 
-// Method for HeroTank on client
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
 }
 
-// Method for HeroTank on base
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-// Method for HeroTank on cell
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 
 }
 
-// Entity methods for HeroTank on client
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on client
     #[derive(Debug)]
     pub enum HeroTank_Client {
     }
 }
 
-// Entity methods for HeroTank on base
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on base
     #[derive(Debug)]
     pub enum HeroTank_Base {
     }
 }
 
-// Entity methods for HeroTank on cell
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on cell
     #[derive(Debug)]
     pub enum HeroTank_Cell {
     }
@@ -2343,8 +2263,10 @@ impl DataTypeEntity for HeroTank {
     type CellMethod = HeroTank_Cell;
 }
 
-// Entity 0x15
-// Interface PlatoonTank
+// ============================================== //
+// ======           PlatoonTank            ====== //
+// ============================================== //
+
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct PlatoonTank {
@@ -2355,37 +2277,31 @@ wgtk::__bootstrap_struct_data_type! {
     }
 }
 
-// Method for PlatoonTank on client
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
 }
 
-// Method for PlatoonTank on base
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-// Method for PlatoonTank on cell
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 
 }
 
-// Entity methods for PlatoonTank on client
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on client
     #[derive(Debug)]
     pub enum PlatoonTank_Client {
     }
 }
 
-// Entity methods for PlatoonTank on base
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on base
     #[derive(Debug)]
     pub enum PlatoonTank_Base {
     }
 }
 
-// Entity methods for PlatoonTank on cell
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on cell
     #[derive(Debug)]
     pub enum PlatoonTank_Cell {
     }
@@ -2401,46 +2317,42 @@ impl DataTypeEntity for PlatoonTank {
     type CellMethod = PlatoonTank_Cell;
 }
 
-// Entity 0x16
-// Interface PlatoonLighting
+// ============================================== //
+// ======         PlatoonLighting          ====== //
+// ============================================== //
+
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct PlatoonLighting {
-        pub animationStateMachine: RelaxString,
+        pub animationStateMachine: AutoString,
     }
 }
 
-// Method for PlatoonLighting on client
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
 }
 
-// Method for PlatoonLighting on base
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-// Method for PlatoonLighting on cell
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 
 }
 
-// Entity methods for PlatoonLighting on client
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on client
     #[derive(Debug)]
     pub enum PlatoonLighting_Client {
     }
 }
 
-// Entity methods for PlatoonLighting on base
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on base
     #[derive(Debug)]
     pub enum PlatoonLighting_Base {
     }
 }
 
-// Entity methods for PlatoonLighting on cell
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on cell
     #[derive(Debug)]
     pub enum PlatoonLighting_Cell {
     }
@@ -2456,8 +2368,10 @@ impl DataTypeEntity for PlatoonLighting {
     type CellMethod = PlatoonLighting_Cell;
 }
 
-// Entity 0x17
-// Interface SectorBase
+// ============================================== //
+// ======            SectorBase            ====== //
+// ============================================== //
+
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct SectorBase {
@@ -2476,37 +2390,31 @@ wgtk::__bootstrap_struct_data_type! {
     }
 }
 
-// Method for SectorBase on client
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
 }
 
-// Method for SectorBase on base
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-// Method for SectorBase on cell
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 
 }
 
-// Entity methods for SectorBase on client
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on client
     #[derive(Debug)]
     pub enum SectorBase_Client {
     }
 }
 
-// Entity methods for SectorBase on base
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on base
     #[derive(Debug)]
     pub enum SectorBase_Base {
     }
 }
 
-// Entity methods for SectorBase on cell
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on cell
     #[derive(Debug)]
     pub enum SectorBase_Cell {
     }
@@ -2522,8 +2430,10 @@ impl DataTypeEntity for SectorBase {
     type CellMethod = SectorBase_Cell;
 }
 
-// Entity 0x18
-// Interface Sector
+// ============================================== //
+// ======              Sector              ====== //
+// ============================================== //
+
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct Sector {
@@ -2540,8 +2450,7 @@ wgtk::__bootstrap_struct_data_type! {
     }
 }
 
-// Method for Sector on client
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
     #[derive(Debug)]
     pub struct Sector_showBomb {
@@ -2550,33 +2459,28 @@ wgtk::__bootstrap_struct_data_type! {
 
 }
 
-// Method for Sector on base
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-// Method for Sector on cell
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 
 }
 
-// Entity methods for Sector on client
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on client
     #[derive(Debug)]
     pub enum Sector_Client {
         Sector_showBomb(0x00, 12),
     }
 }
 
-// Entity methods for Sector on base
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on base
     #[derive(Debug)]
     pub enum Sector_Base {
     }
 }
 
-// Entity methods for Sector on cell
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on cell
     #[derive(Debug)]
     pub enum Sector_Cell {
     }
@@ -2592,8 +2496,10 @@ impl DataTypeEntity for Sector {
     type CellMethod = Sector_Cell;
 }
 
-// Entity 0x19
-// Interface DestructibleEntity
+// ============================================== //
+// ======        DestructibleEntity        ====== //
+// ============================================== //
+
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct DestructibleEntity {
@@ -2604,13 +2510,12 @@ wgtk::__bootstrap_struct_data_type! {
         pub maxHealth: f32,
         pub isDestructibleDestroyed: BOOL,
         pub typeID: u8,
-        pub linkedMapActivities: RelaxString,
+        pub linkedMapActivities: AutoString,
         pub damageStickers: Vec<u64>,
     }
 }
 
-// Method for DestructibleEntity on client
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
     #[derive(Debug)]
     pub struct DestructibleEntity_onHealthChanged {
@@ -2635,18 +2540,15 @@ wgtk::__bootstrap_struct_data_type! {
 
 }
 
-// Method for DestructibleEntity on base
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-// Method for DestructibleEntity on cell
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 
 }
 
-// Entity methods for DestructibleEntity on client
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on client
     #[derive(Debug)]
     pub enum DestructibleEntity_Client {
         DestructibleEntity_showDamageFromExplosion(0x00, 8),
@@ -2655,15 +2557,13 @@ wgtk::__bootstrap_enum_methods! {
     }
 }
 
-// Entity methods for DestructibleEntity on base
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on base
     #[derive(Debug)]
     pub enum DestructibleEntity_Base {
     }
 }
 
-// Entity methods for DestructibleEntity on cell
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on cell
     #[derive(Debug)]
     pub enum DestructibleEntity_Cell {
     }
@@ -2679,8 +2579,10 @@ impl DataTypeEntity for DestructibleEntity {
     type CellMethod = DestructibleEntity_Cell;
 }
 
-// Entity 0x1A
-// Interface StepRepairPoint
+// ============================================== //
+// ======         StepRepairPoint          ====== //
+// ============================================== //
+
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct StepRepairPoint {
@@ -2689,37 +2591,31 @@ wgtk::__bootstrap_struct_data_type! {
     }
 }
 
-// Method for StepRepairPoint on client
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
 }
 
-// Method for StepRepairPoint on base
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-// Method for StepRepairPoint on cell
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 
 }
 
-// Entity methods for StepRepairPoint on client
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on client
     #[derive(Debug)]
     pub enum StepRepairPoint_Client {
     }
 }
 
-// Entity methods for StepRepairPoint on base
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on base
     #[derive(Debug)]
     pub enum StepRepairPoint_Base {
     }
 }
 
-// Entity methods for StepRepairPoint on cell
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on cell
     #[derive(Debug)]
     pub enum StepRepairPoint_Cell {
     }
@@ -2735,8 +2631,10 @@ impl DataTypeEntity for StepRepairPoint {
     type CellMethod = StepRepairPoint_Cell;
 }
 
-// Entity 0x1B
-// Interface ProtectionZone
+// ============================================== //
+// ======          ProtectionZone          ====== //
+// ============================================== //
+
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct ProtectionZone {
@@ -2748,37 +2646,31 @@ wgtk::__bootstrap_struct_data_type! {
     }
 }
 
-// Method for ProtectionZone on client
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
 }
 
-// Method for ProtectionZone on base
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-// Method for ProtectionZone on cell
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 
 }
 
-// Entity methods for ProtectionZone on client
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on client
     #[derive(Debug)]
     pub enum ProtectionZone_Client {
     }
 }
 
-// Entity methods for ProtectionZone on base
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on base
     #[derive(Debug)]
     pub enum ProtectionZone_Base {
     }
 }
 
-// Entity methods for ProtectionZone on cell
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on cell
     #[derive(Debug)]
     pub enum ProtectionZone_Cell {
     }
@@ -2794,8 +2686,10 @@ impl DataTypeEntity for ProtectionZone {
     type CellMethod = ProtectionZone_Cell;
 }
 
-// Entity 0x1C
-// Interface HangarPoster
+// ============================================== //
+// ======           HangarPoster           ====== //
+// ============================================== //
+
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct HangarPoster {
@@ -2804,37 +2698,31 @@ wgtk::__bootstrap_struct_data_type! {
     }
 }
 
-// Method for HangarPoster on client
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
 }
 
-// Method for HangarPoster on base
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-// Method for HangarPoster on cell
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 
 }
 
-// Entity methods for HangarPoster on client
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on client
     #[derive(Debug)]
     pub enum HangarPoster_Client {
     }
 }
 
-// Entity methods for HangarPoster on base
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on base
     #[derive(Debug)]
     pub enum HangarPoster_Base {
     }
 }
 
-// Entity methods for HangarPoster on cell
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on cell
     #[derive(Debug)]
     pub enum HangarPoster_Cell {
     }
@@ -2850,8 +2738,10 @@ impl DataTypeEntity for HangarPoster {
     type CellMethod = HangarPoster_Cell;
 }
 
-// Entity 0x1D
-// Interface TeamInfo
+// ============================================== //
+// ======             TeamInfo             ====== //
+// ============================================== //
+
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct TeamInfo {
@@ -2859,8 +2749,7 @@ wgtk::__bootstrap_struct_data_type! {
     }
 }
 
-// Method for TeamInfo on client
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
     #[derive(Debug)]
     pub struct TeamInfo_onCombatEquipmentUsed {
@@ -2878,18 +2767,15 @@ wgtk::__bootstrap_struct_data_type! {
 
 }
 
-// Method for TeamInfo on base
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-// Method for TeamInfo on cell
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 
 }
 
-// Entity methods for TeamInfo on client
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on client
     #[derive(Debug)]
     pub enum TeamInfo_Client {
         TeamInfo_onCombatEquipmentUsed(0x00, 8),
@@ -2897,15 +2783,13 @@ wgtk::__bootstrap_enum_methods! {
     }
 }
 
-// Entity methods for TeamInfo on base
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on base
     #[derive(Debug)]
     pub enum TeamInfo_Base {
     }
 }
 
-// Entity methods for TeamInfo on cell
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on cell
     #[derive(Debug)]
     pub enum TeamInfo_Cell {
     }
@@ -2921,8 +2805,10 @@ impl DataTypeEntity for TeamInfo {
     type CellMethod = TeamInfo_Cell;
 }
 
-// Entity 0x1E
-// Interface AvatarInfo
+// ============================================== //
+// ======            AvatarInfo            ====== //
+// ============================================== //
+
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct AvatarInfo {
@@ -2930,37 +2816,31 @@ wgtk::__bootstrap_struct_data_type! {
     }
 }
 
-// Method for AvatarInfo on client
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
 }
 
-// Method for AvatarInfo on base
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-// Method for AvatarInfo on cell
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 
 }
 
-// Entity methods for AvatarInfo on client
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on client
     #[derive(Debug)]
     pub enum AvatarInfo_Client {
     }
 }
 
-// Entity methods for AvatarInfo on base
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on base
     #[derive(Debug)]
     pub enum AvatarInfo_Base {
     }
 }
 
-// Entity methods for AvatarInfo on cell
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on cell
     #[derive(Debug)]
     pub enum AvatarInfo_Cell {
     }
@@ -2976,45 +2856,41 @@ impl DataTypeEntity for AvatarInfo {
     type CellMethod = AvatarInfo_Cell;
 }
 
-// Entity 0x1F
-// Interface ArenaObserverInfo
+// ============================================== //
+// ======        ArenaObserverInfo         ====== //
+// ============================================== //
+
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct ArenaObserverInfo {
     }
 }
 
-// Method for ArenaObserverInfo on client
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
 }
 
-// Method for ArenaObserverInfo on base
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-// Method for ArenaObserverInfo on cell
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 
 }
 
-// Entity methods for ArenaObserverInfo on client
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on client
     #[derive(Debug)]
     pub enum ArenaObserverInfo_Client {
     }
 }
 
-// Entity methods for ArenaObserverInfo on base
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on base
     #[derive(Debug)]
     pub enum ArenaObserverInfo_Base {
     }
 }
 
-// Entity methods for ArenaObserverInfo on cell
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on cell
     #[derive(Debug)]
     pub enum ArenaObserverInfo_Cell {
     }
@@ -3030,8 +2906,10 @@ impl DataTypeEntity for ArenaObserverInfo {
     type CellMethod = ArenaObserverInfo_Cell;
 }
 
-// Entity 0x20
-// Interface AreaOfEffect
+// ============================================== //
+// ======           AreaOfEffect           ====== //
+// ============================================== //
+
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct AreaOfEffect {
@@ -3042,45 +2920,39 @@ wgtk::__bootstrap_struct_data_type! {
     }
 }
 
-// Method for AreaOfEffect on client
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
     #[derive(Debug)]
     pub struct AreaOfEffect_playEffect {
-        pub a0: RelaxString,
+        pub a0: AutoString,
         pub a1: Vec3,
         pub a2: f32,
     }
 
 }
 
-// Method for AreaOfEffect on base
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-// Method for AreaOfEffect on cell
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 
 }
 
-// Entity methods for AreaOfEffect on client
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on client
     #[derive(Debug)]
     pub enum AreaOfEffect_Client {
         AreaOfEffect_playEffect(0x00, var8),
     }
 }
 
-// Entity methods for AreaOfEffect on base
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on base
     #[derive(Debug)]
     pub enum AreaOfEffect_Base {
     }
 }
 
-// Entity methods for AreaOfEffect on cell
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on cell
     #[derive(Debug)]
     pub enum AreaOfEffect_Cell {
     }
@@ -3096,45 +2968,41 @@ impl DataTypeEntity for AreaOfEffect {
     type CellMethod = AreaOfEffect_Cell;
 }
 
-// Entity 0x21
-// Interface AttackBomber
+// ============================================== //
+// ======           AttackBomber           ====== //
+// ============================================== //
+
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct AttackBomber {
     }
 }
 
-// Method for AttackBomber on client
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
 }
 
-// Method for AttackBomber on base
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-// Method for AttackBomber on cell
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 
 }
 
-// Entity methods for AttackBomber on client
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on client
     #[derive(Debug)]
     pub enum AttackBomber_Client {
     }
 }
 
-// Entity methods for AttackBomber on base
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on base
     #[derive(Debug)]
     pub enum AttackBomber_Base {
     }
 }
 
-// Entity methods for AttackBomber on cell
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on cell
     #[derive(Debug)]
     pub enum AttackBomber_Cell {
     }
@@ -3150,8 +3018,10 @@ impl DataTypeEntity for AttackBomber {
     type CellMethod = AttackBomber_Cell;
 }
 
-// Entity 0x22
-// Interface AttackArtilleryFort
+// ============================================== //
+// ======       AttackArtilleryFort        ====== //
+// ============================================== //
+
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct AttackArtilleryFort {
@@ -3159,37 +3029,31 @@ wgtk::__bootstrap_struct_data_type! {
     }
 }
 
-// Method for AttackArtilleryFort on client
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
 }
 
-// Method for AttackArtilleryFort on base
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-// Method for AttackArtilleryFort on cell
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 
 }
 
-// Entity methods for AttackArtilleryFort on client
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on client
     #[derive(Debug)]
     pub enum AttackArtilleryFort_Client {
     }
 }
 
-// Entity methods for AttackArtilleryFort on base
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on base
     #[derive(Debug)]
     pub enum AttackArtilleryFort_Base {
     }
 }
 
-// Entity methods for AttackArtilleryFort on cell
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on cell
     #[derive(Debug)]
     pub enum AttackArtilleryFort_Cell {
     }
@@ -3205,45 +3069,41 @@ impl DataTypeEntity for AttackArtilleryFort {
     type CellMethod = AttackArtilleryFort_Cell;
 }
 
-// Entity 0x23
-// Interface PersonalDeathZone
+// ============================================== //
+// ======        PersonalDeathZone         ====== //
+// ============================================== //
+
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct PersonalDeathZone {
     }
 }
 
-// Method for PersonalDeathZone on client
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
 }
 
-// Method for PersonalDeathZone on base
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-// Method for PersonalDeathZone on cell
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 
 }
 
-// Entity methods for PersonalDeathZone on client
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on client
     #[derive(Debug)]
     pub enum PersonalDeathZone_Client {
     }
 }
 
-// Entity methods for PersonalDeathZone on base
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on base
     #[derive(Debug)]
     pub enum PersonalDeathZone_Base {
     }
 }
 
-// Entity methods for PersonalDeathZone on cell
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on cell
     #[derive(Debug)]
     pub enum PersonalDeathZone_Cell {
     }
@@ -3259,45 +3119,41 @@ impl DataTypeEntity for PersonalDeathZone {
     type CellMethod = PersonalDeathZone_Cell;
 }
 
-// Entity 0x24
-// Interface ClientSelectableRankedObject
+// ============================================== //
+// ======   ClientSelectableRankedObject   ====== //
+// ============================================== //
+
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct ClientSelectableRankedObject {
     }
 }
 
-// Method for ClientSelectableRankedObject on client
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
 }
 
-// Method for ClientSelectableRankedObject on base
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-// Method for ClientSelectableRankedObject on cell
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 
 }
 
-// Entity methods for ClientSelectableRankedObject on client
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on client
     #[derive(Debug)]
     pub enum ClientSelectableRankedObject_Client {
     }
 }
 
-// Entity methods for ClientSelectableRankedObject on base
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on base
     #[derive(Debug)]
     pub enum ClientSelectableRankedObject_Base {
     }
 }
 
-// Entity methods for ClientSelectableRankedObject on cell
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on cell
     #[derive(Debug)]
     pub enum ClientSelectableRankedObject_Cell {
     }
@@ -3313,8 +3169,10 @@ impl DataTypeEntity for ClientSelectableRankedObject {
     type CellMethod = ClientSelectableRankedObject_Cell;
 }
 
-// Entity 0x25
-// Interface SimulatedVehicle
+// ============================================== //
+// ======         SimulatedVehicle         ====== //
+// ============================================== //
+
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct SimulatedVehicle {
@@ -3325,7 +3183,7 @@ wgtk::__bootstrap_struct_data_type! {
         pub simulationData_rotation: Vec3,
         pub simulationData_velocity: Vec3,
         pub simulationData_angVelocity: Vec3,
-        pub simulationData_simulationType: RelaxString,
+        pub simulationData_simulationType: AutoString,
         pub simulationData_health: i16,
         pub simulationData_engineMode: Box<[u8; 2]>,
         pub simulationData_gunAngles: Vec2,
@@ -3339,37 +3197,31 @@ wgtk::__bootstrap_struct_data_type! {
     }
 }
 
-// Method for SimulatedVehicle on client
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
 }
 
-// Method for SimulatedVehicle on base
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-// Method for SimulatedVehicle on cell
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 
 }
 
-// Entity methods for SimulatedVehicle on client
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on client
     #[derive(Debug)]
     pub enum SimulatedVehicle_Client {
     }
 }
 
-// Entity methods for SimulatedVehicle on base
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on base
     #[derive(Debug)]
     pub enum SimulatedVehicle_Base {
     }
 }
 
-// Entity methods for SimulatedVehicle on cell
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on cell
     #[derive(Debug)]
     pub enum SimulatedVehicle_Cell {
     }
@@ -3385,46 +3237,42 @@ impl DataTypeEntity for SimulatedVehicle {
     type CellMethod = SimulatedVehicle_Cell;
 }
 
-// Entity 0x26
-// Interface ClientSelectableHangarsSwitcher
+// ============================================== //
+// ====== ClientSelectableHangarsSwitcher  ====== //
+// ============================================== //
+
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct ClientSelectableHangarsSwitcher {
-        pub destHangar: RelaxString,
+        pub destHangar: AutoString,
     }
 }
 
-// Method for ClientSelectableHangarsSwitcher on client
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
 }
 
-// Method for ClientSelectableHangarsSwitcher on base
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-// Method for ClientSelectableHangarsSwitcher on cell
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 
 }
 
-// Entity methods for ClientSelectableHangarsSwitcher on client
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on client
     #[derive(Debug)]
     pub enum ClientSelectableHangarsSwitcher_Client {
     }
 }
 
-// Entity methods for ClientSelectableHangarsSwitcher on base
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on base
     #[derive(Debug)]
     pub enum ClientSelectableHangarsSwitcher_Base {
     }
 }
 
-// Entity methods for ClientSelectableHangarsSwitcher on cell
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on cell
     #[derive(Debug)]
     pub enum ClientSelectableHangarsSwitcher_Cell {
     }
@@ -3440,26 +3288,27 @@ impl DataTypeEntity for ClientSelectableHangarsSwitcher {
     type CellMethod = ClientSelectableHangarsSwitcher_Cell;
 }
 
-// Entity 0x27
-// Interface StaticDeathZone
+// ============================================== //
+// ======         StaticDeathZone          ====== //
+// ============================================== //
+
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct StaticDeathZone {
-        pub zoneId: RelaxString,
+        pub zoneId: AutoString,
         pub isActive: BOOL,
         pub vehiclesUnderFire: Vec<VEHICLE_IN_DEATHZONE>,
         pub maskingPolygonsCount: u8,
-        pub proximityMarkerStyle: RelaxString,
+        pub proximityMarkerStyle: AutoString,
     }
 }
 
-// Method for StaticDeathZone on client
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
     #[derive(Debug)]
     pub struct StaticDeathZone_onDeathZoneDamage {
         pub a0: OBJECT_ID,
-        pub a1: RelaxString,
+        pub a1: AutoString,
     }
 
     #[derive(Debug)]
@@ -3482,18 +3331,15 @@ wgtk::__bootstrap_struct_data_type! {
 
 }
 
-// Method for StaticDeathZone on base
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-// Method for StaticDeathZone on cell
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 
 }
 
-// Entity methods for StaticDeathZone on client
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on client
     #[derive(Debug)]
     pub enum StaticDeathZone_Client {
         StaticDeathZone_onEntityEnteredInZone(0x00, 4),
@@ -3503,15 +3349,13 @@ wgtk::__bootstrap_enum_methods! {
     }
 }
 
-// Entity methods for StaticDeathZone on base
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on base
     #[derive(Debug)]
     pub enum StaticDeathZone_Base {
     }
 }
 
-// Entity methods for StaticDeathZone on cell
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on cell
     #[derive(Debug)]
     pub enum StaticDeathZone_Cell {
     }
@@ -3527,8 +3371,10 @@ impl DataTypeEntity for StaticDeathZone {
     type CellMethod = StaticDeathZone_Cell;
 }
 
-// Entity 0x28
-// Interface BasicMine
+// ============================================== //
+// ======            BasicMine             ====== //
+// ============================================== //
+
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct BasicMine {
@@ -3542,37 +3388,31 @@ wgtk::__bootstrap_struct_data_type! {
     }
 }
 
-// Method for BasicMine on client
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
 }
 
-// Method for BasicMine on base
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-// Method for BasicMine on cell
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 
 }
 
-// Entity methods for BasicMine on client
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on client
     #[derive(Debug)]
     pub enum BasicMine_Client {
     }
 }
 
-// Entity methods for BasicMine on base
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on base
     #[derive(Debug)]
     pub enum BasicMine_Base {
     }
 }
 
-// Entity methods for BasicMine on cell
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on cell
     #[derive(Debug)]
     pub enum BasicMine_Cell {
     }
@@ -3588,8 +3428,10 @@ impl DataTypeEntity for BasicMine {
     type CellMethod = BasicMine_Cell;
 }
 
-// Entity 0x29
-// Interface ApplicationPoint
+// ============================================== //
+// ======         ApplicationPoint         ====== //
+// ============================================== //
+
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct ApplicationPoint {
@@ -3600,37 +3442,31 @@ wgtk::__bootstrap_struct_data_type! {
     }
 }
 
-// Method for ApplicationPoint on client
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
 }
 
-// Method for ApplicationPoint on base
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-// Method for ApplicationPoint on cell
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 
 }
 
-// Entity methods for ApplicationPoint on client
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on client
     #[derive(Debug)]
     pub enum ApplicationPoint_Client {
     }
 }
 
-// Entity methods for ApplicationPoint on base
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on base
     #[derive(Debug)]
     pub enum ApplicationPoint_Base {
     }
 }
 
-// Entity methods for ApplicationPoint on cell
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on cell
     #[derive(Debug)]
     pub enum ApplicationPoint_Cell {
     }
@@ -3646,21 +3482,22 @@ impl DataTypeEntity for ApplicationPoint {
     type CellMethod = ApplicationPoint_Cell;
 }
 
-// Entity 0x2A
-// Interface NetworkEntity
+// ============================================== //
+// ======          NetworkEntity           ====== //
+// ============================================== //
+
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct NetworkEntity {
-        pub unique_id: RelaxString,
-        pub prefab_path: RelaxString,
+        pub unique_id: AutoString,
+        pub prefab_path: AutoString,
         pub scale: Vec3,
         pub goState: Vec<GAME_OBJECT_STATE>,
-        pub name: RelaxString,
+        pub name: AutoString,
     }
 }
 
-// Method for NetworkEntity on client
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
     #[derive(Debug)]
     pub struct NetworkEntity_activateGameObject {
@@ -3692,18 +3529,15 @@ wgtk::__bootstrap_struct_data_type! {
 
 }
 
-// Method for NetworkEntity on base
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-// Method for NetworkEntity on cell
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 
 }
 
-// Entity methods for NetworkEntity on client
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on client
     #[derive(Debug)]
     pub enum NetworkEntity_Client {
         NetworkEntity_activateGameObject(0x00, 0),
@@ -3716,15 +3550,13 @@ wgtk::__bootstrap_enum_methods! {
     }
 }
 
-// Entity methods for NetworkEntity on base
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on base
     #[derive(Debug)]
     pub enum NetworkEntity_Base {
     }
 }
 
-// Entity methods for NetworkEntity on cell
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on cell
     #[derive(Debug)]
     pub enum NetworkEntity_Cell {
     }
@@ -3740,46 +3572,42 @@ impl DataTypeEntity for NetworkEntity {
     type CellMethod = NetworkEntity_Cell;
 }
 
-// Entity 0x2B
-// Interface Comp7Lighting
+// ============================================== //
+// ======          Comp7Lighting           ====== //
+// ============================================== //
+
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct Comp7Lighting {
-        pub animationStateMachine: RelaxString,
+        pub animationStateMachine: AutoString,
     }
 }
 
-// Method for Comp7Lighting on client
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
 }
 
-// Method for Comp7Lighting on base
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-// Method for Comp7Lighting on cell
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 
 }
 
-// Entity methods for Comp7Lighting on client
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on client
     #[derive(Debug)]
     pub enum Comp7Lighting_Client {
     }
 }
 
-// Entity methods for Comp7Lighting on base
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on base
     #[derive(Debug)]
     pub enum Comp7Lighting_Base {
     }
 }
 
-// Entity methods for Comp7Lighting on cell
-wgtk::__bootstrap_enum_methods! {
+wgtk::__bootstrap_enum_methods! {  // Entity methods on cell
     #[derive(Debug)]
     pub enum Comp7Lighting_Cell {
     }

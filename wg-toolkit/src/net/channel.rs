@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use std::net::SocketAddr;
 use std::num::NonZero;
 
-use tracing::{debug, instrument, trace};
+use tracing::{instrument, trace, warn};
 
 use super::packet::{Packet, PacketConfig, PacketLocked, PacketConfigError};
 use super::bundle::Bundle;
@@ -26,8 +26,8 @@ pub struct ChannelTracker {
     off_channels: HashMap<SocketAddr, OffChannel>,
     /// Known channels for each address, with optional channel indexing.
     channels: HashMap<(SocketAddr, Option<NonZero<u32>>), OnChannel>,
-    /// List of rejected packets.
-    rejected_packets: Vec<(SocketAddr, Packet, PacketRejectionError)>,
+    // /// List of rejected packets.
+    // rejected_packets: Vec<(SocketAddr, Packet, PacketRejectionError)>,
 }
 
 /// A structure referenced by any channel handle, containing shared states.
@@ -52,7 +52,7 @@ impl ChannelTracker {
             },
             off_channels: HashMap::new(),
             channels: HashMap::new(),
-            rejected_packets: Vec::new(),
+            // rejected_packets: Vec::new(),
         }
     }
 
@@ -132,8 +132,9 @@ impl ChannelTracker {
         let time = Instant::now();
         let locked = match packet.read_config_locked() {
             Ok(locked) => locked,
-            Err((error, packet)) => {
-                self.rejected_packets.push((addr, packet, PacketRejectionError::Config(error)));
+            Err((error, _packet)) => {
+                warn!("Failed to read config: {error}");
+                // self.rejected_packets.push((addr, packet, PacketRejectionError::Config(error)));
                 return None;
             }
         };
@@ -213,7 +214,7 @@ impl ChannelTracker {
                 channel.acknowledge_reliable_packet_cumulative(cumulative_ack);
             } else {
                 // Cumulative ack is not supported off-channel.
-                debug!("Cumulative ack is not supported off-channel");
+                warn!("Cumulative ack is not supported off-channel");
                 return None;
             }
         }
@@ -227,12 +228,15 @@ impl ChannelTracker {
         let reliable = locked.config().reliable();
         if reliable {
             channel.add_received_reliable_packet(locked.config().sequence_num());
+        } else if locked.config().on_channel() {
+            warn!("Unreliable packet while on channel");
         }
 
         // We can observe that packets with the flag 0x1000 are only used
         // for auto acking with sometimes duplicated data that is sent
         // just after. If it become a problem this check can be removed. 
-        if locked.config().unk_1000().is_some() {
+        if let Some(unk1000) = locked.config().unk_1000() {
+            trace!("Unknown 0x1000: {unk1000}");
             return None;
         }
 
@@ -254,7 +258,8 @@ impl ChannelTracker {
         let time = Instant::now();
         let locked = match packet.read_config_locked_ref() {
             Ok(locked) => locked,
-            Err(_error) => {
+            Err(error) => {
+                warn!("Failed to read config: {error}");
                 return false;
             }
         };
@@ -304,7 +309,7 @@ impl ChannelTracker {
                 channel.acknowledge_received_reliable_packet_cumulative(cumulative_ack);
             } else {
                 // Cumulative ack is not supported off-channel.
-                debug!("Cumulative ack is not supported off-channel");
+                warn!("Cumulative ack is not supported off-channel");
                 return false;
             }
         }
@@ -686,6 +691,11 @@ impl GenericChannel<'_> {
             } else if sequence_num < on.received_reliable_packets_cumulative {
                 // Do nothing, the sequence number may have been already received...
             } else {
+                // Warning if we get many buffered packets which indicate that we probably
+                // lost track of one of the 
+                if on.received_reliable_packets_buffered.len() > 50 {
+                    warn!("Buffered too many received reliable packets: {:?}", on.received_reliable_packets_buffered);
+                }
                 // We need to buffer the sequence number because it is not immediately 
                 // following the previous one, it will be recovered in the future when
                 // the gap will be filled.
@@ -837,9 +847,11 @@ impl GenericChannel<'_> {
             // channel's cumulative sequence number, which is contiguous, which ensure 
             // that any previous packet has already been processed.
             let &(seq, _) = on.reliable_buffered_bundles.front()?;
-            trace!("trying to pop buffered: seq={seq}, cumulative={}", on.received_reliable_packets_cumulative);
+            trace!("Trying to pop buffered: seq={seq}, cumulative={}", on.received_reliable_packets_cumulative);
             if seq < on.received_reliable_packets_cumulative {
                 return Some(on.reliable_buffered_bundles.pop_front().unwrap().1);
+            } else if on.reliable_buffered_bundles.len() > 50 {
+                warn!("Buffered too many reliable bundles: {}, probably locked", on.reliable_buffered_bundles.len());
             }
         }
 

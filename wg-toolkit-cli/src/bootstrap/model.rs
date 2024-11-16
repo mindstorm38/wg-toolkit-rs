@@ -130,7 +130,7 @@ pub enum TyKind {
     Vector2,
     Vector3,
     Vector4,
-    String,
+    String,   // This type is actually used for any string of bytes, sometimes for Python.
     Python,
     Mailbox,
     Alias(Ty),

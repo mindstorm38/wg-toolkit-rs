@@ -100,11 +100,11 @@ wgtk::__bootstrap_struct_data_type! {
     pub struct PREBATTLE_INVITE {
         pub createTime: u32,
         pub r#type: u16,
-        pub comment: RelaxString,
-        pub creator: RelaxString,
+        pub comment: AutoString,
+        pub creator: AutoString,
         pub creatorBadges: Python,
         pub creatorDBID: DB_ID,
-        pub creatorClanAbbrev: RelaxString,
+        pub creatorClanAbbrev: AutoString,
         pub extraData: Python,
     }
 }
@@ -123,7 +123,7 @@ wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct PUBLIC_CHAT_CHANNEL_INFO {
         pub id: OBJECT_ID,
-        pub channelName: RelaxString,
+        pub channelName: AutoString,
         pub isReadOnly: BOOL,
         pub isSecured: BOOL,
         pub flags: u8,
@@ -134,7 +134,7 @@ wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct PUBLIC_USERS_ROSTER_MEMBER_INFO {
         pub id: DB_ID,
-        pub nickName: RelaxString,
+        pub nickName: AutoString,
         pub accessFlags: u8,
     }
 }
@@ -149,7 +149,7 @@ wgtk::__bootstrap_struct_data_type! {
         pub sentTime: f64,
         pub channel: OBJECT_ID,
         pub originator: DB_ID,
-        pub originatorNickName: RelaxString,
+        pub originatorNickName: AutoString,
         pub group: u8,
         pub data: Python,
         pub flags: u8,
@@ -162,8 +162,8 @@ wgtk::__bootstrap_struct_data_type! {
         pub int32Arg1: i32,
         pub int64Arg1: i64,
         pub floatArg1: f64,
-        pub strArg1: RelaxString,
-        pub strArg2: RelaxString,
+        pub strArg1: AutoString,
+        pub strArg2: AutoString,
     }
 }
 
@@ -220,9 +220,9 @@ wgtk::__bootstrap_struct_data_type! {
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct PUBLIC_VEHICLE_INFO {
-        pub name: RelaxString,
-        pub compDescr: RelaxString,
-        pub outfit: RelaxString,
+        pub name: AutoString,
+        pub compDescr: AutoString,
+        pub outfit: AutoString,
         pub index: u8,
         pub team: u8,
         pub prebattleID: OBJECT_ID,
@@ -237,12 +237,12 @@ wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct ARENA_VEH_INFO {
         pub vehInvID: i32,
-        pub vehCompDescr: RelaxString,
-        pub vehOutfit: RelaxString,
+        pub vehCompDescr: AutoString,
+        pub vehOutfit: AutoString,
         pub vehAmmo: Vec<i32>,
         pub vehSetups: Python,
         pub vehSetupsIndexes: Python,
-        pub vehCrew: Vec<RelaxString>,
+        pub vehCrew: Vec<AutoString>,
         pub vehCrewInvIDs: Vec<i32>,
         pub vehCrewSkins: Python,
         pub marksOnGun: u8,
@@ -286,11 +286,11 @@ wgtk::__bootstrap_struct_data_type! {
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct ARENA_ADDPLAYER_INFO {
-        pub name: RelaxString,
+        pub name: AutoString,
         pub attrs: u64,
         pub databaseID: DB_ID,
         pub centerID: i32,
-        pub clanAbbrev: RelaxString,
+        pub clanAbbrev: AutoString,
         pub clanDBID: DB_ID,
         pub prebattle: Mailbox,
         pub isPrebattleCreator: BOOL,
@@ -391,7 +391,7 @@ wgtk::__bootstrap_struct_data_type! {
         pub team: u8,
         pub position: Vec3,
         pub isAlive: BOOL,
-        pub vehClass: RelaxString,
+        pub vehClass: AutoString,
         pub prebattleID: OBJECT_ID,
     }
 }
@@ -581,8 +581,8 @@ wgtk::__bootstrap_struct_data_type! {
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct RESPAWN_AVAILABLE_VEHICLE {
-        pub compDescr: RelaxString,
-        pub crewCompactDescrs: Vec<RelaxString>,
+        pub compDescr: AutoString,
+        pub crewCompactDescrs: Vec<AutoString>,
         pub settings: u16,
         pub vehSetups: POST_PROGRESSION_SETUPS,
         pub vehSetupsIndexes: Vec<u8>,
@@ -611,7 +611,7 @@ wgtk::__bootstrap_struct_data_type! {
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct RESPAWN_INFO {
-        pub compDescr: RelaxString,
+        pub compDescr: AutoString,
         pub respawnType: u8,
         pub autoRespawnPiT: f32,
         pub manualRespawnPiT: f32,
@@ -632,8 +632,8 @@ wgtk::__bootstrap_struct_data_type! {
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct RESPAWN_INFO_VEHICLE {
-        pub compDescr: RelaxString,
-        pub crewCompactDescrs: Vec<RelaxString>,
+        pub compDescr: AutoString,
+        pub crewCompactDescrs: Vec<AutoString>,
         pub commanderSkinID: u16,
         pub marksOnGun: u8,
         pub index: u16,
@@ -644,7 +644,7 @@ wgtk::__bootstrap_struct_data_type! {
         pub policyID: u8,
         pub onRespawnSettings: Python,
         pub ammo: Vec<i32>,
-        pub outfit: RelaxString,
+        pub outfit: AutoString,
         pub vehPerks: Python,
         pub vehSetups: Python,
         pub vehSetupsIndexes: Python,
@@ -679,7 +679,7 @@ wgtk::__bootstrap_struct_data_type! {
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct BUFF_EFFECT_INACTIVATION {
-        pub senderKey: RelaxString,
+        pub senderKey: AutoString,
         pub startTime: f64,
         pub endTime: f64,
         pub inactivationStartTime: f64,
@@ -690,7 +690,7 @@ wgtk::__bootstrap_struct_data_type! {
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct HOT_EFFECT {
-        pub senderKey: RelaxString,
+        pub senderKey: AutoString,
         pub startTime: f64,
         pub endTime: f64,
         pub inactivationStartTime: f64,
@@ -747,15 +747,15 @@ wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct CLIENT_VEHICLE_PUBLIC_INFO {
         pub vehID: OBJECT_ID,
-        pub name: RelaxString,
-        pub realName: RelaxString,
-        pub compDescr: RelaxString,
+        pub name: AutoString,
+        pub realName: AutoString,
+        pub compDescr: AutoString,
         pub team: i8,
         pub isAlive: i8,
         pub isAvatarReady: i8,
         pub isTeamKiller: i8,
         pub accountDBID: DB_ID,
-        pub clanAbbrev: RelaxString,
+        pub clanAbbrev: AutoString,
         pub clanDBID: DB_ID,
         pub prebattleID: OBJECT_ID,
         pub isPrebattleCreator: i8,
@@ -765,8 +765,8 @@ wgtk::__bootstrap_struct_data_type! {
         pub potapovQuestIDs: Vec<u16>,
         pub potapovQuestInfo: Python,
         pub ranked: Python,
-        pub outfit: RelaxString,
-        pub sessionID: RelaxString,
+        pub outfit: AutoString,
+        pub sessionID: AutoString,
         pub wtr: i16,
         pub badges: Python,
         pub overriddenBadge: u8,
@@ -838,7 +838,7 @@ wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct TOURNAMEMT_PARTICIPANT {
         pub databaseID: DB_ID,
-        pub name: RelaxString,
+        pub name: AutoString,
         pub role: u8,
         pub teamID: u8,
         pub typeCD: i32,
@@ -900,7 +900,7 @@ wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct KILL_CAM_ATTACKER_UNSPOTTED {
         pub health: u16,
-        pub vehicleType: RelaxString,
+        pub vehicleType: AutoString,
     }
 }
 
@@ -923,7 +923,7 @@ wgtk::__bootstrap_struct_data_type! {
         pub victimIsNotSpotted: BOOL,
         pub siegeState: u16,
         pub damageStickers: Vec<u64>,
-        pub causeOfDeath: RelaxString,
+        pub causeOfDeath: AutoString,
     }
 }
 
@@ -1286,7 +1286,7 @@ wgtk::__bootstrap_struct_data_type! {
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct SPAWN_AVAILABLE_VEHICLE {
-        pub compDescr: RelaxString,
+        pub compDescr: AutoString,
         pub settings: u16,
         pub isRent: BOOL,
         pub isElite: BOOL,
@@ -1304,7 +1304,7 @@ wgtk::__bootstrap_struct_data_type! {
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct SPAWN_KEY_POINT {
-        pub guid: RelaxString,
+        pub guid: AutoString,
         pub position: Vec2,
     }
 }
@@ -1313,7 +1313,7 @@ wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct TEAM_SPAWN_KEY_POINT {
         pub vehID: OBJECT_ID,
-        pub guid: RelaxString,
+        pub guid: AutoString,
         pub placed: BOOL,
     }
 }
@@ -1321,7 +1321,7 @@ wgtk::__bootstrap_struct_data_type! {
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct GAME_OBJECT_STATE {
-        pub id: RelaxString,
+        pub id: AutoString,
         pub state: BOOL,
     }
 }
@@ -1329,7 +1329,7 @@ wgtk::__bootstrap_struct_data_type! {
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct GAME_OBJECT_ACTIVATION {
-        pub id: RelaxString,
+        pub id: AutoString,
         pub start: f32,
         pub end: f32,
     }
@@ -1349,7 +1349,7 @@ wgtk::__bootstrap_struct_data_type! {
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct SPAWNGROUP_INFO {
-        pub name: RelaxString,
+        pub name: AutoString,
         pub position: Vec2,
     }
 }
@@ -1380,21 +1380,21 @@ wgtk::__bootstrap_struct_data_type! {
     pub struct VEHICLES_INFO {
         pub vehicleID: OBJECT_ID,
         pub isAlive: BOOL,
-        pub outfitCD: RelaxString,
-        pub compDescr: RelaxString,
-        pub fakeName: RelaxString,
-        pub name: RelaxString,
+        pub outfitCD: AutoString,
+        pub compDescr: AutoString,
+        pub fakeName: AutoString,
+        pub name: AutoString,
         pub team: i8,
         pub isAvatarReady: BOOL,
         pub isTeamKiller: BOOL,
         pub accountDBID: u64,
-        pub clanAbbrev: RelaxString,
+        pub clanAbbrev: AutoString,
         pub clanDBID: DB_ID,
         pub prebattleID: OBJECT_ID,
         pub isPrebattleCreator: BOOL,
         pub forbidInBattleInvitations: BOOL,
         pub igrType: i8,
-        pub avatarSessionID: RelaxString,
+        pub avatarSessionID: AutoString,
         pub overriddenBadge: i8,
         pub customRoleSlotTypeId: i8,
         pub botDisplayStatus: i8,
@@ -1426,8 +1426,8 @@ wgtk::__bootstrap_struct_data_type! {
     pub struct PVE_TARGET_MARKER {
         pub settingId: i16,
         pub targetId: i32,
-        pub visibleStyle: RelaxString,
-        pub invisibleStyle: RelaxString,
+        pub visibleStyle: AutoString,
+        pub invisibleStyle: AutoString,
         pub lastVisiblePosition: Vec3,
     }
 }
@@ -1448,7 +1448,7 @@ wgtk::__bootstrap_struct_data_type! {
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct COMP7_EQUIPMENT {
-        pub name: RelaxString,
+        pub name: AutoString,
         pub compactDescr: i32,
         pub stage: u8,
         pub endTime: f64,
@@ -1476,21 +1476,21 @@ wgtk::__bootstrap_struct_data_type! {
     pub struct COMP7_VEHICLE_INFO {
         pub vehicleID: OBJECT_ID,
         pub accountDBID: u64,
-        pub name: RelaxString,
-        pub fakeName: RelaxString,
+        pub name: AutoString,
+        pub fakeName: AutoString,
         pub team: i8,
         pub clanDBID: DB_ID,
-        pub clanAbbrev: RelaxString,
-        pub outfitCD: RelaxString,
-        pub compDescr: RelaxString,
+        pub clanAbbrev: AutoString,
+        pub outfitCD: AutoString,
+        pub compDescr: AutoString,
         pub maxHealth: i16,
         pub curHealth: i16,
         pub isAlive: BOOL,
         pub deathInfo: DEATH_INFO,
         pub gunReloadInfo: GUN_RELOAD_INFO,
-        pub criticalDevices: Vec<RelaxString>,
-        pub destroyedDevices: Vec<RelaxString>,
-        pub injuredTankmen: Vec<RelaxString>,
+        pub criticalDevices: Vec<AutoString>,
+        pub destroyedDevices: Vec<AutoString>,
+        pub injuredTankmen: Vec<AutoString>,
         pub vehicleAmmoList: Vec<VEHICLE_AMMO>,
         pub consumableEquipment: Vec<COMP7_EQUIPMENT>,
         pub deviceEquipment: Vec<COMP7_EQUIPMENT>,
@@ -1543,7 +1543,7 @@ wgtk::__bootstrap_struct_data_type! {
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct ANON79 {
-        pub equipment: Vec<RelaxString>,
+        pub equipment: Vec<AutoString>,
     }
 }
 
@@ -1575,7 +1575,7 @@ wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct ANON178 {
         pub position: Vec3,
-        pub text: RelaxString,
+        pub text: AutoString,
         pub color: Vec4,
         pub textSize: f32,
     }
@@ -1584,7 +1584,7 @@ wgtk::__bootstrap_struct_data_type! {
 wgtk::__bootstrap_struct_data_type! {
     #[derive(Debug)]
     pub struct ANON180 {
-        pub name: RelaxString,
+        pub name: AutoString,
         pub version: u32,
         pub destroyTime: f32,
         pub lines: Vec<ANON172>,

@@ -10,7 +10,7 @@ use std::io;
 
 use blowfish::Blowfish;
 
-use tracing::{trace, warn};
+use tracing::{trace, trace_span};
 
 use crate::net::packet::Packet;
 use crate::util::thread::ThreadPoll;
@@ -211,18 +211,15 @@ impl App {
                 packet = cipher_packet;
             }
 
-            match direction {
-                PacketDirection::Out => trace!(peer_addr = %peer.addr, real_addr = %peer.real_addr, "> {:?}", packet),
-                PacketDirection::In => trace!(peer_addr = %peer.addr, real_addr = %peer.real_addr, "< {:?}", packet),
-            }
-
-            let (accept_channel, accept_out_channel) = match direction {
-                PacketDirection::Out => (&mut self.out_channel, &mut self.in_channel),
-                PacketDirection::In => (&mut self.in_channel, &mut self.out_channel),
+            let (accept_channel, accept_out_channel, _span) = match direction {
+                PacketDirection::Out => (&mut self.out_channel, &mut self.in_channel, trace_span!("out").entered()),
+                PacketDirection::In => (&mut self.in_channel, &mut self.out_channel, trace_span!("in").entered()),
             };
 
+            trace!(peer_addr = %peer.addr, real_addr = %peer.real_addr, "{:?}", packet);
+
             if !accept_out_channel.accept_out(&packet, peer.addr) {
-                warn!(peer_addr = %peer.addr, real_addr = %peer.real_addr, "accept out failed");
+                continue;
             }
 
             let Some(mut channel) = accept_channel.accept(packet, peer.addr) else {
