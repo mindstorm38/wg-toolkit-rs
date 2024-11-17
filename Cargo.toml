@@ -12,5 +12,35 @@ license = "MIT"
 readme = "./README.md"
 
 [workspace.dependencies]
+
+# Special local dependencies...
 wg-toolkit = { path = "wg-toolkit", version = "=0.5.0" }
 serde-pickle = { path = "serde-pickle", version = "=1.2.0-beta.0" }
+# serde-pickle = "1.1"
+
+# Common crates mandatory for almost everything:
+thiserror = "1.0"
+byteorder = "1.5"
+tracing = "0.1"
+serde = "1.0"
+bitflags = "2.6"
+
+# Data structures and math:
+smallvec = "1.13"
+indexmap = "2.6"
+base64 = "0.22"
+glam = "0.29"
+
+# Threading:
+crossbeam-channel = "0.5"
+
+# Crypto:
+crypto-common = "0.1"
+blowfish = "0.9"
+sha2 = "0.10"
+sha1 = "0.10"
+rand = "0.8"
+rsa = "0.8"
+
+# Compression:
+flate2 = "1.0.34"

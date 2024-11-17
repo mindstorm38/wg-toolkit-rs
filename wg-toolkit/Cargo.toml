@@ -11,28 +11,26 @@ license.workspace = true
 readme.workspace = true
 
 [dependencies]
-thiserror = "1.0"       # User for defining custom error types.
-byteorder = "1.5"       # Used for codecs read/writing.
-smallvec = "1.13"       # Used by pxml codec.
-base64 = "0.22"         # Used by pxml codec.
-glam = "0.29"           # Used for math vec types.
-indexmap = "2.6"        # Used for res filesystem and network.
-tracing = "0.1"         # Used possibly everywhere
+thiserror.workspace = true
+byteorder.workspace = true
+smallvec.workspace = true
+base64.workspace = true
+glam.workspace = true
+indexmap.workspace = true
+tracing.workspace = true
 
-# Used for codecs read/writing.
-serde = "1.0"
+serde.workspace = true
 serde-pickle.workspace = true
-# serde-pickle = "1.1"
-bitflags = "2.6"
+bitflags.workspace = true
 
-# The following dependencies are used for network sub module.
-crossbeam-channel = "0.5"
-crypto-common = "0.1"
-blowfish = "0.9"
-sha2 = "0.10"
-sha1 = "0.10"
-rand = "0.8"
-rsa = "0.8"
+crossbeam-channel.workspace = true
+
+crypto-common.workspace = true
+blowfish.workspace = true
+sha2.workspace = true
+sha1.workspace = true
+rand.workspace = true
+rsa.workspace = true
 
 [features]
 default = []
