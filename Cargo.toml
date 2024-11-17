@@ -1,8 +1,16 @@
 [workspace]
+members = ["wg-toolkit", "wg-toolkit-cli", "serde-pickle"]
 resolver = "2"
-members = [
-    "wg-toolkit",
-    "wg-toolkit-cli",
-    "serde-pickle",
-    # "wot-cli",
-]
+
+[workspace.package]
+edition = "2021"
+version = "0.5.0"
+authors = ["Théo Rozier <contact@theorozier.fr>"]
+homepage = "https://github.com/mindstorm38/portablemc"
+repository = "https://github.com/mindstorm38/portablemc"
+license = "MIT"
+readme = "./README.md"
+
+[workspace.dependencies]
+wg-toolkit = { path = "wg-toolkit", version = "=0.5.0" }
+serde-pickle = { path = "serde-pickle", version = "=1.2.0-beta.0" }

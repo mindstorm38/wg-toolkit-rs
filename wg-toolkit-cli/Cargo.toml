@@ -1,17 +1,18 @@
 [package]
 name = "wg-toolkit-cli"
-version = "0.4.1"
-authors = ["Théo Rozier <contact@theorozier.fr>"]
-edition = "2021"
-license = "MIT"
 description = "Command line utility for interacting with codecs distributed by Wargaming.net"
 categories = ["games", "parsing", "data-structures", "command-line-utilities"]
-homepage = "https://github.com/mindstorm38/wg-toolkit-rs"
-repository = "https://github.com/mindstorm38/wg-toolkit-rs"
-readme = "../README.md"
+edition.workspace = true
+version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+readme.workspace = true
 
 [dependencies]
-wg-toolkit = { path = "../wg-toolkit", version = "0.4.0" }
+wg-toolkit.workspace = true
+
 clap = { version = "4.5", features = ["derive", "wrap_help"] }
 
 thiserror = "1.0"
@@ -21,6 +22,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 blowfish = "0.9"
+flate2 = "1.0.34"  # For 
 rsa = "0.8"
 
 [features]
