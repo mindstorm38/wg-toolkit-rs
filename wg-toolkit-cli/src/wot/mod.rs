@@ -5,8 +5,10 @@ pub mod gen;
 use std::collections::{hash_map, HashMap};
 use std::net::{SocketAddr, SocketAddrV4};
 use std::sync::{Arc, Mutex};
+use std::path::{PathBuf};
 use std::{fs, thread};
 use std::fmt::Debug;
+use std::fs::File;
 use std::io;
 
 use rsa::pkcs8::{DecodePrivateKey, DecodePublicKey};
@@ -435,9 +437,6 @@ impl BaseProxyThread {
             }
             ResourceHeader::ID => {
 
-                // TODO: The resource description is a python pickle that decodes to a 
-                //       tuple containing (total len, crc32).
-                // See: scripts/client/game.py#L223
                 let rh = elt.read_simple::<ResourceHeader>()?;
                 info!(%addr, "<- Resource header: {}", rh.element.id);
 
@@ -472,22 +471,71 @@ impl BaseProxyThread {
                 info!(%addr, "<- Resource fragment: {res_id}, len: {}, sequence number: {}", 
                     rf.element.data.len(), partial_resource.sequence_num);
                 
+                // Process the finished fragment!
                 if rf.element.last {
 
                     let resource = self.partial_resources.remove(&rf.element.id).unwrap();
-                    info!(%addr, "<- Resource completed: {res_id}, len: {}", resource.data.len());
                     
+                    // See: scripts/client/game.py#L223
+                    let (total_len, crc32) = match serde_pickle::value_from_reader(&resource.description[..], serde_pickle_de_options()) {
+                        Ok(serde_pickle::Value::Tuple(values)) if values.len() == 2 => {
+                            if let &[serde_pickle::Value::I64(total_len), serde_pickle::Value::I64(crc32)] = &values[..] {
+                                (total_len as u32, crc32 as u32)
+                            } else {
+                                warn!(%addr, "<- Invalid resource description: unexpected values: {values:?}");
+                                return Ok(true);
+                            }
+                        }
+                        Ok(v) => {
+                            warn!(%addr, "<- Invalid resource description: python: {v}");
+                            return Ok(true);
+                        }
+                        Err(e) => {
+                            warn!(%addr, "<- Invalid resource description: {e}");
+                            return Ok(true);
+                        }
+                    };
+
+                    let actual_total_len = resource.data.len();
+                    if actual_total_len != total_len as usize {
+                        warn!(%addr, "<- Invalid resource length, expected: {total_len}, got: {actual_total_len}");
+                        return Ok(true);
+                    }
+
+                    let actual_crc32 = crc32fast::hash(&resource.data);
+                    if actual_crc32 != crc32 {
+                        warn!(%addr, "<- Invalid resource crc32, expected: 0x{crc32:08X}, got: 0x{actual_crc32:08X}");
+                        return Ok(true);
+                    }
+
+                    info!(%addr, "<- Resource completed: {res_id}, len: {actual_total_len}, crc32: 0x{crc32:08X}");
+
                     // TODO: The full data looks like to be a zlib-compressed pickle.
                     // TODO: onCmdResponse for requested SYNC use RES_SUCCESS=0, RES_STREAM=1, RES_CACHE=2 for result_id
                     //       When RES_STREAM is used, then a resource (header+fragment) is expected with the associated request_id.
 
-                    let zlib = ZlibDecoder::new(&rf.element.data[..]);
+                    let zlib = ZlibDecoder::new(&resource.data[..]);
                     match serde_pickle::value_from_reader(zlib, serde_pickle_de_options()) {
                         Ok(val) => {
-                            info!(%addr, "<- Resource completed: {}", TruncateFmt(&val, 3000));
+                            info!(%addr, "<- Resource: {}", TruncateFmt(&val, 3000));
                         }
                         Err(e) => {
-                            warn!(%addr, "<- Resource completed: not python: {e}");
+
+                            warn!(%addr, "<- Resource: python error: {e}");
+
+                            // FIXME: It appears that the current serde-pickle impl doesn't
+                            // support recursive structures, however the structure that is 
+                            // initially requested with 'CMD_SYNC_DATA' contains some.
+                            // FIXME: The resource that is received by the from the chat
+                            // command contains a "deque" object, which cannot be parsed
+                            // so we get a "unresolved global reference" error.
+
+                            let raw_file = PathBuf::from(format!("res_{crc32:08x}.pickle"));
+                            info!(%addr, "<- Saving resource to: {}", raw_file.display());
+
+                            let mut raw_writer = File::create(raw_file).unwrap();
+                            std::io::copy(&mut ZlibDecoder::new(&resource.data[..]), &mut raw_writer).unwrap();
+
                         }
                     }
 

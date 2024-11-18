@@ -619,7 +619,7 @@ const PATCHES: &[Patch] = &[
             ("ClientCommandsPort", _, _) if method.starts_with("doCmd") => {
                 *name = match index {
                     0 => "request_id".into(),
-                    1 => "cmd".into(),
+                    1 => "command_id".into(),
                     _ => format!("arg{}", index - 2).into(),
                 };
             }

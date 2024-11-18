@@ -41,6 +41,7 @@ sha2 = "0.10"
 sha1 = "0.10"
 rand = "0.8"
 rsa = "0.8"
+crc32fast = "1.4.1"
 
 # Compression:
 flate2 = "1.0.34"

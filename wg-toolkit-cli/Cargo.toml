@@ -20,6 +20,7 @@ tracing.workspace = true
 
 blowfish.workspace = true
 rsa.workspace = true
+crc32fast.workspace = true
 
 flate2.workspace = true
 

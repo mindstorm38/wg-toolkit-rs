@@ -1069,27 +1069,27 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on base
     #[derive(Debug)]
     pub struct ClientCommandsPort_doCmdNoArgs {
         pub request_id: i16,
-        pub cmd: i16,
+        pub command_id: i16,
     }
 
     #[derive(Debug)]
     pub struct ClientCommandsPort_doCmdStr {
         pub request_id: i16,
-        pub cmd: i16,
+        pub command_id: i16,
         pub arg0: AutoString,
     }
 
     #[derive(Debug)]
     pub struct ClientCommandsPort_doCmdInt {
         pub request_id: i16,
-        pub cmd: i16,
+        pub command_id: i16,
         pub arg0: i64,
     }
 
     #[derive(Debug)]
     pub struct ClientCommandsPort_doCmdInt2 {
         pub request_id: i16,
-        pub cmd: i16,
+        pub command_id: i16,
         pub arg0: i64,
         pub arg1: i64,
     }
@@ -1097,7 +1097,7 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on base
     #[derive(Debug)]
     pub struct ClientCommandsPort_doCmdInt3 {
         pub request_id: i16,
-        pub cmd: i16,
+        pub command_id: i16,
         pub arg0: i64,
         pub arg1: i64,
         pub arg2: i64,
@@ -1106,7 +1106,7 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on base
     #[derive(Debug)]
     pub struct ClientCommandsPort_doCmdInt4 {
         pub request_id: i16,
-        pub cmd: i16,
+        pub command_id: i16,
         pub arg0: i64,
         pub arg1: i64,
         pub arg2: i32,
@@ -1116,7 +1116,7 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on base
     #[derive(Debug)]
     pub struct ClientCommandsPort_doCmdInt2Str {
         pub request_id: i16,
-        pub cmd: i16,
+        pub command_id: i16,
         pub arg0: i64,
         pub arg1: i64,
         pub arg2: AutoString,
@@ -1125,7 +1125,7 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on base
     #[derive(Debug)]
     pub struct ClientCommandsPort_doCmdInt3Str {
         pub request_id: i16,
-        pub cmd: i16,
+        pub command_id: i16,
         pub arg0: i64,
         pub arg1: i64,
         pub arg2: i64,
@@ -1135,14 +1135,14 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on base
     #[derive(Debug)]
     pub struct ClientCommandsPort_doCmdIntArr {
         pub request_id: i16,
-        pub cmd: i16,
+        pub command_id: i16,
         pub arg0: Vec<i32>,
     }
 
     #[derive(Debug)]
     pub struct ClientCommandsPort_doCmdIntStr {
         pub request_id: i16,
-        pub cmd: i16,
+        pub command_id: i16,
         pub arg0: i64,
         pub arg1: AutoString,
     }
@@ -1150,7 +1150,7 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on base
     #[derive(Debug)]
     pub struct ClientCommandsPort_doCmdIntStrArr {
         pub request_id: i16,
-        pub cmd: i16,
+        pub command_id: i16,
         pub arg0: i64,
         pub arg1: Vec<AutoString>,
     }
@@ -1158,7 +1158,7 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on base
     #[derive(Debug)]
     pub struct ClientCommandsPort_doCmdIntArrStrArr {
         pub request_id: i16,
-        pub cmd: i16,
+        pub command_id: i16,
         pub arg0: Vec<i64>,
         pub arg1: Vec<AutoString>,
     }
@@ -1166,7 +1166,7 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on base
     #[derive(Debug)]
     pub struct ClientCommandsPort_doCmdStrArr {
         pub request_id: i16,
-        pub cmd: i16,
+        pub command_id: i16,
         pub arg0: Vec<AutoString>,
     }
 
