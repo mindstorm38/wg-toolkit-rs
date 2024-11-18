@@ -522,6 +522,18 @@ impl PacketConfig {
         self.cumulative_ack = Seq::ZERO;  // Just for sanity...
     }
 
+    /// Return a reference to the internal dequeue containing any piggyback packet.
+    #[inline]
+    pub fn piggybacks(&self) -> &VecDeque<Packet> {
+        &self.piggybacks
+    }
+
+    /// See [`Self::piggybacks`].
+    #[inline]
+    pub fn piggybacks_mut(&mut self) -> &mut VecDeque<Packet> {
+        &mut self.piggybacks
+    }
+
     /// Return a reference to the internal dequeue containing single acks to add. We use
     /// a queue here because not all acks may be successfully moved into the packet if
     /// space is missing.
@@ -633,7 +645,7 @@ impl PacketConfig {
             // We shrink the packet to read the checksum and then compute the checksum 
             // from the body data, which no longer contains the checksum itself!
             let expected_checksum = data.pop_back(4)
-                .ok_or(PacketConfigError::Corrupted)?
+                .ok_or(PacketConfigError::MissingChecksumFooter)?
                 .read_u32().unwrap();
 
             // Compute checksum, containing flags up to, but excluding, the checksum (-4).
@@ -649,24 +661,24 @@ impl PacketConfig {
             loop {
 
                 let piggyback_len = data.pop_back(2)
-                    .ok_or(PacketConfigError::Corrupted)?
+                    .ok_or(PacketConfigError::MissingPiggybackFooter)?
                     .read_i16().unwrap();
                 
                 // The last piggy back has a negative length, which is equivalent to having
                 // the most significant bit set to 1, but we don't simply invert the length
                 // because it would not be possible to represent zero-length, so we do 
-                // '-len - 1' which is equivalent to inverting all bits. Like if we didn't
-                // used two's complement in the first place.
+                // '-len - 1' which is equivalent to inverting all bits. It's ones' comp.
                 let piggyback_done = piggyback_len < 0;
                 let piggyback_len = if piggyback_done { !piggyback_len } else { piggyback_len } as u16;
 
                 let piggyback_slice = data.pop_back(piggyback_len as usize)
-                    .ok_or(PacketConfigError::Corrupted)?;
+                    .ok_or(PacketConfigError::MissingPiggybackData)?;
 
                 // Create the new packet, copy the content and just set length.
+                // Note that we don't copy prefix!
                 let mut piggyback_packet = Packet::new();
-                piggyback_packet.buf_mut()[..piggyback_slice.len()].copy_from_slice(piggyback_slice);
-                piggyback_packet.set_len(piggyback_slice.len());
+                piggyback_packet.buf_mut()[PACKET_PREFIX_LEN..][..piggyback_slice.len()].copy_from_slice(piggyback_slice);
+                piggyback_packet.set_len(PACKET_PREFIX_LEN + piggyback_slice.len());
                 self.piggybacks.push_back(piggyback_packet);
 
                 if piggyback_done {
@@ -678,34 +690,34 @@ impl PacketConfig {
 
         if self.has_flags(flags::INDEXED_CHANNEL) {
 
-            let mut cursor = data.pop_back(8).ok_or(PacketConfigError::Corrupted)?;
+            let mut cursor = data.pop_back(8).ok_or(PacketConfigError::MissingIndexedChannelFooter)?;
             let version = cursor.read_u32().unwrap();
             let index = cursor.read_u32().unwrap();
 
-            self.channel_index = NonZero::new(index).ok_or(PacketConfigError::Corrupted)?;
-            self.channel_version = NonZero::new(version).ok_or(PacketConfigError::Corrupted)?;
+            self.channel_index = NonZero::new(index).ok_or(PacketConfigError::ZeroChannelIndex)?;
+            self.channel_version = NonZero::new(version).ok_or(PacketConfigError::ZeroChannelVersion)?;
 
         }
 
         if self.has_flags(flags::HAS_CUMULATIVE_ACK) {
             self.cumulative_ack = data.pop_back(4)
-                .ok_or(PacketConfigError::Corrupted)?
+                .ok_or(PacketConfigError::MissingCumulativeAckFooter)?
                 .read_u32().unwrap()
-                .try_into().map_err(|()| PacketConfigError::Corrupted)?;
+                .try_into().map_err(|()| PacketConfigError::InvalidCumulativeAck)?;
         }
 
         if self.has_flags(flags::HAS_ACKS) {
             
-            let count = data.pop_back(1).ok_or(PacketConfigError::Corrupted)?[0];
+            let count = data.pop_back(1).ok_or(PacketConfigError::MissingAcksCountFooter)?[0];
             if count == 0 {
-                return Err(PacketConfigError::Corrupted)
+                return Err(PacketConfigError::ZeroAcksCount)
             }
 
             for _ in 0..count {
                 let ack = data.pop_back(4)
-                    .ok_or(PacketConfigError::Corrupted)?
+                    .ok_or(PacketConfigError::MissingAckFooter)?
                     .read_u32().unwrap()
-                    .try_into().map_err(|()| PacketConfigError::Corrupted)?;
+                    .try_into().map_err(|()| PacketConfigError::InvalidAck)?;
                 self.single_acks.push_back(ack);
             }
 
@@ -714,26 +726,26 @@ impl PacketConfig {
         if self.has_flags(flags::HAS_SEQUENCE_NUMBER) {
             // NOTE: This will be really used if IS_RELIABLE or IS_FRAGMENT.
             self.sequence_num = data.pop_back(4)
-                .ok_or(PacketConfigError::Corrupted)?
+                .ok_or(PacketConfigError::MissingSequenceNumFooter)?
                 .read_u32().unwrap()
-                .try_into().map_err(|()| PacketConfigError::Corrupted)?;
+                .try_into().map_err(|()| PacketConfigError::InvalidSequenceNum)?;
         }
 
         if self.has_flags(flags::UNK_1000) {
             self.last_reliable_sequence_num = data.pop_back(4)
-                .ok_or(PacketConfigError::Corrupted)?
+                .ok_or(PacketConfigError::MissingLastReliableSequenceNumFooter)?
                 .read_u32().unwrap()
-                .try_into().map_err(|()| PacketConfigError::Corrupted)?;
+                .try_into().map_err(|()| PacketConfigError::InvalidLastReliableSequenceNum)?;
         }
 
         if self.has_flags(flags::HAS_REQUESTS) {
             
             self.first_request_offset = data.pop_back(2)
-                .ok_or(PacketConfigError::Corrupted)?
+                .ok_or(PacketConfigError::MissingFirstRequestOffsetFooter)?
                 .read_u16().unwrap();
 
             if self.first_request_offset < PACKET_FLAGS_LEN as u16 {
-                return Err(PacketConfigError::Corrupted);
+                return Err(PacketConfigError::InvalidFirstRequestOffset);
             } else {
                 self.first_request_offset -= PACKET_FLAGS_LEN as u16;
             }
@@ -742,14 +754,16 @@ impl PacketConfig {
 
         if self.has_flags(flags::IS_FRAGMENT) {
             
-            let mut cursor = data.pop_back(8).ok_or(PacketConfigError::Corrupted)?;
+            let mut cursor = data.pop_back(8)
+                .ok_or(PacketConfigError::MissingSequenceRangeFooter)?;
+            
             self.sequence_first_num = cursor.read_u32().unwrap()
-                .try_into().map_err(|()| PacketConfigError::Corrupted)?;
+                .try_into().map_err(|()| PacketConfigError::InvalidSequenceRangeFirst)?;
             self.sequence_last_num = cursor.read_u32().unwrap()
-                .try_into().map_err(|()| PacketConfigError::Corrupted)?;
+                .try_into().map_err(|()| PacketConfigError::InvalidSequenceRangeLast)?;
             
             if Seq::wrapping_cmp(self.sequence_first_num, self.sequence_last_num).is_ge() {
-                return Err(PacketConfigError::Corrupted)
+                return Err(PacketConfigError::InvalidSequenceRange)
             }
 
         }
@@ -973,6 +987,22 @@ impl PacketLocked {
         (self.packet, self.config)
     }
 
+    /// Piggybacks can overpass the immutable locking restriction because modifying or
+    /// taking any packet won't change the coherency of the packet's flags or data. 
+    /// Note however that any user of this locked packet will see any modifications.
+    #[inline]
+    pub fn piggybacks_mut(&mut self) -> &mut VecDeque<Packet> {
+        self.config.piggybacks_mut()
+    }
+
+    /// Singles acks can overpass the immutable locking restriction because modifying or
+    /// taking any sequence won't change the coherency of the packet's flags or data. 
+    /// Note however that any user of this locked packet will see any modifications.
+    #[inline]
+    pub fn single_acks_mut(&mut self) -> &mut VecDeque<Seq> {
+        self.config.single_acks_mut()
+    }
+
 }
 
 /// Same as [`PacketLocked`] but is borrowing the packet.
@@ -1106,15 +1136,52 @@ impl fmt::Debug for FlagsFmt {
 /// Packet error when reading invalid config from a packet.
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum PacketConfigError {
-    /// Unknown flags are used, the packet can't be decoded because this usually
-    /// increase length of the footer.
     #[error("unknown flags: {0:04X}")]
     UnknownFlags(u16),
-    /// The packet is corrupted, the footer might be too short or an invalid bit
-    /// pattern has been read.
-    #[error("corrupted")]
-    Corrupted,
-    /// The packet checksum and calculated checksum aren't equal.
+    #[error("missing checksum footer")]
+    MissingChecksumFooter,
+    #[error("missing piggyback footer")]
+    MissingPiggybackFooter,
+    #[error("missing piggyback data")]
+    MissingPiggybackData,
+    #[error("missing indexed channel footer")]
+    MissingIndexedChannelFooter,
+    #[error("zero channel index")]
+    ZeroChannelIndex,
+    #[error("zero channel version")]
+    ZeroChannelVersion,
+    #[error("missing cumulative ack footer")]
+    MissingCumulativeAckFooter,
+    #[error("invalid cumulative ack")]
+    InvalidCumulativeAck,
+    #[error("missing acks count footer")]
+    MissingAcksCountFooter,
+    #[error("zero acks count")]
+    ZeroAcksCount,
+    #[error("missing ack footer")]
+    MissingAckFooter,
+    #[error("invalid ack")]
+    InvalidAck,
+    #[error("missing sequence number footer")]
+    MissingSequenceNumFooter,
+    #[error("invalid sequence number")]
+    InvalidSequenceNum,
+    #[error("missing last reliable sequence number footer")]
+    MissingLastReliableSequenceNumFooter,
+    #[error("invalid last reliable sequence number")]
+    InvalidLastReliableSequenceNum,
+    #[error("missing first request offset footer")]
+    MissingFirstRequestOffsetFooter,
+    #[error("invalid first request offset")]
+    InvalidFirstRequestOffset,
+    #[error("missing sequence range footer")]
+    MissingSequenceRangeFooter,
+    #[error("invalid sequence range first")]
+    InvalidSequenceRangeFirst,
+    #[error("invalid sequence range first")]
+    InvalidSequenceRangeLast,
+    #[error("invalid sequence range")]
+    InvalidSequenceRange,
     #[error("invalid checksum")]
     InvalidChecksum
 }

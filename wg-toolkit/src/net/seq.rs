@@ -163,11 +163,11 @@ mod tests {
 
         assert_eq!(ZERO - 1, FULL);
 
-        assert_eq!(ZERO.wrapping_cmp(ZERO + 1), Ordering::Less);
-        assert_eq!(ZERO.wrapping_cmp(ZERO - 1), Ordering::Greater);
+        assert_eq!(Seq::wrapping_cmp(ZERO + 0, ZERO + 1), Ordering::Less);
+        assert_eq!(Seq::wrapping_cmp(ZERO + 0, ZERO - 1), Ordering::Greater);
 
-        assert_eq!(ZERO.wrapping_cmp(HALF - 1 + 0), Ordering::Less);
-        assert_eq!(ZERO.wrapping_cmp(HALF - 1 + 1), Ordering::Greater); // Because we are too far.
+        assert_eq!(Seq::wrapping_cmp(ZERO + 0, HALF - 1 + 0), Ordering::Less);
+        assert_eq!(Seq::wrapping_cmp(ZERO + 0, HALF - 1 + 1), Ordering::Greater); // Because we are too far.
 
         // Check that the limit of less/greater is moving, relative.
         assert_eq!(Seq::wrapping_cmp(ZERO + 1, HALF - 1 + 1), Ordering::Less);

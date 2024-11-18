@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use std::net::SocketAddr;
 use std::num::NonZero;
 
-use tracing::{instrument, trace, warn};
+use tracing::{instrument, trace, trace_span, warn};
 
 use super::packet::{Packet, PacketConfig, PacketLocked, PacketConfigError};
 use super::seq::{Seq, SeqAlloc};
@@ -128,11 +128,17 @@ impl ChannelTracker {
     /// If the packet is rejected for any reason listed in [`PacketRejectionError`], none
     /// is also returned but the packet is internally queued and can later be retrieved 
     /// with the error using [`Self::take_rejected_packets()`].
-    #[instrument(level = "trace", skip(self, packet))]
+    #[instrument(name = "accept", level = "trace", skip(self, packet))]
+    #[inline(always)]
     pub fn accept(&mut self, packet: Packet, addr: SocketAddr) -> Option<Channel<'_>> {
+        self.accept_inner(packet, addr)
+    }
+
+    /// Internal wrapper used to improve tracing of recursive span with piggybacks.
+    fn accept_inner(&mut self, packet: Packet, addr: SocketAddr) -> Option<Channel<'_>> {
 
         let time = Instant::now();
-        let packet = match packet.read_config_locked() {
+        let mut packet = match packet.read_config_locked() {
             Ok(packet) => packet,
             Err((error, _packet)) => {
                 warn!("Failed to read config: {error}");
@@ -141,7 +147,13 @@ impl ChannelTracker {
             }
         };
 
-        // trace!("Config: {:#?}", locked.config());
+        // Immediately process any piggyback packet, because they must have been 
+        // initially sent way before the current packet we are decoding.
+        for piggyback in std::mem::take(packet.piggybacks_mut()) {
+            trace!("Processing piggyback packet: {piggyback:?}");
+            let _span = trace_span!("pigb").entered();
+            self.accept_inner(piggyback, addr)?;
+        }
 
         self.shared.last_accepted_prefix = packet.packet().read_prefix();
 
@@ -774,10 +786,11 @@ impl OnChannelData {
             }
         }
 
-        trace!("Received reliable packet cumulative: {}, contiguous: {}, buffered: {}", 
+        trace!("Received reliable packet cumulative: {}, contiguous: {}, buffered: {} (first: {:?})", 
             self.in_reliable_expected_seq, 
             self.in_reliable_contiguous_packets.len(),
-            self.in_reliable_packets.len());
+            self.in_reliable_packets.len(),
+            self.in_reliable_packets.front().map(|packet| packet.config().sequence_num().get()));
 
     }
 
@@ -806,6 +819,8 @@ impl OnChannelData {
                 // TODO: Add a anti-DOS check here to ensure that bundle length isn't absurd.
                 let bundle_len = (last_seq - first_seq + 1) as usize;
                 if self.in_reliable_contiguous_packets.len() < bundle_len {
+                    trace!("Reliable fragment: not enough contiguous, expected: {}, got: {}",
+                        bundle_len, self.in_reliable_contiguous_packets.len());
                     return None;
                 }
 
