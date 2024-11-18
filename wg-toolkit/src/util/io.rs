@@ -605,7 +605,7 @@ impl<'a> SliceCursor<'a> {
 
 #[inline]
 pub fn serde_pickle_de_options() -> serde_pickle::DeOptions {
-    serde_pickle::DeOptions::new().decode_strings_relaxed()
+    serde_pickle::DeOptions::new().decode_strings_relaxed().replace_recursive_structures()
 }
 
 #[inline]
