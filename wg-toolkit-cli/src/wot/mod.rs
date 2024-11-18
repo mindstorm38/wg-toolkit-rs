@@ -14,9 +14,15 @@ use rsa::rand_core::{OsRng, RngCore};
 use rsa::{RsaPrivateKey, RsaPublicKey};
 
 use blowfish::Blowfish;
+
+use flate2::read::ZlibDecoder;
+
 use tracing::level_filters::LevelFilter;
 
 use tracing::{error, info, instrument, warn};
+
+use wgtk::util::io::serde_pickle_de_options;
+use wgtk::util::TruncateFmt;
 
 use wgtk::net::bundle::{Bundle, ElementReader, TopElementReader};
 use wgtk::net::element::{DebugElementUndefined, DebugElementVariable16, SimpleElement};
@@ -178,7 +184,7 @@ struct ProxyPendingClient {
 
 impl LoginProxyThread {
 
-    #[instrument(name = "login proxy", skip_all)]
+    #[instrument(name = "login", skip_all)]
     fn run(mut self) {
 
         use login::proxy::Event;
@@ -220,7 +226,7 @@ impl LoginProxyThread {
 
 impl BaseProxyThread {
 
-    #[instrument(name = "base proxy", skip_all)]
+    #[instrument(name = "base", skip_all)]
     fn run(mut self) {
 
         use proxy::Event;
@@ -419,7 +425,7 @@ impl BaseProxyThread {
                 warn!(%addr, "<- Create cell player: {:?}", ccp.element);
             }
             SelectPlayerEntity::ID => {
-                let spe = elt.read_simple::<SelectPlayerEntity>()?;
+                let _spe = elt.read_simple::<SelectPlayerEntity>()?;
                 if let Some(player_entity_id) = self.player_entity_id {
                     info!(%addr, "<- Select player entity: {player_entity_id}");
                 } else {
@@ -474,6 +480,16 @@ impl BaseProxyThread {
                     // TODO: The full data looks like to be a zlib-compressed pickle.
                     // TODO: onCmdResponse for requested SYNC use RES_SUCCESS=0, RES_STREAM=1, RES_CACHE=2 for result_id
                     //       When RES_STREAM is used, then a resource (header+fragment) is expected with the associated request_id.
+
+                    let zlib = ZlibDecoder::new(&rf.element.data[..]);
+                    match serde_pickle::value_from_reader(zlib, serde_pickle_de_options()) {
+                        Ok(val) => {
+                            info!(%addr, "<- Resource completed: {}", TruncateFmt(&val, 3000));
+                        }
+                        Err(e) => {
+                            warn!(%addr, "<- Resource completed: not python: {e}");
+                        }
+                    }
 
                 }
 

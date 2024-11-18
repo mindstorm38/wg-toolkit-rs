@@ -1,5 +1,6 @@
 //! Channel tracking.
 
+use std::cmp::Ordering;
 use std::collections::{hash_map, HashMap, VecDeque};
 use std::time::{Duration, Instant};
 use std::net::SocketAddr;
@@ -8,6 +9,7 @@ use std::num::NonZero;
 use tracing::{instrument, trace, warn};
 
 use super::packet::{Packet, PacketConfig, PacketLocked, PacketConfigError};
+use super::seq::{Seq, SeqAlloc};
 use super::bundle::Bundle;
 
 
@@ -34,7 +36,7 @@ pub struct ChannelTracker {
 #[derive(Debug)]
 struct ChannelTrackerShared {
     /// Sequence number allocator used for off-channel communications.
-    off_sequence_num_alloc: SequenceNumAllocator,
+    off_sequence_num_alloc: SeqAlloc,
     /// Represent the last prefix being write to a packet.
     last_accepted_prefix: u32,
     /// The current prefix offset being used for updating all packets' prefixes.
@@ -46,7 +48,7 @@ impl ChannelTracker {
     pub fn new() -> Self {
         Self {
             shared: ChannelTrackerShared {
-                off_sequence_num_alloc: SequenceNumAllocator::new(1),
+                off_sequence_num_alloc: SeqAlloc::new(Seq::ZERO + 1),
                 last_accepted_prefix: 0,
                 prefix_offset: 0,
             },
@@ -130,8 +132,8 @@ impl ChannelTracker {
     pub fn accept(&mut self, packet: Packet, addr: SocketAddr) -> Option<Channel<'_>> {
 
         let time = Instant::now();
-        let locked = match packet.read_config_locked() {
-            Ok(locked) => locked,
+        let packet = match packet.read_config_locked() {
+            Ok(packet) => packet,
             Err((error, _packet)) => {
                 warn!("Failed to read config: {error}");
                 // self.rejected_packets.push((addr, packet, PacketRejectionError::Config(error)));
@@ -141,15 +143,15 @@ impl ChannelTracker {
 
         // trace!("Config: {:#?}", locked.config());
 
-        self.shared.last_accepted_prefix = locked.packet().read_prefix();
+        self.shared.last_accepted_prefix = packet.packet().read_prefix();
 
         // Start by finding the appropriate channel for this packet regarding the local
         // socket address and channel-related flags on this packet.
         let mut channel;
-        if locked.config().on_channel() {
+        if packet.config().on_channel() {
 
             let on_channel;
-            if let Some((index, version)) = locked.config().indexed_channel() {
+            if let Some((index, version)) = packet.config().indexed_channel() {
                 
                 trace!("Is on-channel: {index} v{version}");
                 on_channel = self.channels.entry((addr, Some(index)))
@@ -175,19 +177,6 @@ impl ChannelTracker {
                     });
             }
 
-            // First packet after channel creation should contains this flag.
-            // TODO: Remove this? Because there is no create flag on external channels.
-            if !on_channel.on.received_create_packet {
-                if locked.config().create_channel() {
-                    trace!("Has-confirmed creation of the channel");
-                    on_channel.on.received_create_packet = true;
-                } else {
-                    // // TODO: expected create channel packet
-                    // debug!("Should be channel create");
-                    // return None;
-                }
-            }
-
             channel = GenericChannel {
                 shared: &mut self.shared,
                 off: &mut on_channel.off,
@@ -209,39 +198,67 @@ impl ChannelTracker {
         }
 
         // Cumulative ack is not supposed to be used off-channel.
-        if let Some(cumulative_ack) = locked.config().cumulative_ack() {
-            if channel.on.is_some() {
-                channel.acknowledge_reliable_packet_cumulative(cumulative_ack);
-            } else {
-                // Cumulative ack is not supported off-channel.
+        if let Some(cumulative_ack) = packet.config().cumulative_ack() {
+
+            // Cumulative ack is not supported off-channel.
+            if channel.on.is_none() {
                 warn!("Cumulative ack is not supported off-channel");
                 return None;
             }
+
+            channel.off.ack_out_reliable_packet_cumulative(cumulative_ack);
+
         }
 
-        // If we have some acks.
-        for &ack in locked.config().single_acks() {
-            channel.acknowledge_reliable_packet(ack);
+        // Immediately handle single acks because this packet may be buffered to be 
+        // processed in-order.
+        for &ack in packet.config().single_acks() {
+            channel.off.ack_out_reliable_packet(ack);
         }
 
-        // If the received packet is reliable, we'll need to send a ack for it in future.
-        let reliable = locked.config().reliable();
-        if reliable {
-            channel.add_received_reliable_packet(locked.config().sequence_num());
-        } else if locked.config().on_channel() {
-            warn!("Unreliable packet while on channel");
+        // Reliable packet must be acknowledged later.
+        if packet.config().reliable() {
+            
+            if packet.config().last_reliable_sequence_num().is_some() {
+                warn!("Last reliable sequence is not support with reliable");
+                return None;
+            }
+
+            channel.off.add_in_reliable_packet(packet.config().sequence_num());
+
+            // When on-channel with reliable packets, we must track the cumulative ack
+            // and buffer any packet that is received out-of-order!
+            if let Some(on) = channel.on.as_deref_mut() {
+                on.add_in_reliable_packet(packet);
+                while let Some(bundle) = on.pop_in_reliable_bundle() {
+                    channel.off.in_bundles.push_back(bundle);
+                }
+                // Shortcut to 
+                return Some(Channel { inner: channel });
+            }
+
+        } else if let Some(last_reliable_sequence_num) = packet.config().last_reliable_sequence_num() {
+
+            // In this case we must ensure that current expected sequence is equal to
+            // this given sequence number + 1.
+            if let Some(on) = channel.on.as_deref_mut() {
+                if last_reliable_sequence_num != on.in_reliable_expected_seq - 1 {
+                    warn!("Invalid last reliable sequence number, expected: {}, got: {}",
+                        on.in_reliable_expected_seq - 1, last_reliable_sequence_num);
+                    return None;
+                }
+            } else {
+                warn!("Last reliable sequence is not supported off-channel");
+                return None;
+            }
+
         }
 
-        // We can observe that packets with the flag 0x1000 are only used
-        // for auto acking with sometimes duplicated data that is sent
-        // just after. If it become a problem this check can be removed. 
-        if let Some(unk1000) = locked.config().unk_1000() {
-            trace!("Unknown 0x1000: {unk1000}");
-            return None;
-        }
-
-        // TODO: Check that the sequence range is not too wide: denial of service.
-        channel.buffer_packet(locked, time);
+        // If we land here, it's either because the packet isn't reliable, or if the 
+        // packet is reliable but we are not in-channel (the latter seems forbidden by
+        // WG source code, but it must be verified). TLDR, the packet don't need to
+        // be reordered, so the logic is much simpler: we use off-channel fragments map.
+        channel.off.add_in_packet(packet, time);
 
         Some(Channel { inner: channel })
 
@@ -264,7 +281,7 @@ impl ChannelTracker {
             }
         };
 
-        let mut channel;
+        let channel;
         if locked.config().on_channel() {
 
             let on_channel;
@@ -306,20 +323,19 @@ impl ChannelTracker {
 
         if let Some(cumulative_ack) = locked.config().cumulative_ack() {
             if channel.on.is_some() {
-                channel.acknowledge_received_reliable_packet_cumulative(cumulative_ack);
+                channel.off.ack_in_reliable_packet_cumulative(cumulative_ack);
             } else {
-                // Cumulative ack is not supported off-channel.
                 warn!("Cumulative ack is not supported off-channel");
                 return false;
             }
         }
 
         for &single_ack in locked.config().single_acks() {
-            channel.acknowledge_received_reliable_packet(single_ack);
+            channel.off.ack_in_reliable_packet(single_ack);
         }
 
         if locked.config().reliable() {
-            channel.add_reliable_packet_unordered(locked.config().sequence_num(), time);
+            channel.off.add_out_reliable_packet_unordered(locked.config().sequence_num(), time);
         }
 
         true
@@ -356,7 +372,7 @@ impl Channel<'_> {
     /// Pop the next bundle able to be received, if any, this ensures that bundles are
     /// received in the correct order!
     pub fn next_bundle(&mut self) -> Option<Bundle> {
-        self.inner.pop_buffered_bundle()
+        self.inner.off.in_bundles.pop_front()
     }
 
     /// Prepare a bundle to be sent, adding acks and other configuration required by this
@@ -377,55 +393,52 @@ impl Channel<'_> {
 
         packet_config.set_reliable(reliable);
 
-        if reliable || bundle_len > 1 {
-            packet_config.set_sequence_num(self.inner.alloc_sequence_num(bundle_len));
+        if bundle_len > 1 || reliable {
+            let sequence_num = self.inner.alloc_sequence_num(bundle_len, reliable);
+            trace!("Allocated sequence numbers: {}..{}", sequence_num, sequence_num + bundle_len);
+            packet_config.set_sequence_num(sequence_num);
             if reliable {
-                for num in packet_config.sequence_num()..packet_config.sequence_num() + bundle_len {
-                    self.inner.add_reliable_packet(num, time);
+                for i in 0..bundle_len {
+                    self.inner.off.add_out_reliable_packet(sequence_num + i, time);
                 }
             }
         }
         
-        if let Some(on_channel) = self.inner.on.as_deref_mut() {
-
+        if let Some(on) = self.inner.on.as_deref_mut() {
             packet_config.set_on_channel(true);
-
-            if let Some(index) = on_channel.index {
+            packet_config.set_cumulative_ack(on.in_reliable_expected_seq);
+            if let Some(index) = on.index {
                 packet_config.set_indexed_channel(index.index, index.version);
                 trace!("Is on-channel: {} v{}", index.index, index.version);
             } else {
                 trace!("Is on-channel: not indexed");
             }
-
         } else {
             trace!("Is off-channel");
         }
 
-        // This may remove some acks from `off.received_reliable_packets` so it's 
-        // important to do it before the swap just after. Only works on-channel.
-        if let Some(cumulative_ack) = self.inner.pop_received_reliable_packet_cumulative() {
-            packet_config.set_cumulative_ack(cumulative_ack);
+        if !self.inner.off.in_reliable_packets.is_empty() {
+            trace!("Pending single acks: {:?}", self.inner.off.in_reliable_packets);
         }
-
-        trace!("Pending single acks: {:?}", self.inner.off.received_reliable_packets);
+        
         trace!("Using prefix offset: 0x{:08X}", self.inner.shared.prefix_offset);
         
         // This swap is simple: it places the dequeue of all received reliable packets 
         // and their sequence numbers into the packet config's acks queue. We must 
         // remember after this to transfer back the remaining sequence numbers that
         // have not been sent from the packet config.
-        std::mem::swap(&mut self.inner.off.received_reliable_packets, packet_config.single_acks_mut());
-        debug_assert!(self.inner.off.received_reliable_packets.is_empty(), "packet config acks were not empty");
+        std::mem::swap(&mut self.inner.off.in_reliable_packets, packet_config.single_acks_mut());
+        debug_assert!(self.inner.off.in_reliable_packets.is_empty(), "packet config acks were not empty");
 
         bundle.write_config(&mut packet_config);
         bundle.update_prefix(self.inner.shared.prefix_offset);
 
         // Now we need to restore acks that have not been sent: swap back (read above).
-        std::mem::swap(&mut self.inner.off.received_reliable_packets, packet_config.single_acks_mut());
+        std::mem::swap(&mut self.inner.off.in_reliable_packets, packet_config.single_acks_mut());
         debug_assert!(packet_config.single_acks().is_empty(), "packet config acks should be empty");
 
-        if !self.inner.off.received_reliable_packets.is_empty() {
-            trace!("Remaining single acks: {:?}", self.inner.off.received_reliable_packets)
+        if !self.inner.off.in_reliable_packets.is_empty() {
+            trace!("Remaining single acks: {:?}", self.inner.off.in_reliable_packets)
         }
 
     }
@@ -467,14 +480,187 @@ pub enum PacketRejectionError {
 struct OffChannelData {
     /// All sequences marked as reliable, so that we can ensure that they are received.
     /// It should be naturally sorted (debug_asserted).
-    reliable_packets: Vec<ReliablePacket>,
+    out_reliable_packets: Vec<OutReliablePacket>,
     /// A dequeue containing all received reliable packets for which we should send ack.
     /// It doesn't need to be sorted.
-    received_reliable_packets: VecDeque<u32>,
+    in_reliable_packets: VecDeque<Seq>,
     /// Bundle fragments tracking, mapped to the first sequence.
-    fragments: HashMap<u32, Fragments>,
-    /// Buffered bundles that are not reliable.
-    buffered_bundles: VecDeque<Bundle>,
+    in_fragments: HashMap<Seq, Fragments>,
+    /// Buffered bundles that can be retrieved by the client!
+    in_bundles: VecDeque<Bundle>,
+}
+
+/// A reliable packet that we sent at given time and waiting for an acknowledgment.
+#[derive(Debug)]
+struct OutReliablePacket {
+    /// The sequence number.
+    sequence_num: Seq,
+    /// The time this sequence has been sent.
+    time: Instant,
+}
+
+impl OffChannelData {
+
+    fn new() -> Self {
+        Self {
+            out_reliable_packets: Vec::new(),
+            in_reliable_packets: VecDeque::new(),
+            in_fragments: HashMap::new(),
+            in_bundles: VecDeque::new(),
+        }
+    }
+
+    /// TODO: We'll also need to automatically resend the packet's content after some 
+    /// time.
+    fn add_out_reliable_packet(&mut self, sequence_num: Seq, time: Instant) {
+    
+        // We are keeping reliable packets ordered by their sequence number and also by
+        // their time (Instant::now() can only grow).
+        debug_assert!(
+            self.out_reliable_packets.is_empty() || 
+            self.out_reliable_packets.last().unwrap().sequence_num.wrapping_cmp(sequence_num).is_le(),
+            "reliable packet sequence number should be greater than previous ones");
+        
+        trace!("Add reliable packet: {sequence_num}");
+        self.out_reliable_packets.push(OutReliablePacket {
+            sequence_num,
+            time,
+        });
+
+    }
+
+    /// Same as [`Self::add_reliable_packet()`] but accepting unordered sequence number,
+    /// this is used by [`PacketTracker::accept_out`] and proxy. *The insertion is still
+    /// more performant when inserting a sequence number that is almost the largest in
+    /// the set.*
+    fn add_out_reliable_packet_unordered(&mut self, sequence_num: Seq, time: Instant) {
+
+        trace!("Add reliable packet (unordered): {sequence_num}");
+        
+        let mut insert_index = 0;
+        for (i, packet) in self.out_reliable_packets.iter().enumerate().rev() {
+            match sequence_num.wrapping_cmp(packet.sequence_num) {
+                Ordering::Equal => return,  // Ignore duplicate.
+                Ordering::Less => continue,
+                Ordering::Greater => {
+                    insert_index = i + 1;
+                    break;
+                }
+            }
+        }
+        
+        self.out_reliable_packets.insert(insert_index, OutReliablePacket {
+            sequence_num,
+            time,
+        });
+
+    }
+
+    /// When a single ack is received on a packet, this can be called to 
+    fn ack_out_reliable_packet(&mut self, sequence_num: Seq) {
+
+        // Naive search for now, because Seq is complicated!
+        let index = self.out_reliable_packets.iter()
+            .position(|packet| sequence_num == packet.sequence_num);
+
+        if let Some(index) = index {
+            let reliable_packet = self.out_reliable_packets.remove(index);
+            trace!("Single ack for reliable packet: {sequence_num} after {:?}", reliable_packet.time.elapsed());
+        }
+
+    }
+
+    /// When a cumulative ack is received, this can be used to acknowledge all sequences
+    /// up to, but excluding, the given sequence number. Not supported off-channel but
+    /// still present here.
+    fn ack_out_reliable_packet_cumulative(&mut self, sequence_num: Seq) {
+
+        // Naive search for now, because Seq is complicated!
+        // Using '.le' because it's cumulative ack is exclusive!
+        let drain_len = self.out_reliable_packets.iter()
+            .position(|packet| sequence_num.wrapping_cmp(packet.sequence_num).is_le())
+            .unwrap_or(self.out_reliable_packets.len());
+
+        trace!("Cumulative ack for reliable packets: ..{sequence_num}");
+        for reliable_packet in self.out_reliable_packets.drain(..drain_len) {
+            trace!("Cumulative ack for a previous packet: {}, after: {:?}", 
+                reliable_packet.sequence_num, reliable_packet.time.elapsed());
+        }
+
+    }
+
+    /// Register a simple reliable packet to be acknowledged in the future.
+    fn add_in_reliable_packet(&mut self, sequence_num: Seq) {
+        // It's unsorted so we don't care of duplicate entries!
+        self.in_reliable_packets.push_back(sequence_num);
+        trace!("Received reliable packet: {sequence_num}");
+    }
+
+    /// Force acknowledgement of a received reliable packet, used with `accept_out` only.
+    fn ack_in_reliable_packet(&mut self, sequence_num: Seq) {
+        // Swap remove because order don't matter.
+        if let Some(pos) = self.in_reliable_packets.iter().position(|&num| num == sequence_num) {
+            self.in_reliable_packets.swap_remove_back(pos);
+        }
+    }
+    
+    /// For proxy and accept_out...
+    fn ack_in_reliable_packet_cumulative(&mut self, sequence_num: Seq) {
+        // Same logic as above in 'pop_received_reliable_packet_cumulative'.
+        self.in_reliable_packets.retain(|&num| num.wrapping_cmp(sequence_num).is_ge());
+    }
+
+    /// Push a packet that may be a bundle's fragment, if a bundle is completed, it is 
+    /// added to the internal bundles queue, there is no ordering guaranteed with such
+    /// packet, see [`OnChannelData::add_in_reliable_packet`] for reordering.
+    fn add_in_packet(&mut self, packet: PacketLocked, time: Instant) {
+
+        let bundle = match packet.config().sequence_range() {
+            Some((first_seq, last_seq)) => {
+
+                let relative_num = packet.config().sequence_num() - first_seq;
+                trace!("Fragment: {} ({}..={})", 
+                    packet.config().sequence_num(), first_seq.get(), last_seq.get());
+
+                match self.in_fragments.entry(first_seq) {
+                    hash_map::Entry::Occupied(mut o) => {
+
+                        // If this fragments is too old, timeout every packet in it
+                        // and start again with the packet.
+                        // FIXME: Maybe dumb?
+                        if o.get().is_old(time, FRAGMENT_TIMEOUT) {
+                            // let mut fragments = o.remove();
+                            // self.rejected_packets.extend(fragments.drain()
+                            //     .map(|packet| (addr, packet, PacketRejectionError::TimedOut)));
+                            return;
+                        }
+
+                        o.get_mut().set(relative_num, packet);
+
+                        // When all fragments are collected, remove entry and return.
+                        if !o.get().is_full() {
+                            return;
+                        }
+
+                        o.remove().into_bundle()
+
+                    },
+                    hash_map::Entry::Vacant(v) => {
+                        let mut fragments = Fragments::new(last_seq - first_seq + 1);
+                        fragments.set(relative_num, packet);
+                        v.insert(fragments);
+                        return;
+                    }
+                }
+
+            }
+            _ => Bundle::new_with_single(packet)
+        };
+
+        self.in_bundles.push_back(bundle);
+
+    }
+
 }
 
 /// Data specific to on-channel communication.
@@ -482,64 +668,17 @@ struct OffChannelData {
 struct OnChannelData {
     /// Optional index for this channel.
     index: Option<ChannelIndex>,
-    /// The next sequence number to return.
-    sequence_num_alloc: SequenceNumAllocator,
-    /// Set to true after the first packet with the create_channel flag has been received.
-    received_create_packet: bool,
+    /// The next sequence number to return for this channel, **only for reliable 
+    /// packets**, non-reliable packets sent on-channel are using the off-channel .
+    seq_alloc: SeqAlloc,
     /// Most of the time, reliable sequence numbers are received in order, and so we can
     /// just increment this counter in order to know that all packets up to (but 
     /// excluding) this number has been received.
     /// 
-    /// NOTE: This is the same as `inSeqAt_`, `bufferedReceives_` in BigWorld source.
-    /// 
-    /// FIXME: This might cause issues if unreliable packets are sent in-channel... Maybe
-    /// add some kind of timeout on the cumulative number, after what we just jump to the
-    /// next sequence number?
-    received_reliable_packets_cumulative: u32,
-    /// If a packet is received out-of-order and cannot increment the cumulative sequence
-    /// number (in `received_reliable_packets_cumulative`), then we should buffer it in
-    /// this **ordered** dequeue, if the gap is filled then we'll be able to increment 
-    /// the cumulative sequence number properly.
-    received_reliable_packets_buffered: VecDeque<u32>,
-    /// A queue of completed bundles that are waiting for the user to pop them, the
-    /// last sequence id is kept and bundles are sorted so the first bundle is the
-    /// first one to be returned. Note that with when on channel with reliable 
-    /// communication, there is a control to not allow the first bundle to be picked
-    /// if any bundle is being waited for prior to the pending ones.
-    reliable_buffered_bundles: VecDeque<(u32, Bundle)>,
-}
-
-/// A reliable packet that we sent at given time and waiting for an acknowledgment.
-#[derive(Debug)]
-struct ReliablePacket {
-    /// The sequence number.
-    sequence_num: u32,
-    /// The time this sequence has been sent.
-    time: Instant,
-}
-
-#[derive(Debug)]
-#[repr(C)]
-struct OffChannel {
-    off: OffChannelData,
-}
-
-#[derive(Debug)]
-#[repr(C)]
-struct OnChannel {
-    off: OffChannelData,
-    on: OnChannelData,
-}
-
-impl OffChannelData {
-    fn new() -> Self {
-        Self {
-            reliable_packets: Vec::new(),
-            received_reliable_packets: VecDeque::new(),
-            fragments: HashMap::new(),
-            buffered_bundles: VecDeque::new(),
-        }
-    }
+    /// NOTE: This is the same as `inSeqAt_` in BW source.
+    in_reliable_expected_seq: Seq,
+    in_reliable_contiguous_packets: VecDeque<PacketLocked>,
+    in_reliable_packets: VecDeque<PacketLocked>,
 }
 
 impl OnChannelData {
@@ -547,12 +686,10 @@ impl OnChannelData {
     fn new(index: Option<ChannelIndex>) -> Self {
         Self {
             index,
-            sequence_num_alloc: SequenceNumAllocator::new(0),
-            received_create_packet: false,
-            received_reliable_packets_cumulative: 0,
-            // received_reliable_packets_cumulative_pop: u32::MAX, // to force pop first call
-            received_reliable_packets_buffered: VecDeque::new(),
-            reliable_buffered_bundles: VecDeque::new(),
+            seq_alloc: SeqAlloc::new(Seq::ZERO),
+            in_reliable_expected_seq: Seq::ZERO,
+            in_reliable_contiguous_packets: VecDeque::new(),
+            in_reliable_packets: VecDeque::new(),
         }
     }
 
@@ -568,6 +705,151 @@ impl OnChannelData {
         Self::new_with_index_version(index, NonZero::new(1).unwrap())
     }
 
+    /// Add a received (in) reliable packet to the internal re-ordering logic of this 
+    /// channel, this will automatically construct an ordered bundle when completed.
+    /// This also updates the cumulative ack that can be sent back.
+    /// 
+    /// After this function has filled contiguous and buffered packets, you may want to
+    /// user [`Self::pop_in_reliable_bundle`] to pop any completed contiguous bundle.
+    fn add_in_reliable_packet(&mut self, packet: PacketLocked) {
+
+        debug_assert!(packet.config().reliable(), "given packet should be reliable");
+
+        let sequence_num = packet.config().sequence_num();
+
+        match sequence_num.wrapping_cmp(self.in_reliable_expected_seq) {
+            Ordering::Equal => {
+
+                // This is the best scenario, packet is received in-order, so we push the
+                // packet after the currently contiguous sequence.
+                self.in_reliable_expected_seq += 1;
+                self.in_reliable_contiguous_packets.push_back(packet);
+
+                // By inserting this packet, we may a filled a gap in the sequences, so
+                // we increment it while it's possible.
+                while let Some(packet) = self.in_reliable_packets.front() {
+                    if packet.config().sequence_num() == self.in_reliable_expected_seq {
+                        trace!("Unbuffered reliable packet: {}", packet.config().sequence_num());
+                        self.in_reliable_expected_seq += 1;
+                        self.in_reliable_contiguous_packets.push_back(self.in_reliable_packets.pop_front().unwrap());
+                    } else {
+                        break;  // Not contiguous.
+                    }
+                }
+
+            }
+            Ordering::Less => {
+                // Do nothing, the sequence number may have been already received...
+            }
+            Ordering::Greater => {
+
+                // Warning if we get many buffered packets which indicate that we probably
+                // lost track of one of the 
+                if self.in_reliable_packets.len() > 50 {
+                    warn!("Buffered too many in reliable packets: {}", self.in_reliable_packets.len());
+                }
+
+                // We search where we can insert the packet, starting from the end because
+                // it's still likely to receive packets in order.
+                let mut insert_index = 0;
+                for (i, buffered_packet) in self.in_reliable_packets.iter().enumerate().rev() {
+                    match sequence_num.wrapping_cmp(buffered_packet.config().sequence_num()) {
+                        Ordering::Equal => return,  // Duplicate packet, just abort.
+                        Ordering::Less => continue,
+                        Ordering::Greater => {
+                            insert_index = i + 1;
+                            break;
+                        }
+                    }
+                }
+
+                self.in_reliable_packets.insert(insert_index, packet);
+                trace!("Buffered reliable packet at: {insert_index}");
+
+                // let debug_seqs = self.in_reliable_packets.iter()
+                //     .map(|packet| packet.config().sequence_num().get())
+                //     .collect::<Vec<_>>();
+                // trace!("Buffered packets: {debug_seqs:?}");
+
+            }
+        }
+
+        trace!("Received reliable packet cumulative: {}, contiguous: {}, buffered: {}", 
+            self.in_reliable_expected_seq, 
+            self.in_reliable_contiguous_packets.len(),
+            self.in_reliable_packets.len());
+
+    }
+
+    /// Try to construct any reliable bundle if possible.
+    fn pop_in_reliable_bundle(&mut self) -> Option<Bundle> {
+        loop {
+            let first_packet = self.in_reliable_contiguous_packets.front()?;
+            if let Some((first_seq, last_seq)) = first_packet.config().sequence_range() {
+
+                trace!("Reliable fragment: {}..={}", first_seq.get(), last_seq.get());
+
+                // Checking coherency of the sequence range, the first contiguous packet 
+                // should also start the range, if not the case we just pop that invalid
+                // packet.
+                if first_packet.config().sequence_num() != first_seq {
+                    warn!("Missing the first fragment packet, got: {}, range: {}..={}",
+                        first_packet.config().sequence_num(), first_seq.get(), last_seq.get());
+                    // Forget this invalid packet and continue to the next packet.
+                    let _ = self.in_reliable_contiguous_packets.pop_front();
+                    continue;
+                }
+
+                // Because we ensure that packets are contiguous with strictly increasing 
+                // seq, we just check that we have enough packets to complete this bundle,
+                // this guarantee that we have all first_seq..=last_seq existing in it.
+                // TODO: Add a anti-DOS check here to ensure that bundle length isn't absurd.
+                let bundle_len = (last_seq - first_seq + 1) as usize;
+                if self.in_reliable_contiguous_packets.len() < bundle_len {
+                    return None;
+                }
+
+                // Enough packets, check that all packets have the same sequence range.
+                let mut coherent = true;
+                for second_packet in self.in_reliable_contiguous_packets.iter().take(bundle_len).skip(1) {
+                    if second_packet.config().sequence_range() != Some((first_seq, last_seq)) {
+                        let (first_seq_, last_seq_) = second_packet.config().sequence_range().unwrap();
+                        warn!("Incoherent fragment packet, got {}..={}, expected {}..={}",
+                            first_seq_.get(), last_seq_.get(), first_seq.get(), last_seq.get());
+                        coherent = false;
+                        break;
+                    }
+                }
+
+                // We drain all elements anyway, but only returns if all packets are valid.
+                let drain = self.in_reliable_contiguous_packets.drain(..bundle_len);
+                if coherent {
+                    return Some(Bundle::new_with_multiple(drain))
+                } else {
+                    continue;
+                }
+
+            } else {
+                // Unwrap because we know that this packet exists.
+                let single_packet = self.in_reliable_contiguous_packets.pop_front().unwrap();
+                return Some(Bundle::new_with_single(single_packet));
+            }
+        }
+    }
+
+}
+
+#[derive(Debug)]
+#[repr(C)]
+struct OffChannel {
+    off: OffChannelData,
+}
+
+#[derive(Debug)]
+#[repr(C)]
+struct OnChannel {
+    off: OffChannelData,
+    on: OnChannelData,
 }
 
 /// Internal structure used to reference a channel like a handle to it, providing an
@@ -581,306 +863,14 @@ struct GenericChannel<'a> {
 
 impl GenericChannel<'_> {
 
-    fn alloc_sequence_num(&mut self, count: u32) -> u32 {
-        if let Some(on) = self.on.as_deref_mut() {
-            on.sequence_num_alloc.alloc(count)
-        } else {
-            self.shared.off_sequence_num_alloc.alloc(count)
-        }
-    }
-
-    /// TODO: We'll also need to automatically resend the packet's content after some 
-    /// time.
-    fn add_reliable_packet(&mut self, sequence_num: u32, time: Instant) {
-    
-        // We are keeping reliable packets ordered by their sequence number and also by
-        // their time (Instant::now() can only grow).
-        debug_assert!(
-            self.off.reliable_packets.is_empty() || 
-            self.off.reliable_packets.last().unwrap().sequence_num < sequence_num,
-            "reliable packet sequence number should be greater than previous ones");
-        
-        trace!("Add reliable packet: {sequence_num}");
-        self.off.reliable_packets.push(ReliablePacket {
-            sequence_num,
-            time,
-        });
-
-    }
-
-    /// Same as [`Self::add_reliable_packet()`] but accepting unordered sequence number,
-    /// this is used by [`PacketTracker::accept_out`] and proxy. *The insertion is still
-    /// more performant when inserting a sequence number that is almost the largest in
-    /// the set.*
-    fn add_reliable_packet_unordered(&mut self, sequence_num: u32, time: Instant) {
-
-        trace!("Add reliable packet (unordered): {sequence_num}");
-        
-        let mut insert_index = 0;
-        for (i, packet) in self.off.reliable_packets.iter().enumerate().rev() {
-            if sequence_num == packet.sequence_num {
-                return;  // Ignore duplicate.
-            } else if sequence_num > packet.sequence_num {
-                insert_index = i + 1;
-                break;
-            }
-        }
-        
-        self.off.reliable_packets.insert(insert_index, ReliablePacket {
-            sequence_num,
-            time,
-        });
-
-    }
-
-    /// When a single ack is received on a packet, this can be called to 
-    fn acknowledge_reliable_packet(&mut self, sequence_num: u32) -> bool {
-
-        let index = match self.off.reliable_packets.binary_search_by_key(&sequence_num, |p: _| p.sequence_num) {
-            Ok(index) => index,
-            Err(_) => return false,
-        };
-
-        let reliable_packet = self.off.reliable_packets.remove(index);
-        trace!("Single ack for reliable packet: {sequence_num} after {:?}", reliable_packet.time.elapsed());
-        true
-
-    }
-
-    /// When a cumulative ack is received, this can be used to acknowledge all sequences
-    /// up to, but excluding, the given sequence number. Not supported off-channel but
-    /// still present here.
-    fn acknowledge_reliable_packet_cumulative(&mut self, sequence_num: u32) {
-       
-        let index = match self.off.reliable_packets.binary_search_by_key(&sequence_num, |p: _| p.sequence_num) {
-            Ok(index) => index,
-            Err(index) => index,
-        };
-
-        trace!("Cumulative ack for reliable packets: ..{sequence_num}");
-        for reliable_packet in self.off.reliable_packets.drain(..index) {
-            trace!("Cumulative ack for a previous packet after {:?}", reliable_packet.time.elapsed());
-        }
-
-    }
-
-    /// When accepting a packet marked as reliable, use this to register it for sending
-    /// an ack later in time. This works both for off-channel and on-channel 
-    /// communication, however when on-channel there is an additional logic to 
-    /// compute the possible cumulative ack.
-    /// 
-    /// This function basically insert the sequence number into the internal dequeue
-    /// `off.received_reliable_packets` which can be retrieved later.
-    fn add_received_reliable_packet(&mut self, sequence_num: u32) {
-
-        // We hope that we don't received it twice...
-        self.off.received_reliable_packets.push_back(sequence_num);
-        trace!("Received reliable packet: {sequence_num}");
-
-        if let Some(on) = self.on.as_deref_mut() {
-            
-            if sequence_num == on.received_reliable_packets_cumulative {
-                // This is the best scenario, packet is received in-order.
-                on.received_reliable_packets_cumulative += 1;
-                // Continue increment the cumulative number if buffered numbers follows.
-                while on.received_reliable_packets_buffered.front().copied()
-                == Some(on.received_reliable_packets_cumulative) {
-                    on.received_reliable_packets_buffered.pop_front();
-                    on.received_reliable_packets_cumulative += 1;
-                }
-            } else if sequence_num < on.received_reliable_packets_cumulative {
-                // Do nothing, the sequence number may have been already received...
-            } else {
-                // Warning if we get many buffered packets which indicate that we probably
-                // lost track of one of the 
-                if on.received_reliable_packets_buffered.len() > 50 {
-                    warn!("Buffered too many received reliable packets: {:?}", on.received_reliable_packets_buffered);
-                }
-                // We need to buffer the sequence number because it is not immediately 
-                // following the previous one, it will be recovered in the future when
-                // the gap will be filled.
-                match on.received_reliable_packets_buffered.binary_search(&sequence_num) {
-                    Ok(_) => return, // Ignore already existing packets.
-                    Err(index) => on.received_reliable_packets_buffered.insert(index, sequence_num),
-                }
-            }
-
-            trace!("Received reliable packet cumulative: {}, buffered: {:?}", 
-                on.received_reliable_packets_cumulative, 
-                on.received_reliable_packets_buffered);
-
-        }
-
-    }
-
-    /// If we are on-channel then it returns the cumulative sequence number to ack, if so
-    /// it will also remove the corresponding acks from the internal dequeue
-    /// `off.received_reliable_packets` so that we don't ack twice.
-    /// 
-    /// This returns none if not on-channel.
-    fn pop_received_reliable_packet_cumulative(&mut self) -> Option<u32> {
-
-        let on = self.on.as_deref_mut()?;
-        let ret = on.received_reliable_packets_cumulative;
-
-        // if on.received_reliable_packets_cumulative_pop == ret {
-        //     trace!("Pop received reliable packet cumulative: none");
-        //     return None;
-        // }
-
-        // Remove all single acks that are before the cumulative ack: 
-        // retain all sequence numbers after or equal
-        self.off.received_reliable_packets.retain(|&num| num >= ret);
-
-        // on.received_reliable_packets_cumulative_pop = ret;
-        // trace!("Pop received reliable packet cumulative: {ret}");
-        Some(ret)
-
-    }
-
-    /// Force acknowledgement of a received reliable packet, used with `accept_out` only.
-    fn acknowledge_received_reliable_packet(&mut self, sequence_num: u32) {
-
-        // Swap remove because order don't matter.
-        if let Some(pos) = self.off.received_reliable_packets.iter().position(|&num| num == sequence_num) {
-            self.off.received_reliable_packets.swap_remove_back(pos);
-        }
-
-    }
-    
-    /// For proxy and accept_out...
-    fn acknowledge_received_reliable_packet_cumulative(&mut self, sequence_num: u32) {
-        
-        self.off.received_reliable_packets.retain(|&num| num >= sequence_num);
-
-        if let Some(_on) = self.on.as_deref_mut() {
-            // TODO: ?
-        }
-
-    }
-
-    /// Buffer a packet into this channel, if this packet is part of a fragmented bundle
-    /// then it's added to the partial bundle.
-    fn buffer_packet(&mut self, locked: PacketLocked, time: Instant) {
-
-        let reliable = locked.config().reliable();
-        let seq_num = locked.config().sequence_num();
-
-        let (last_num, bundle) = match locked.config().sequence_range() {
-            Some((first_num, last_num)) => {
-
-                let relative_num = seq_num - first_num;
-                trace!("Fragment: {seq_num} ({first_num}..={last_num})");
-
-                match self.off.fragments.entry(first_num) {
-                    hash_map::Entry::Occupied(mut o) => {
-
-                        // If this fragments is too old, timeout every packet in it
-                        // and start again with the packet.
-                        // FIXME: Maybe dumb?
-                        if o.get().is_old(time, FRAGMENT_TIMEOUT) {
-                            // let mut fragments = o.remove();
-                            // self.rejected_packets.extend(fragments.drain()
-                            //     .map(|packet| (addr, packet, PacketRejectionError::TimedOut)));
-                            return;
-                        }
-
-                        o.get_mut().set(relative_num, locked);
-
-                        // When all fragments are collected, remove entry and return.
-                        if !o.get().is_full() {
-                            return;
-                        }
-
-                        (last_num, o.remove().into_bundle())
-
-                    },
-                    hash_map::Entry::Vacant(v) => {
-                        let mut fragments = Fragments::new(last_num - first_num + 1);
-                        fragments.set(relative_num, locked);
-                        v.insert(fragments);
-                        return;
-                    }
-                }
-
-            }
-            _ => (seq_num, Bundle::new_with_single(locked))
-        };
-
-        // If on a channel, 
+    /// Generic sequence number allocation depending on the context of the channel.
+    fn alloc_sequence_num(&mut self, count: u32, reliable: bool) -> Seq {
         if let Some(on) = self.on.as_deref_mut() {
             if reliable {
-
-                // Here we need to queue the buffer, we intentionally don't use binary 
-                // search here because bundle usually don't arrives out of order and are 
-                // quickly unbuffered (even quicker with off-channel because the order is
-                // not checked). Because of this, we also start searching from the end.
-                let mut insert_index = 0;
-                for (i, seq) in on.reliable_buffered_bundles.iter().map(|&(seq, _)| seq).enumerate().rev() {
-                    if last_num == seq {
-                        // Weird? Received same packet twice.
-                        return;
-                    } else if last_num > seq {
-                        insert_index = i + 1;
-                        break;
-                    }
-                }
-
-                on.reliable_buffered_bundles.insert(insert_index, (last_num, bundle));
-                return;
-
+                return on.seq_alloc.alloc(count);
             }
         }
-
-        // We land here if the packet isn't reliable, which means that the bundle return
-        // order don't matter.
-        self.off.buffered_bundles.push_back(bundle);
-
-    }
-
-    /// Pop a buffered bundle.
-    fn pop_buffered_bundle(&mut self) -> Option<Bundle> {
-        
-        // Prioritize reliable buffered bundles.
-        if let Some(on) = self.on.as_deref_mut() {
-            // Only return the next bundle if its sequence number is contained in the
-            // channel's cumulative sequence number, which is contiguous, which ensure 
-            // that any previous packet has already been processed.
-            let &(seq, _) = on.reliable_buffered_bundles.front()?;
-            trace!("Trying to pop buffered: seq={seq}, cumulative={}", on.received_reliable_packets_cumulative);
-            if seq < on.received_reliable_packets_cumulative {
-                return Some(on.reliable_buffered_bundles.pop_front().unwrap().1);
-            } else if on.reliable_buffered_bundles.len() > 50 {
-                warn!("Buffered too many reliable bundles: {}, probably locked", on.reliable_buffered_bundles.len());
-            }
-        }
-
-        self.off.buffered_bundles.pop_front()
-
-    }
-
-}
-
-/// An allocator for contiguous sequence numbers.
-#[derive(Debug)]
-struct SequenceNumAllocator {
-    next_num: u32,
-}
-
-impl SequenceNumAllocator {
-
-    fn new(next: u32) -> Self {
-        Self {
-            next_num: next,
-        }
-    }
-
-    fn alloc(&mut self, count: u32) -> u32 {
-        assert!(self.next_num + count < 0x10000000, "sequence number overflow");
-        let first_num = self.next_num;
-        self.next_num += count;
-        trace!("Allocated sequence numbers: {}..{}", first_num, self.next_num);
-        first_num
+        self.shared.off_sequence_num_alloc.alloc(count)
     }
 
 }
@@ -903,14 +893,6 @@ impl Fragments {
             last_update: Instant::now()
         }
     }
-
-    // /// This this fragments packets and reset internal count to zero.
-    // fn drain(&mut self) -> impl Iterator<Item = PacketLocked> {
-    //     self.seq_count = 0;
-    //     std::mem::take(&mut self.fragments)
-    //         .into_iter()
-    //         .filter_map(|slot| slot)
-    // }
 
     /// Set a fragment.
     fn set(&mut self, num: u32, packet: PacketLocked) {

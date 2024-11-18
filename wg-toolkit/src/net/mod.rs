@@ -23,6 +23,7 @@
 
 pub mod element;
 
+pub mod seq;
 pub mod packet;
 pub mod bundle;
 

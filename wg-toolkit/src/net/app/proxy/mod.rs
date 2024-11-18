@@ -211,17 +211,27 @@ impl App {
                 packet = cipher_packet;
             }
 
-            let (accept_channel, accept_out_channel, _span) = match direction {
-                PacketDirection::Out => (&mut self.out_channel, &mut self.in_channel, trace_span!("out").entered()),
-                PacketDirection::In => (&mut self.in_channel, &mut self.out_channel, trace_span!("in").entered()),
+            let (
+                accept_channel, 
+                accept_channel_span,
+                accept_out_channel,
+                accept_out_channel_span,
+            ) = match direction {
+                PacketDirection::Out => (&mut self.out_channel, trace_span!("out"), &mut self.in_channel, trace_span!("in")),
+                PacketDirection::In => (&mut self.in_channel, trace_span!("in"), &mut self.out_channel, trace_span!("out")),
             };
 
-            trace!(peer_addr = %peer.addr, real_addr = %peer.real_addr, "{:?}", packet);
-
+            let span = accept_channel_span.enter();
+            trace!(real_addr = %peer.real_addr, "{:width$?}", packet, width = 0);
+            drop(span);
+            
+            let span = accept_out_channel_span.enter();
             if !accept_out_channel.accept_out(&packet, peer.addr) {
                 continue;
             }
-
+            drop(span);
+            
+            let _span = accept_channel_span.enter();
             let Some(mut channel) = accept_channel.accept(packet, peer.addr) else {
                 continue;
             };

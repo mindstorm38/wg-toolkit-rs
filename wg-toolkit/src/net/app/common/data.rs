@@ -6,7 +6,7 @@ use std::fmt;
 
 pub use glam::{Vec2, Vec3, Vec4};
 
-use crate::util::io::{WgReadExt, WgWriteExt};
+use crate::util::io::{WgReadExt, WgWriteExt, serde_pickle_de_options, serde_pickle_ser_options};
 use crate::util::{AsciiFmt, TruncateFmt};
 
 
@@ -71,7 +71,7 @@ impl DataType for AutoString {
     fn write(&self, write: &mut dyn Write) -> io::Result<()> {
         write.write_blob_variable(&*(match self {
             AutoString::String(v) => Cow::Borrowed(v.as_bytes()),
-            AutoString::Python(v) => Cow::Owned(serde_pickle::value_to_vec(v, serde_pickle::SerOptions::new().proto_v2()).unwrap()),
+            AutoString::Python(v) => Cow::Owned(serde_pickle::value_to_vec(v, serde_pickle_ser_options()).unwrap()),
             AutoString::Raw(v) => Cow::Borrowed(&v[..]),
         }))
     }
@@ -80,7 +80,7 @@ impl DataType for AutoString {
         
         let raw = read.read_blob_variable()?;
 
-        if let Ok(v) = serde_pickle::value_from_reader(&raw[..], serde_pickle::DeOptions::new().decode_strings_relaxed()) {
+        if let Ok(v) = serde_pickle::value_from_reader(&raw[..], serde_pickle_de_options()) {
             return Ok(Self::Python(v));
         }
 

@@ -8,7 +8,7 @@ use rsa::{RsaPrivateKey, RsaPublicKey};
 use crypto_common::KeyInit;
 use blowfish::Blowfish;
 
-use tracing::trace;
+use tracing::{trace, trace_span};
 
 use crate::net::bundle::{Bundle, ElementReader, ReplyElementReader, TopElementReader};
 use crate::net::app::login::element::{ChallengeResponse, CuckooCycleResponse};
@@ -199,15 +199,18 @@ impl App {
 
             let now = Instant::now();
 
+            let _span;
             let channel;
             let peer;
             if let Some(peer_addr) = &socket_poll_ret.peer {
+                _span = trace_span!("in").entered();
                 channel = &mut self.inner.in_channel;
                 peer = match self.peers.get_mut(peer_addr) {
                     Some(peer) => peer,
                     None => continue, // Ignore if we received an event from a dead peer.
                 }
             } else {
+                _span = trace_span!("out").entered();
                 channel = &mut self.inner.out_channel;
                 peer = match self.peers.entry(addr) {
                     hash_map::Entry::Occupied(o) => o.into_mut(),

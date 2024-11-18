@@ -5,11 +5,10 @@ use std::io::{Cursor, Read};
 use std::num::NonZero;
 use std::fmt;
 
-// use byteorder::{ReadBytesExt, WriteBytesExt, LE};
-
 use crate::util::io::{SliceCursor, WgReadExt, WgWriteExt};
+use crate::util::{AsciiFmt, TruncateFmt};
 
-use crate::util::BytesFmt;
+use super::seq::Seq;
 
 
 /// According to disassembly of WoT, outside of a channel, the max size if always
@@ -270,19 +269,29 @@ impl Packet {
 
 impl fmt::Debug for Packet {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Packet")
-            .field("prefix", &format_args!("{:08X}", self.read_prefix()))
-            .field("flags", &format_args!("{:04X}", self.read_flags()))
-            .field("flags", &format_args!("{}", FlagsFmt(self.read_flags())))
-            .field("body", &format_args!("{:X}", BytesFmt(&self.slice()[PACKET_HEADER_LEN..])))
-            .field("len", &self.inner.len)
-            .finish()
+        
+        let width = f.width().unwrap_or(usize::MAX);
+        let mut debug = f.debug_struct("Packet");
+
+        debug.field("prefix", &format_args!("{:08X}", self.read_prefix()));
+        debug.field("flags", &format_args!("{:04X}", self.read_flags()));
+        debug.field("flags", &format_args!("{}", FlagsFmt(self.read_flags())));
+        debug.field("len", &format_args!("{}", self.inner.len));
+        if width != 0 {
+            debug.field("body", &format_args!("{}", 
+                TruncateFmt(&format_args!("{:?}", 
+                    AsciiFmt(&self.slice()[PACKET_HEADER_LEN..])), width)));
+        }
+        debug.finish()
+
     }
 }
 
 
 /// Represent a configuration for flags their footer values to write or read on/from a
-/// packet's data.
+/// packet's data. This configuration allows invalid states and parameter combinations,
+/// it's up to the user of this configuration (usually a channel tracker) to properly
+/// set these flags.
 #[derive(Clone)]
 pub struct PacketConfig {
     /// Flags that are written or read from the packet, defining which of the following
@@ -302,29 +311,29 @@ pub struct PacketConfig {
     /// **and/or** if the packet is a fragment of a chain of packet.
     /// 
     /// Used when `flags::IS_RELIABLE` and/or `flags::IS_FRAGMENT` is set.
-    sequence_num: u32,
+    sequence_num: Seq,
     /// If this packet is a fragment (defined just after), this contains the
     /// sequence number of the first packet in the chain.
     /// 
     /// Used when `flags::IS_FRAGMENT` is set.
-    sequence_first_num: u32,
+    sequence_first_num: Seq,
     /// If this packet is a fragment (defined in [`Self::`seq_first``]), this contains 
     /// the sequence number of the last packet in the chain (included).
     /// 
     /// Used when `flags::IS_FRAGMENT` is set.
-    sequence_last_num: u32,
+    sequence_last_num: Seq,
     /// The cumulative ack number. This number is sent for acknowledging that all 
     /// sequence numbers up to (but excluding) this ack have been received. Exclusively
     /// used on channels.
     /// 
     /// Used when `flags::HAS_CUMULATIVE_ACK` is set.
-    cumulative_ack: u32,
+    cumulative_ack: Seq,
     /// A queue of packets to piggyback in the footer of the packet, packets are extracted
     /// from the front of dequeue when there is enough place to put them.
     piggybacks: VecDeque<Packet>,
     /// A queue of single acks to put on the packet if space allows it, there should be
     /// at least one ack put on the packet, acks are extracted from the front of dequeue.
-    single_acks: VecDeque<u32>,
+    single_acks: VecDeque<Seq>,
     /// Channel index when indexed, never zero if so.
     /// 
     /// Used when `flags::INDEXED_CHANNEL` is set. 
@@ -333,10 +342,12 @@ pub struct PacketConfig {
     /// 
     /// Used when `flags::INDEXED_CHANNEL` is set. 
     channel_version: NonZero<u32>,
-    /// Value used for the unknown 0x1000 flag's value.
+    /// This value is in use when reliable isn't set and this packet is in-channel. It
+    /// indicates that this packet should only be processed if the last reliable sequence
+    /// number that is contiguous 
     /// 
     /// Used when `flags::UNK1000` is set.
-    unk_1000: u32,
+    last_reliable_sequence_num: Seq,
 }
 
 impl PacketConfig {
@@ -347,15 +358,15 @@ impl PacketConfig {
             flags: 0,
             footer_offset: 0,
             first_request_offset: 0,
-            sequence_num: 0,
-            sequence_first_num: 0,
-            sequence_last_num: 0,
-            cumulative_ack: 0,
+            sequence_num: Seq::ZERO,
+            sequence_first_num: Seq::ZERO,
+            sequence_last_num: Seq::ZERO,
+            cumulative_ack: Seq::ZERO,
             piggybacks: VecDeque::new(),
             single_acks: VecDeque::new(),
             channel_index: NonZero::new(1).unwrap(),
             channel_version: NonZero::new(1).unwrap(),
-            unk_1000: 0,
+            last_reliable_sequence_num: Seq::ZERO,
         }
     }
 
@@ -419,20 +430,20 @@ impl PacketConfig {
     /// Return the sequence number of the packet, it is used if reliable mode is enabled
     /// and/or if the packet is a fragment of a chain of packet.
     #[inline]
-    pub fn sequence_num(&self) -> u32 {
+    pub fn sequence_num(&self) -> Seq {
         self.sequence_num
     }
 
     /// See [`Self::sequence_num()`].
     #[inline]
-    pub fn set_sequence_num(&mut self, num: u32) {
+    pub fn set_sequence_num(&mut self, num: Seq) {
         self.sequence_num = num;
     }
 
     /// Returns the range of sequence number in case this packet is a fragment
     /// of a packet chain. Both bounds are included.
     #[inline]
-    pub fn sequence_range(&self) -> Option<(u32, u32)> {
+    pub fn sequence_range(&self) -> Option<(Seq, Seq)> {
         self.has_flags(flags::IS_FRAGMENT)
             .then_some((self.sequence_first_num, self.sequence_last_num))
     }
@@ -445,8 +456,8 @@ impl PacketConfig {
     /// 
     /// *Note that* the sequence number is not checked to be in bounds.
     #[inline]
-    pub fn set_sequence_range(&mut self, first: u32, last: u32) {
-        assert!(first < last, "invalid range");
+    pub fn set_sequence_range(&mut self, first: Seq, last: Seq) {
+        assert!(first.wrapping_cmp(last).is_lt(), "invalid range");
         self.enable_flags(flags::IS_FRAGMENT);
         self.sequence_first_num = first;
         self.sequence_last_num = last;
@@ -457,8 +468,8 @@ impl PacketConfig {
     #[inline]
     pub fn clear_sequence_range(&mut self) {
         self.disable_flags(flags::IS_FRAGMENT);
-        self.sequence_first_num = 0; // Set zero, just for sanity.
-        self.sequence_last_num = 0;
+        self.sequence_first_num = Seq::ZERO; // Set zero, just for sanity.
+        self.sequence_last_num = Seq::ZERO;
     }
 
     /// Returns true if the sender of this packet requires an acknowledgment from 
@@ -490,7 +501,7 @@ impl PacketConfig {
     /// This number is sent for acknowledging that all sequence numbers up to (but 
     /// excluding) this ack have been received.
     #[inline]
-    pub fn cumulative_ack(&self) -> Option<u32> {
+    pub fn cumulative_ack(&self) -> Option<Seq> {
         self.has_flags(flags::HAS_CUMULATIVE_ACK)
             .then_some(self.cumulative_ack)
     }
@@ -499,7 +510,7 @@ impl PacketConfig {
     /// bound, you should not set this to 0. If you want to reset the cumulative
     /// ack, use `clear_cumulative_ack` instead.
     #[inline]
-    pub fn set_cumulative_ack(&mut self, sequence_num: u32) {
+    pub fn set_cumulative_ack(&mut self, sequence_num: Seq) {
         self.enable_flags(flags::HAS_CUMULATIVE_ACK);
         self.cumulative_ack = sequence_num;
     }
@@ -508,20 +519,20 @@ impl PacketConfig {
     #[inline]
     pub fn clear_cumulative_ack(&mut self) {
         self.disable_flags(flags::HAS_CUMULATIVE_ACK);
-        self.cumulative_ack = 0;  // Just for sanity...
+        self.cumulative_ack = Seq::ZERO;  // Just for sanity...
     }
 
     /// Return a reference to the internal dequeue containing single acks to add. We use
     /// a queue here because not all acks may be successfully moved into the packet if
     /// space is missing.
     #[inline]
-    pub fn single_acks(&self) -> &VecDeque<u32> {
+    pub fn single_acks(&self) -> &VecDeque<Seq> {
         &self.single_acks
     }
 
     /// See [`Self::single_acks`].
     #[inline]
-    pub fn single_acks_mut(&mut self) -> &mut VecDeque<u32> {
+    pub fn single_acks_mut(&mut self) -> &mut VecDeque<Seq> {
         &mut self.single_acks
     }
 
@@ -567,24 +578,24 @@ impl PacketConfig {
     /// The usage of this value and flag 0x1000 is unknown. It will be
     /// renamed in the future if its purpose is discovered.
     #[inline]
-    pub fn unk_1000(&self) -> Option<u32> {
-        self.has_flags(flags::UNK_1000).then_some(self.unk_1000)
+    pub fn last_reliable_sequence_num(&self) -> Option<Seq> {
+        self.has_flags(flags::UNK_1000).then_some(self.last_reliable_sequence_num)
     }
 
     /// The usage of this value and flag 0x1000 is unknown. It will be
     /// renamed in the future if its purpose is discovered.
     #[inline]
-    pub fn set_unk_1000(&mut self, val: u32) {
+    pub fn set_last_reliable_sequence_num(&mut self, val: Seq) {
         self.enable_flags(flags::UNK_1000);
-        self.unk_1000 = val;
+        self.last_reliable_sequence_num = val;
     }
 
     /// The usage of this value and flag 0x1000 is unknown. It will be
     /// renamed in the future if its purpose is discovered.
     #[inline]
-    pub fn clear_unk_1000(&mut self) {
+    pub fn clear_last_reliable_sequence_num(&mut self) {
         self.disable_flags(flags::UNK_1000);
-        self.unk_1000 = 0;
+        self.last_reliable_sequence_num = Seq::ZERO;  // For sanity
     }
 
     /// Read the configuration from the packet. **Be careful! If not successful, the 
@@ -679,7 +690,8 @@ impl PacketConfig {
         if self.has_flags(flags::HAS_CUMULATIVE_ACK) {
             self.cumulative_ack = data.pop_back(4)
                 .ok_or(PacketConfigError::Corrupted)?
-                .read_u32().unwrap();
+                .read_u32().unwrap()
+                .try_into().map_err(|()| PacketConfigError::Corrupted)?;
         }
 
         if self.has_flags(flags::HAS_ACKS) {
@@ -692,7 +704,8 @@ impl PacketConfig {
             for _ in 0..count {
                 let ack = data.pop_back(4)
                     .ok_or(PacketConfigError::Corrupted)?
-                    .read_u32().unwrap();
+                    .read_u32().unwrap()
+                    .try_into().map_err(|()| PacketConfigError::Corrupted)?;
                 self.single_acks.push_back(ack);
             }
 
@@ -702,13 +715,15 @@ impl PacketConfig {
             // NOTE: This will be really used if IS_RELIABLE or IS_FRAGMENT.
             self.sequence_num = data.pop_back(4)
                 .ok_or(PacketConfigError::Corrupted)?
-                .read_u32().unwrap();
+                .read_u32().unwrap()
+                .try_into().map_err(|()| PacketConfigError::Corrupted)?;
         }
 
         if self.has_flags(flags::UNK_1000) {
-            self.unk_1000 = data.pop_back(4)
+            self.last_reliable_sequence_num = data.pop_back(4)
                 .ok_or(PacketConfigError::Corrupted)?
-                .read_u32().unwrap();
+                .read_u32().unwrap()
+                .try_into().map_err(|()| PacketConfigError::Corrupted)?;
         }
 
         if self.has_flags(flags::HAS_REQUESTS) {
@@ -728,10 +743,12 @@ impl PacketConfig {
         if self.has_flags(flags::IS_FRAGMENT) {
             
             let mut cursor = data.pop_back(8).ok_or(PacketConfigError::Corrupted)?;
-            self.sequence_first_num = cursor.read_u32().unwrap();
-            self.sequence_last_num = cursor.read_u32().unwrap();
+            self.sequence_first_num = cursor.read_u32().unwrap()
+                .try_into().map_err(|()| PacketConfigError::Corrupted)?;
+            self.sequence_last_num = cursor.read_u32().unwrap()
+                .try_into().map_err(|()| PacketConfigError::Corrupted)?;
             
-            if self.sequence_first_num >= self.sequence_last_num {
+            if Seq::wrapping_cmp(self.sequence_first_num, self.sequence_last_num).is_ge() {
                 return Err(PacketConfigError::Corrupted)
             }
 
@@ -757,8 +774,8 @@ impl PacketConfig {
         // Min footer += 8
         if let Some((first_num, last_num)) = self.sequence_range() {
             let mut cursor = packet.grow(8);
-            cursor.write_u32(first_num).unwrap();
-            cursor.write_u32(last_num).unwrap();
+            cursor.write_u32(first_num.get()).unwrap();
+            cursor.write_u32(last_num.get()).unwrap();
         }
 
         // Min footer += 2
@@ -767,15 +784,15 @@ impl PacketConfig {
         }
 
         // Min footer += 4
-        if let Some(val) = self.unk_1000() {
-            packet.grow(4).write_u32(val).unwrap();
+        if let Some(val) = self.last_reliable_sequence_num() {
+            packet.grow(4).write_u32(val.get()).unwrap();
         }
 
         // Min footer += 4
         if self.has_flags(flags::IS_RELIABLE) || self.has_flags(flags::IS_FRAGMENT) {
             // This flags is not used by getters/setters so it's safe to change it here.
             self.enable_flags(flags::HAS_SEQUENCE_NUMBER);
-            packet.grow(4).write_u32(self.sequence_num).unwrap();
+            packet.grow(4).write_u32(self.sequence_num.get()).unwrap();
         } else {
             self.disable_flags(flags::HAS_SEQUENCE_NUMBER);
         }
@@ -800,7 +817,7 @@ impl PacketConfig {
             let mut count = 0u8;
             while let Some(ack) = self.single_acks.pop_front() {
                 count += 1;
-                packet.grow(4).write_u32(ack).unwrap();
+                packet.grow(4).write_u32(ack.get()).unwrap();
                 if available_len < 4 {
                     break;
                 }
@@ -815,7 +832,7 @@ impl PacketConfig {
 
         // Min footer += 4
         if let Some(cumulative_ack) = self.cumulative_ack() {
-            packet.grow(4).write_u32(cumulative_ack).unwrap();
+            packet.grow(4).write_u32(cumulative_ack.get()).unwrap();
         }
 
         // Min footer += 8
@@ -903,7 +920,7 @@ impl fmt::Debug for PacketConfig {
 
             if self.has_checksum() { debug.field("has_checksum", &true); }
 
-            if let Some(val) = self.unk_1000() {
+            if let Some(val) = self.last_reliable_sequence_num() {
                 debug.field("unk_1000", &val);
             }
 
@@ -919,7 +936,7 @@ impl fmt::Debug for PacketConfig {
             debug.field("on_channel", &self.on_channel());
             debug.field("indexed_channel", &self.indexed_channel());
             debug.field("has_checksum", &self.has_checksum());
-            debug.field("unk_1000", &self.unk_1000());
+            debug.field("unk_1000", &self.last_reliable_sequence_num());
         }
 
         debug.finish()
@@ -1012,7 +1029,19 @@ pub mod flags {
     pub const HAS_CHECKSUM: u16         = 0x0100;
     pub const CREATE_CHANNEL: u16       = 0x0200;
     pub const HAS_CUMULATIVE_ACK: u16   = 0x0400;
+    // Looks like this flag is only used with CHANNEL_CREATE, so not on external interface!
     pub const UNK_0800: u16             = 0x0800;
+    /// - It has been found that this flag is only set when RELIABLE is not set and we 
+    ///   are in a channel, there is also an unknown parameter on the bundle that should
+    ///   be false and a parameter somewhere related to the channel structure.
+    /// 
+    /// - It is also tightly coupled to the sequence number and isn't set without it,
+    ///   its value (see preparePackets).
+    /// 
+    /// - NOT ALLOWED OFF CHANNEL
+    /// 
+    /// - First value seems to be 0xFFFFFFF because it's -1 the initial channel's value
+    ///   (which is zero), and 0xFFFFFFF is seqMask(0 - 1).
     pub const UNK_1000: u16             = 0x1000;
 }
 
@@ -1036,7 +1065,7 @@ impl fmt::Display for FlagsFmt {
             "CREA",
             "CUMU",
             "0800",
-            "1000",
+            "LAST",
         ];
 
         let mut flag = self.0;
@@ -1056,7 +1085,7 @@ impl fmt::Display for FlagsFmt {
             if prev {
                 f.write_str("|")?;
             }
-            f.write_fmt(format_args!("0x{:04X}?", flag << NAMES.len()))?;
+            f.write_fmt(format_args!("{:04X}?", flag << NAMES.len()))?;
         }
 
         Ok(())
