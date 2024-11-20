@@ -99,6 +99,10 @@ impl PacketSocket {
         let mut packet = Packet::new();
         let (len, addr) = self.inner.socket.recv_from(packet.buf_mut())?;
 
+        if len < packet::PACKET_HEADER_LEN {
+            return Err(io::Error::new(io::ErrorKind::InvalidData, "received packet is too small"));
+        }
+
         // Adjust the data length depending on what have been received.
         packet.set_len(len);
 
