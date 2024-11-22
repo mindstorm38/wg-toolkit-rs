@@ -5,6 +5,7 @@ use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 
 use smallvec::SmallVec;
+use base64::Engine;
 
 use crate::util::io::WgWriteExt;
 
@@ -120,7 +121,7 @@ fn write_value<W: Write + Seek>(writer: &mut W, value: &Value, dict: &HashMap<&S
         Value::String(s) => {
             // Here we check if the input can possibly be compressed.
             if !s.is_empty() && s.len() % 4 == 0 {
-                if let Ok(compressed) = base64::decode(s.as_bytes()) {
+                if let Ok(compressed) = base64::prelude::BASE64_STANDARD.decode(s.as_bytes()) {
                     writer.write_all(&compressed[..])?;
                     return Ok((DataType::CompressedString, compressed.len()))
                 }

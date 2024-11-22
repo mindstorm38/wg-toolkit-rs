@@ -4,6 +4,7 @@ use std::io::{self, Read, Seek, Cursor};
 
 use smallvec::SmallVec;
 use thiserror::Error;
+use base64::Engine;
 
 use crate::util::io::WgReadExt;
 
@@ -133,7 +134,7 @@ fn read_string<R: Read>(reader: &mut R, len: usize) -> Result<String, DeError> {
 /// Internal function that reads a compressed string.
 fn read_compressed_string<R: Read>(reader: &mut R, len: usize) -> Result<String, DeError> {
     let data = reader.read_blob(len)?;
-    Ok(base64::encode(&data[..]))
+    Ok(base64::prelude::BASE64_STANDARD.encode(&data[..]))
 }
 
 

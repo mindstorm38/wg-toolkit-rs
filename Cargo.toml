@@ -28,7 +28,7 @@ bitflags = "2.6"
 # Data structures and math:
 smallvec = "1.13"
 indexmap = "2.6"
-base64 = "0.22"
+base64 = "0.22.1"
 glam = "0.29"
 
 # Threading:
