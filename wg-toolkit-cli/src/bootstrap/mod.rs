@@ -607,6 +607,7 @@ enum StreamSize {
 
 
 #[derive(Debug, Clone)]
+#[allow(unused)]
 enum Patch {
     InterfaceProperty(fn(interface: &str, field: &str, name: &mut Cow<str>, ty: &mut Cow<str>)),
     InterfaceMethodArg(fn(interface: &str, method: &str, index: usize, name: &mut Cow<str>, ty: &mut Cow<str>)),
