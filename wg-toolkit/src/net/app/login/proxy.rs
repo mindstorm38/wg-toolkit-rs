@@ -153,6 +153,8 @@ impl App {
         self.inner.encryption_key.is_some()
     }
 
+    /// Forcing the base app address allow redirecting clients that successfully login
+    /// into a given base app.
     pub fn set_forced_base_app_addr(&mut self, addr: SocketAddrV4) {
         self.inner.forced_base_app_addr = Some(addr);
     }

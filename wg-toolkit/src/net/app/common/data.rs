@@ -7,7 +7,7 @@ use std::fmt;
 pub use glam::{Vec2, Vec3, Vec4};
 
 use crate::util::io::{WgReadExt, WgWriteExt, serde_pickle_de_options, serde_pickle_ser_options};
-use crate::util::{AsciiFmt, TruncateFmt};
+use crate::util::AsciiFmt;
 
 
 /// Represent an element data type
@@ -60,7 +60,7 @@ impl fmt::Debug for AutoString {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::String(string) => f.debug_tuple("Utf8").field(string).finish(),
-            Self::Python(value) => f.debug_tuple("Python").field(&format_args!("{}", TruncateFmt(value, 3000))).finish(),
+            Self::Python(value) => f.debug_tuple("Python").field(&format_args!("{value}")).finish(),
             Self::Raw(bytes) => f.debug_tuple("Raw").field(&AsciiFmt(&bytes)).finish(),
         }
     }
@@ -117,7 +117,7 @@ impl DataType for Python {
 impl fmt::Debug for Python {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_tuple("Python")
-            .field(&format_args!("{}", TruncateFmt(&self.value, 3000)))
+            .field(&format_args!("{}", self.value))
             .finish()
     }
 }
