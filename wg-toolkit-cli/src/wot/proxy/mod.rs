@@ -1,10 +1,11 @@
 //! Proxy login and base app used for debugging exchanged messages.
 
 use std::net::{SocketAddr, SocketAddrV4};
+use std::{fmt, fs, io, thread};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::path::PathBuf;
-use std::{fmt, io, thread};
+use std::io::Write;
 use std::fs::File;
 
 use tracing::{error, info, instrument, warn};
@@ -21,7 +22,6 @@ use wgtk::net::app::common::entity::Entity;
 use wgtk::net::app::proxy::PacketDirection;
 
 use wgtk::util::io::serde_pickle_de_options;
-use wgtk::util::TruncateFmt;
 
 use crate::CliResult;
 use super::gen;
@@ -47,16 +47,21 @@ pub fn run(
     let base_app = proxy::App::new(base_app_addr.into())
         .map_err(|e| format!("Failed to bind base app: {e}"))?;
 
-    let shared = Arc::new(ProxyShared {
+    let dump_dir = PathBuf::from("proxy-dump");
+    let _ = fs::remove_dir_all(&dump_dir);
+    fs::create_dir_all(&dump_dir).map_err(|e| format!("Failed to create proxy dump directory: {e}"))?;
+
+    let shared = Arc::new(Shared {
+        dump_dir,
         pending_clients: Mutex::new(HashMap::new()),
     });
 
-    let login_thread = LoginProxyThread {
+    let login_thread = LoginThread {
         app: login_app,
         shared: Arc::clone(&shared),
     };
 
-    let base_thread = BaseProxyThread {
+    let base_thread = BaseThread {
         app: base_app,
         shared,
         next_tick: None,
@@ -77,34 +82,47 @@ pub fn run(
 
 
 #[derive(Debug)]
-struct LoginProxyThread {
+struct LoginThread {
     app: login::proxy::App,
-    shared: Arc<ProxyShared>,
+    shared: Arc<Shared>,
 }
 
 #[derive(Debug)]
-struct BaseProxyThread {
+struct BaseThread {
     app: proxy::App,
-    shared: Arc<ProxyShared>,
+    shared: Arc<Shared>,
     next_tick: Option<u8>,
-    entities: HashMap<u32, &'static ProxyEntityType>,
+    entities: HashMap<u32, &'static EntityType>,
     selected_entity_id: Option<u32>,
     player_entity_id: Option<u32>,
-    partial_resources: HashMap<u16, ProxyPartialResource>,
+    partial_resources: HashMap<u16, PartialResource>,
 }
 
 #[derive(Debug)]
-struct ProxyShared {
-    pending_clients: Mutex<HashMap<SocketAddr, ProxyPendingClient>>,
+struct Shared {
+    dump_dir: PathBuf,
+    pending_clients: Mutex<HashMap<SocketAddr, PendingClient>>,
 }
 
 #[derive(Debug)]
-struct ProxyPendingClient {
+struct PendingClient {
     base_app_addr: SocketAddrV4,
     blowfish: Arc<Blowfish>,
 }
 
-impl LoginProxyThread {
+/// Describe a partial resource being download, a header must have been sent.
+#[derive(Debug)]
+struct PartialResource {
+    /// The byte description sent in the resource header.
+    description: Vec<u8>,
+    /// The next sequence number expected, any other sequence number abort the download
+    /// with an error.
+    sequence_num: u8,
+    /// The full assembled data.
+    data: Vec<u8>,
+}
+
+impl LoginThread {
 
     #[instrument(name = "login", skip_all)]
     fn run(mut self) {
@@ -131,7 +149,7 @@ impl LoginProxyThread {
                 }
                 Event::LoginSuccess(success) => {
                     info!(addr = %success.addr, "Login success");
-                    self.shared.pending_clients.lock().unwrap().insert(success.addr, ProxyPendingClient { 
+                    self.shared.pending_clients.lock().unwrap().insert(success.addr, PendingClient { 
                         base_app_addr: success.real_base_app_addr,
                         blowfish: success.blowfish, 
                     });
@@ -146,7 +164,7 @@ impl LoginProxyThread {
 
 }
 
-impl BaseProxyThread {
+impl BaseThread {
 
     #[instrument(name = "base", skip_all)]
     fn run(mut self) {
@@ -236,7 +254,7 @@ impl BaseProxyThread {
                 if let Some(entity_id) = self.player_entity_id {
                     // Unwrap because selected entity should exist!
                     let entity_type = *self.entities.get(&entity_id).unwrap();
-                    return (entity_type.base_entity_method)(addr, entity_id, elt);
+                    return (entity_type.base_entity_method)(&mut *self, addr, entity_id, elt);
                 }
 
                 let elt = elt.read_simple::<DebugElementUndefined<0>>()?;
@@ -332,7 +350,7 @@ impl BaseProxyThread {
                 if let Some(entity_type) = cbp.element.entity_type_id.checked_sub(1).and_then(|i| ENTITY_TYPES.get(i as usize)) {
                     self.entities.insert(cbp.element.entity_id, entity_type);
                     self.player_entity_id = Some(cbp.element.entity_id);
-                    return (entity_type.create_base_player)(addr, elt);
+                    return (entity_type.create_base_player)(&mut *self, addr, elt);
                 }
 
                 self.player_entity_id = None;
@@ -361,7 +379,7 @@ impl BaseProxyThread {
                 info!(%addr, "<- Resource header: {}", rh.element.id);
 
                 // Intentionally overwrite any previous downloading resource!
-                self.partial_resources.insert(rh.element.id, ProxyPartialResource {
+                self.partial_resources.insert(rh.element.id, PartialResource {
                     description: rh.element.description,
                     sequence_num: 0,
                     data: Vec::new(),
@@ -434,10 +452,15 @@ impl BaseProxyThread {
                     // TODO: onCmdResponse for requested SYNC use RES_SUCCESS=0, RES_STREAM=1, RES_CACHE=2 for result_id
                     //       When RES_STREAM is used, then a resource (header+fragment) is expected with the associated request_id.
 
-                    let zlib = ZlibDecoder::new(&resource.data[..]);
-                    match serde_pickle::value_from_reader(zlib, serde_pickle_de_options()) {
+                    match serde_pickle::value_from_reader(ZlibDecoder::new(&resource.data[..]), serde_pickle_de_options()) {
                         Ok(val) => {
-                            info!(%addr, "<- Resource: {}", TruncateFmt(&val, 3000));
+                            
+                            let dump_file = self.shared.dump_dir.join(format!("res_{crc32:08x}.txt"));
+                            info!(%addr, "<- Saving resource to: {}", dump_file.display());
+
+                            let mut dump_writer = File::create(dump_file).unwrap();
+                            write!(dump_writer, "{val}").unwrap();
+
                         }
                         Err(e) => {
 
@@ -450,7 +473,7 @@ impl BaseProxyThread {
                             // command contains a "deque" object, which cannot be parsed
                             // so we get a "unresolved global reference" error.
 
-                            let raw_file = PathBuf::from(format!("res_{crc32:08x}.pickle"));
+                            let raw_file = self.shared.dump_dir.join(format!("res_{crc32:08x}.raw"));
                             info!(%addr, "<- Saving resource to: {}", raw_file.display());
 
                             let mut raw_writer = File::create(raw_file).unwrap();
@@ -470,7 +493,7 @@ impl BaseProxyThread {
                 if let Some(entity_id) = self.selected_entity_id {
                     // Unwrap because selected entity should exist!
                     let entity_type = *self.entities.get(&entity_id).unwrap();
-                    return (entity_type.entity_method)(addr, entity_id, elt);
+                    return (entity_type.entity_method)(&mut *self, addr, entity_id, elt);
                 }
 
                 let elt = elt.read_simple::<DebugElementUndefined<0>>()?;
@@ -494,29 +517,57 @@ impl BaseProxyThread {
 
     }
 
-}
+    fn read_create_base_player<E>(&mut self, addr: SocketAddr, elt: TopElementReader) -> io::Result<bool>
+    where E: Entity + fmt::Debug,
+    {
 
-/// Describe a partial resource being download, a header must have been sent.
-#[derive(Debug)]
-struct ProxyPartialResource {
-    /// The byte description sent in the resource header.
-    description: Vec<u8>,
-    /// The next sequence number expected, any other sequence number abort the download
-    /// with an error.
-    sequence_num: u8,
-    /// The full assembled data.
-    data: Vec<u8>,
+        use client::element::CreateBasePlayer;
+
+        let cbp = elt.read_simple::<CreateBasePlayer<E>>()?;
+
+        let dump_file = self.shared.dump_dir.join(format!("entity_{}.txt", cbp.element.entity_id));
+        let mut dump_writer = File::create(&dump_file)?;
+        write!(dump_writer, "{:#?}", cbp.element.entity_data)?;
+
+        info!(%addr, "<- Create base player: ({}) {}", cbp.element.entity_id, dump_file.display());
+
+        Ok(true)
+
+    }
+
+    fn read_entity_method<E>(&mut self, addr: SocketAddr, entity_id: u32, elt: TopElementReader) -> io::Result<bool>
+    where 
+        E: Entity,
+        E::ClientMethod: fmt::Debug,
+    {
+        use client::element::EntityMethod;
+        let em = elt.read_simple::<EntityMethod<E::ClientMethod>>()?;
+        info!(%addr, "<- Entity method: ({entity_id}) {:?}", em.element.inner);
+        Ok(true)
+    }
+
+    fn read_base_entity_method<E>(&mut self, addr: SocketAddr, entity_id: u32, elt: TopElementReader) -> io::Result<bool>
+    where 
+        E: Entity,
+        E::BaseMethod: fmt::Debug,
+    {
+        use base::element::BaseEntityMethod;
+        let em = elt.read_simple::<BaseEntityMethod<E::BaseMethod>>()?;
+        info!(%addr, "-> Base entity method: ({entity_id}) {:?}", em.element.inner);
+        Ok(true)
+    }
+
 }
 
 /// Represent an entity type and its associated static functions.
 #[derive(Debug)]
-struct ProxyEntityType {
-    create_base_player: fn(SocketAddr, TopElementReader) -> io::Result<bool>,
-    entity_method: fn(SocketAddr, u32, TopElementReader) -> io::Result<bool>,
-    base_entity_method: fn(SocketAddr, u32, TopElementReader) -> io::Result<bool>,
+struct EntityType {
+    create_base_player: fn(&mut BaseThread, SocketAddr, TopElementReader) -> io::Result<bool>,
+    entity_method: fn(&mut BaseThread, SocketAddr, u32, TopElementReader) -> io::Result<bool>,
+    base_entity_method: fn(&mut BaseThread, SocketAddr, u32, TopElementReader) -> io::Result<bool>,
 }
 
-impl ProxyEntityType {
+impl EntityType {
 
     const fn new<E>() -> Self
     where
@@ -525,39 +576,24 @@ impl ProxyEntityType {
         E::BaseMethod: fmt::Debug,
     {
         Self {
-            create_base_player: |addr, elt| {
-                use client::element::CreateBasePlayer;
-                let cbp = elt.read_simple::<CreateBasePlayer<E>>()?;
-                info!(%addr, "<- Create base player: ({}) {:?}", cbp.element.entity_id, cbp.element.entity_data);
-                Ok(true)
-            },
-            entity_method: |addr, entity_id, elt| {
-                use client::element::EntityMethod;
-                let em = elt.read_simple::<EntityMethod<E::ClientMethod>>()?;
-                info!(%addr, "<- Entity method: ({entity_id}) {:?}", em.element.inner);
-                Ok(true)
-            },
-            base_entity_method: |addr, entity_id, elt| {
-                use base::element::BaseEntityMethod;
-                let em = elt.read_simple::<BaseEntityMethod<E::BaseMethod>>()?;
-                info!(%addr, "-> Base entity method: ({entity_id}) {:?}", em.element.inner);
-                Ok(true)
-            },
+            create_base_player: BaseThread::read_create_base_player::<E>,
+            entity_method: BaseThread::read_entity_method::<E>,
+            base_entity_method: BaseThread::read_base_entity_method::<E>,
         }
     }
 
 }
 
-const ENTITY_TYPES: &[ProxyEntityType] = &[
-    ProxyEntityType::new::<gen::entity::Account>(),
-    ProxyEntityType::new::<gen::entity::Avatar>(),
-    ProxyEntityType::new::<gen::entity::ArenaInfo>(),
-    ProxyEntityType::new::<gen::entity::ClientSelectableObject>(),
-    ProxyEntityType::new::<gen::entity::HangarVehicle>(),
-    ProxyEntityType::new::<gen::entity::Vehicle>(),
-    ProxyEntityType::new::<gen::entity::AreaDestructibles>(),
-    ProxyEntityType::new::<gen::entity::OfflineEntity>(),
-    ProxyEntityType::new::<gen::entity::Flock>(),
-    ProxyEntityType::new::<gen::entity::FlockExotic>(),
-    ProxyEntityType::new::<gen::entity::Login>(),
+const ENTITY_TYPES: &[EntityType] = &[
+    EntityType::new::<gen::entity::Account>(),
+    EntityType::new::<gen::entity::Avatar>(),
+    EntityType::new::<gen::entity::ArenaInfo>(),
+    EntityType::new::<gen::entity::ClientSelectableObject>(),
+    EntityType::new::<gen::entity::HangarVehicle>(),
+    EntityType::new::<gen::entity::Vehicle>(),
+    EntityType::new::<gen::entity::AreaDestructibles>(),
+    EntityType::new::<gen::entity::OfflineEntity>(),
+    EntityType::new::<gen::entity::Flock>(),
+    EntityType::new::<gen::entity::FlockExotic>(),
+    EntityType::new::<gen::entity::Login>(),
 ];
