@@ -1,8 +1,9 @@
 //! Small utility for safe and checked storage of sequence numbers, as used on network.
 
+use std::ops::{Add, AddAssign, Sub, SubAssign};
 use std::cmp::Ordering;
 use std::fmt;
-use std::ops::{Add, AddAssign, Sub, SubAssign};
+
 
 /// A sequence number is a special wrapper around a `u32` that has special maximum 
 /// value and with wrapping by default which avoids overflowing the sequence number

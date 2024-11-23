@@ -14,7 +14,7 @@ use tracing::{trace, trace_span};
 
 use crate::net::packet::Packet;
 use crate::util::thread::ThreadPoll;
-use crate::net::channel::{ChannelIndex, ChannelTracker};
+use crate::net::proto::{ChannelIndex, Protocol};
 use crate::net::socket::{PacketSocket, decrypt_packet};
 use crate::net::bundle::Bundle;
 use super::io_invalid_data;
@@ -36,9 +36,9 @@ pub struct App {
     /// The main socket receiving peer packets.
     socket: PacketSocket,
     /// Channel tracker for out packets.
-    out_channel: ChannelTracker,
+    out_protocol: Protocol,
     /// Channel tracker for in packets.
-    in_channel: ChannelTracker,
+    in_protocol: Protocol,
     /// Each peer connected and forwarded. Using an index map because we use the peer's
     /// index as the mio token (-1).
     peers: HashMap<SocketAddr, Arc<Peer>>,
@@ -90,8 +90,8 @@ impl App {
         Ok(Self {
             socket_poll,
             socket,
-            out_channel: ChannelTracker::new(),
-            in_channel: ChannelTracker::new(),
+            out_protocol: Protocol::new(),
+            in_protocol: Protocol::new(),
             peers: HashMap::new(),
             last_rejection: None,
         })
@@ -212,27 +212,27 @@ impl App {
             }
 
             let (
-                accept_channel, 
-                accept_channel_span,
-                accept_out_channel,
-                accept_out_channel_span,
+                accept_protocol, 
+                accept_protocol_span,
+                accept_out_protocol,
+                accept_out_protocol_span,
             ) = match direction {
-                PacketDirection::Out => (&mut self.out_channel, trace_span!("out"), &mut self.in_channel, trace_span!("in")),
-                PacketDirection::In => (&mut self.in_channel, trace_span!("in"), &mut self.out_channel, trace_span!("out")),
+                PacketDirection::Out => (&mut self.out_protocol, trace_span!("out"), &mut self.in_protocol, trace_span!("in")),
+                PacketDirection::In => (&mut self.in_protocol, trace_span!("in"), &mut self.out_protocol, trace_span!("out")),
             };
 
-            let span = accept_channel_span.enter();
+            let span = accept_protocol_span.enter();
             trace!(real_addr = %peer.real_addr, "{:width$?}", packet, width = 0);
             drop(span);
             
-            let span = accept_out_channel_span.enter();
-            if !accept_out_channel.accept_out(&packet, peer.addr) {
+            let span = accept_out_protocol_span.enter();
+            if !accept_out_protocol.accept_out(&packet, peer.addr) {
                 continue;
             }
             drop(span);
             
-            let _span = accept_channel_span.enter();
-            let Some(mut channel) = accept_channel.accept(packet, peer.addr) else {
+            let _span = accept_protocol_span.enter();
+            let Some(mut channel) = accept_protocol.accept(packet, peer.addr) else {
                 continue;
             };
 

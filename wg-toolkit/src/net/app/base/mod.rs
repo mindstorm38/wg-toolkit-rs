@@ -16,7 +16,7 @@ use rand::rngs::OsRng;
 use rand::RngCore;
 
 use crate::net::bundle::{Bundle, ElementReader, TopElementReader};
-use crate::net::channel::ChannelTracker;
+use crate::net::proto::Protocol;
 use crate::net::element::SimpleElement;
 use crate::net::socket::PacketSocket;
 
@@ -32,7 +32,7 @@ pub struct App {
     /// Internal socket for this application.
     socket: PacketSocket,
     /// The channel tracker.
-    channel: ChannelTracker,
+    protocol: Protocol,
     /// Queue of events that are waiting to be returned.
     events: VecDeque<Event>,
     /// A temporary bundle for sending.
@@ -53,7 +53,7 @@ impl App {
     pub fn new(addr: SocketAddr) -> io::Result<Self> {
         Ok(Self {
             socket: PacketSocket::bind(addr)?,
-            channel: ChannelTracker::new(),
+            protocol: Protocol::new(),
             events: VecDeque::new(),
             bundle: Bundle::new(),
             pending_clients: HashMap::new(),
@@ -82,7 +82,7 @@ impl App {
                 Err(error) => return Event::IoError(IoErrorEvent { error, addr: None }),
             };
 
-            let Some(mut channel) = self.channel.accept(packet, addr) else {
+            let Some(mut channel) = self.protocol.accept(packet, addr) else {
                 continue;
             };
 
@@ -244,6 +244,8 @@ struct Client {
     /// The blowfish key for encryption of this client's packets.
     blowfish: Arc<Blowfish>,
 }
+
+
 
 struct EntityGeneric {
     // wrapper: Box<dyn EntityWrapper>,

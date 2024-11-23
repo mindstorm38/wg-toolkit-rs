@@ -13,7 +13,7 @@ use tracing::{trace, trace_span};
 use crate::net::bundle::{Bundle, ElementReader, ReplyElementReader, TopElementReader};
 use crate::net::app::login::element::{ChallengeResponse, CuckooCycleResponse};
 use crate::net::app::proxy::{UNSPECIFIED_ADDR, RECV_TIMEOUT};
-use crate::net::channel::ChannelTracker;
+use crate::net::proto::Protocol;
 use crate::net::element::SimpleElement;
 use crate::net::socket::PacketSocket;
 use crate::net::packet::Packet;
@@ -54,10 +54,10 @@ struct Inner {
     real_addr: SocketAddr,
     /// Encryption key for sending to the real login application.
     real_encryption_key: Option<Arc<RsaPublicKey>>,
-    /// Channel tracker for accepting out packets and preparing in packets.
-    out_channel: ChannelTracker,
-    /// Channel tracker for accepting in packets and preparing out packets.
-    in_channel: ChannelTracker,
+    /// Protocol for accepting out packets and preparing in packets.
+    out_protocol: Protocol,
+    /// Protocol for accepting in packets and preparing out packets.
+    in_protocol: Protocol,
     /// A temporary bundle for sending.
     bundle: Bundle,
 }
@@ -123,8 +123,8 @@ impl App {
                 forced_base_app_addr: None,
                 real_addr,
                 real_encryption_key,
-                out_channel: ChannelTracker::new(),
-                in_channel: ChannelTracker::new(),
+                out_protocol: Protocol::new(),
+                in_protocol: Protocol::new(),
                 bundle: Bundle::new(),
             },
             peers: HashMap::new(),
@@ -202,18 +202,18 @@ impl App {
             let now = Instant::now();
 
             let _span;
-            let channel;
+            let protocol;
             let peer;
             if let Some(peer_addr) = &socket_poll_ret.peer {
                 _span = trace_span!("in").entered();
-                channel = &mut self.inner.in_channel;
+                protocol = &mut self.inner.in_protocol;
                 peer = match self.peers.get_mut(peer_addr) {
                     Some(peer) => peer,
                     None => continue, // Ignore if we received an event from a dead peer.
                 }
             } else {
                 _span = trace_span!("out").entered();
-                channel = &mut self.inner.out_channel;
+                protocol = &mut self.inner.out_protocol;
                 peer = match self.peers.entry(addr) {
                     hash_map::Entry::Occupied(o) => o.into_mut(),
                     hash_map::Entry::Vacant(v) => {
@@ -254,7 +254,7 @@ impl App {
 
             peer.last_time = now;
 
-            let Some(mut channel) = channel.accept(packet, peer.addr) else {
+            let Some(mut channel) = protocol.accept(packet, peer.addr) else {
                 continue;
             };
 
@@ -290,7 +290,7 @@ impl Inner {
         }
 
         if !self.bundle.is_empty() {
-            self.in_channel.off_channel(peer.addr).prepare(&mut self.bundle, false);
+            self.in_protocol.off_channel(peer.addr).prepare(&mut self.bundle, false);
             // for packet in self.bundle.packets() {
             //     debug!(">{}: [{:08X}] {:?}", self.real_addr, packet.raw().read_prefix(), packet.raw());
             // }
@@ -394,9 +394,9 @@ impl Inner {
         }
 
         if !self.bundle.is_empty() {
-            self.out_channel.off_channel(peer.addr).prepare(&mut self.bundle, false);
+            self.out_protocol.off_channel(peer.addr).prepare(&mut self.bundle, false);
             if inherit_prefix {
-                self.bundle.write_prefix(self.in_channel.last_accepted_prefix());
+                self.bundle.write_prefix(self.in_protocol.last_accepted_prefix());
             }
             // for packet in self.bundle.packets_mut() {
             //     debug!(">{}: [{:08X}] {:?}", peer.addr, packet.raw().read_prefix(), packet.raw());

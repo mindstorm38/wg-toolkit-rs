@@ -477,7 +477,7 @@ impl<E: Element> From<BundleElement<Reply<E>>> for BundleElement<E> {
 }
 
 
-/// The structure used to write elements to a bundle. This structure
+/// The structure used to write elements to a bundle.
 pub struct BundleElementWriter<'a> {
     bundle: &'a mut Bundle,
 }

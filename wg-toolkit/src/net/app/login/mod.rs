@@ -20,7 +20,7 @@ use rand::RngCore;
 use tracing::trace;
 
 use crate::net::bundle::{Bundle, ElementReader, TopElementReader};
-use crate::net::channel::ChannelTracker;
+use crate::net::proto::Protocol;
 use crate::net::element::SimpleElement;
 use crate::util::cuckoo::CuckooContext;
 use crate::net::socket::PacketSocket;
@@ -41,7 +41,7 @@ pub struct App {
     /// Internal socket for this application.
     socket: PacketSocket,
     /// The packet tracker used to build bundles.
-    channel: ChannelTracker,
+    protocol: Protocol,
     /// Queue of events that are waiting to be returned.
     events: VecDeque<Event>,
     /// A temporary bundle for sending.
@@ -64,7 +64,7 @@ impl App {
     pub fn new(addr: SocketAddr) -> io::Result<Self> {
         Ok(Self {
             socket: PacketSocket::bind(addr)?,
-            channel: ChannelTracker::new(),
+            protocol: Protocol::new(),
             events: VecDeque::new(),
             bundle: Bundle::new(),
             encryption_key: None,
@@ -118,7 +118,7 @@ impl App {
                 Err(error) => return Event::IoError(IoErrorEvent { error, addr: None }),
             };
             
-            let Some(mut channel) = self.channel.accept(packet, addr) else {
+            let Some(mut channel) = self.protocol.accept(packet, addr) else {
                 continue;
             };
 
@@ -168,7 +168,7 @@ impl App {
 
         self.bundle.clear();
         self.bundle.element_writer().write_simple_reply(ping.element, request_id);
-        self.channel.off_channel(addr).prepare(&mut self.bundle, false);
+        self.protocol.off_channel(addr).prepare(&mut self.bundle, false);
         self.socket.send_bundle_without_encryption(&self.bundle, addr)?;
 
         let latency = self.received_instant.unwrap().elapsed();
@@ -336,7 +336,7 @@ impl App {
         self.bundle.clear();
         self.bundle.element_writer().write_reply(response.inner, &res_encryption, response.request.request_id);
 
-        self.channel.off_channel(response.addr).prepare(&mut self.bundle, false);
+        self.protocol.off_channel(response.addr).prepare(&mut self.bundle, false);
         self.socket.send_bundle_without_encryption(&self.bundle, response.addr)?;
 
         Ok(())

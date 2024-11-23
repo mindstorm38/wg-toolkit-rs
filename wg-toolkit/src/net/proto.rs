@@ -1,9 +1,9 @@
-//! Channel tracking.
+//! Protocol with reliability, defragmenting of bundles and channel support.
 
-use std::cmp::Ordering;
 use std::collections::{hash_map, HashMap, VecDeque};
 use std::time::{Duration, Instant};
 use std::net::SocketAddr;
+use std::cmp::Ordering;
 use std::num::NonZero;
 
 use tracing::{instrument, trace, trace_span, warn};
@@ -17,13 +17,12 @@ use super::bundle::Bundle;
 const FRAGMENT_TIMEOUT: Duration = Duration::from_secs(10);
 
 
-/// This tracker helps tracking off-channel and in-channel communications and provides an
-/// interface to both prepare bundles and accept incoming packets to form (potentially
-/// fragmented) bundles.
+/// A protocol tracker for an interface, providing support for accepting and preparing
+/// bundles, with reliability, defragmenting and (off)channel support.
 #[derive(Debug)]
-pub struct ChannelTracker {
+pub struct Protocol {
     /// State shared with channel handles.
-    shared: ChannelTrackerShared,
+    shared: ProtocolShared,
     /// For each address we are exchanging with, we store a special off-channel channel.
     off_channels: HashMap<SocketAddr, OffChannel>,
     /// Known channels for each address, with optional channel indexing.
@@ -34,21 +33,21 @@ pub struct ChannelTracker {
 
 /// A structure referenced by any channel handle, containing shared states.
 #[derive(Debug)]
-struct ChannelTrackerShared {
+struct ProtocolShared {
     /// Sequence number allocator used for off-channel communications.
-    off_sequence_num_alloc: SeqAlloc,
+    off_seq_alloc: SeqAlloc,
     /// Represent the last prefix being write to a packet.
     last_accepted_prefix: u32,
     /// The current prefix offset being used for updating all packets' prefixes.
     prefix_offset: u32,
 }
 
-impl ChannelTracker {
+impl Protocol {
 
     pub fn new() -> Self {
         Self {
-            shared: ChannelTrackerShared {
-                off_sequence_num_alloc: SeqAlloc::new(Seq::ZERO + 1),
+            shared: ProtocolShared {
+                off_seq_alloc: SeqAlloc::new(Seq::ZERO + 1),
                 last_accepted_prefix: 0,
                 prefix_offset: 0,
             },
@@ -871,7 +870,7 @@ struct OnChannel {
 /// internal common interface between both.
 #[derive(Debug)]
 struct GenericChannel<'a> {
-    shared: &'a mut ChannelTrackerShared,
+    shared: &'a mut ProtocolShared,
     off: &'a mut OffChannelData,
     on: Option<&'a mut OnChannelData>,
 }
@@ -885,7 +884,7 @@ impl GenericChannel<'_> {
                 return on.seq_alloc.alloc(count);
             }
         }
-        self.shared.off_sequence_num_alloc.alloc(count)
+        self.shared.off_seq_alloc.alloc(count)
     }
 
 }

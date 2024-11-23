@@ -29,7 +29,7 @@ pub mod bundle;
 
 pub mod filter;
 
-pub mod channel;
 pub mod socket;
+pub mod proto;
 
 pub mod app;
