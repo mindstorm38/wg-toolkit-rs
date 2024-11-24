@@ -20,16 +20,15 @@ use rand::RngCore;
 use tracing::trace;
 
 use crate::net::bundle::{Bundle, ElementReader, TopElementReader};
-use crate::net::proto::Protocol;
-use crate::net::element::SimpleElement;
 use crate::util::cuckoo::CuckooContext;
 use crate::net::socket::PacketSocket;
+use crate::net::proto::Protocol;
 use super::io_invalid_data;
 
 use element::{
     Ping,
-    LoginRequest, LoginRequestEncryption,
-    LoginResponse, LoginResponseEncryption, LoginChallenge,
+    LoginRequest,
+    LoginResponse, LoginChallenge,
     LoginSuccess, LoginError,
     ChallengeResponse, CuckooCycleResponse,
 };
@@ -152,9 +151,9 @@ impl App {
     /// Handle an element read from the given address.
     fn handle_element(&mut self, addr: SocketAddr, reader: TopElementReader) -> io::Result<()> {
         match reader.id() {
-            Ping::ID => self.handle_ping(addr, reader),
-            LoginRequest::ID => self.handle_login_request(addr, reader),
-            CuckooCycleResponse::ID => self.handle_challenge_response(addr, reader),
+            element::id::PING => self.handle_ping(addr, reader),
+            element::id::LOGIN_REQUEST => self.handle_login_request(addr, reader),
+            element::id::CHALLENGE_RESPONSE => self.handle_challenge_response(addr, reader),
             id => Err(io_invalid_data(format_args!("unexpected element #{id}"))),
         }
     }
@@ -183,12 +182,13 @@ impl App {
 
     /// Handle a login request to the login node.
     fn handle_login_request(&mut self, addr: SocketAddr, elt: TopElementReader) -> io::Result<()> {
-        
-        let recv_encryption = self.encryption_key.as_ref()
-            .map(|key| LoginRequestEncryption::Server(Arc::clone(&key)))
-            .unwrap_or(LoginRequestEncryption::Clear);
 
-        let login = elt.read::<LoginRequest>(&recv_encryption)?;
+        let login;
+        if let Some(encryption_key) = self.encryption_key.as_deref() {
+            login = elt.read::<_, LoginRequest>(encryption_key)?;
+        } else {
+            login = elt.read_simple::<LoginRequest>()?;
+        }
         
         let request_id = login.request_id
             .ok_or_else(|| io_invalid_data(format_args!("login should be a request")))?;
@@ -332,9 +332,8 @@ impl App {
     /// Send a challenge to the given client, this only works if a tracker exists.
     fn send_response(&mut self, response: PendingResponse) -> io::Result<()> {
 
-        let res_encryption = LoginResponseEncryption::Encrypted(response.request.blowfish);
         self.bundle.clear();
-        self.bundle.element_writer().write_reply(response.inner, &res_encryption, response.request.request_id);
+        self.bundle.element_writer().write_reply(response.inner, &*response.request.blowfish, response.request.request_id);
 
         self.protocol.off_channel(response.addr).prepare(&mut self.bundle, false);
         self.socket.send_bundle_without_encryption(&self.bundle, response.addr)?;

@@ -125,7 +125,8 @@ fn generate_alias(mod_dir: &Path, model: &Model) -> io::Result<()> {
     let alias_file = mod_dir.join("alias.rs");
     let mut writer = BufWriter::new(File::create(&alias_file)?);
 
-    writeln!(writer, "pub use wgtk::net::app::common::data::*;")?;
+    writeln!(writer, "pub use wgtk::net::codec::{{AutoString, Python, Mailbox}};")?;
+    writeln!(writer, "pub use glam::{{Vec2, Vec3, Vec4}};")?;
     writeln!(writer)?;
 
     let mut prev_dict = false;
@@ -145,7 +146,7 @@ fn generate_alias(mod_dir: &Path, model: &Model) -> io::Result<()> {
             TyKind::Dict(ty_dict) => {
                 prev_dict = true;
                 writeln!(writer)?;
-                writeln!(writer, "wgtk::__bootstrap_struct_data_type! {{")?;
+                writeln!(writer, "wgtk::__struct_simple_codec! {{")?;
                 writeln!(writer, "    #[derive(Debug)]")?;
                 writeln!(writer, "    pub struct {identifier} {{")?;
                 for prop in &ty_dict.properties {
@@ -235,7 +236,7 @@ fn generate_entities(mod_dir: &Path, model: &Model, state: &mut State) -> io::Re
     let entity_file = mod_dir.join("entity.rs");
     let mut writer = BufWriter::new(File::create(&entity_file)?);
 
-    writeln!(writer, "use wgtk::net::app::common::entity::{{Entity, DataTypeEntity}};")?;
+    writeln!(writer, "use wgtk::net::app::common::entity::{{Entity, SimpleEntity}};")?;
     writeln!(writer)?;
     writeln!(writer, "use super::alias::*;")?;
     writeln!(writer, "use super::interface::*;")?;
@@ -278,7 +279,7 @@ fn generate_entity(
     writeln!(writer, "}}")?;
     writeln!(writer)?;
 
-    writeln!(writer, "impl DataTypeEntity for {} {{", entity.interface.name)?;
+    writeln!(writer, "impl SimpleEntity for {} {{", entity.interface.name)?;
     writeln!(writer, "    type ClientMethod = {}_Client;", entity.interface.name)?;
     writeln!(writer, "    type BaseMethod = {}_Base;", entity.interface.name)?;
     writeln!(writer, "    type CellMethod = {}_Cell;", entity.interface.name)?;
@@ -358,7 +359,7 @@ fn generate_entity_methods(
         }
     });
 
-    writeln!(writer, "wgtk::__bootstrap_enum_methods! {{  // Entity methods on {}", app_state.name)?;
+    writeln!(writer, "wgtk::__enum_entity_methods! {{  // Entity methods on {}", app_state.name)?;
     writeln!(writer, "    #[derive(Debug)]")?;
     writeln!(writer, "    pub enum {}_{} {{", 
         entity.interface.name, app_state.suffix)?;
@@ -398,7 +399,7 @@ fn generate_interface(
     writeln!(writer, "// ============================================== //")?;
     writeln!(writer)?;
     
-    writeln!(writer, "wgtk::__bootstrap_struct_data_type! {{")?;
+    writeln!(writer, "wgtk::__struct_simple_codec! {{")?;
     writeln!(writer, "    #[derive(Debug)]")?;
     writeln!(writer, "    pub struct {} {{", interface.name)?;
     
@@ -460,7 +461,7 @@ fn generate_interface_methods(
 
     let mut unique_names = HashSet::new();
     
-    writeln!(writer, "wgtk::__bootstrap_struct_data_type! {{  // Methods on {}", app_state.name)?;
+    writeln!(writer, "wgtk::__struct_simple_codec! {{  // Methods on {}", app_state.name)?;
     writeln!(writer)?;
 
     for method in (app_state.interface_methods)(interface) {

@@ -127,6 +127,13 @@ pub trait WgReadExt: Read {
         Ok(&buf == bytes)
     }
 
+    #[inline]
+    fn read_blob_to_end(&mut self) -> io::Result<Vec<u8>> {
+        let mut buf = Vec::new();
+        self.read_to_end(&mut buf)?;
+        Ok(buf)
+    }
+
     /// Read a blob of the given length.
     fn read_blob(&mut self, len: usize) -> io::Result<Vec<u8>> {
         // TODO: Maybe use a better uninit approach in the future.
@@ -134,13 +141,6 @@ pub trait WgReadExt: Read {
         self.read_exact(&mut buf[..])?;
         Ok(buf)
     }
-
-    // /// Read a blob into the given destination (this exists to be analog to 
-    // /// [`Self::read_string_into()`] but it's literally a forward call to `read_exact`).
-    // #[inline]
-    // fn read_blob_into(&mut self, dst: &mut [u8]) -> io::Result<()> {
-    //     self.read_exact(dst)
-    // }
 
     /// Read a blob of a length that is specified with a packed u32 before the 
     /// actual vector.

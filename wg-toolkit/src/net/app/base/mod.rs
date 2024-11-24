@@ -16,9 +16,9 @@ use rand::rngs::OsRng;
 use rand::RngCore;
 
 use crate::net::bundle::{Bundle, ElementReader, TopElementReader};
-use crate::net::proto::Protocol;
-use crate::net::element::SimpleElement;
+use crate::net::element::SimpleElement_;
 use crate::net::socket::PacketSocket;
+use crate::net::proto::Protocol;
 
 use super::common::entity::Entity;
 use super::io_invalid_data;

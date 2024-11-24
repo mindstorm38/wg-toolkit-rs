@@ -1,7 +1,7 @@
 //! Definition of common data types that can be transferred as entity or method calls.
 
-use std::borrow::Cow;
 use std::io::{self, Read, Write};
+use std::borrow::Cow;
 use std::fmt;
 
 pub use glam::{Vec2, Vec3, Vec4};

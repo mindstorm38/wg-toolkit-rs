@@ -5,9 +5,8 @@
 
 use std::io::{self, Read, Write};
 
+use crate::net::element::{ElementLength, Element_, SimpleElement_};
 use crate::net::app::common::entity::Method;
-use crate::net::element::{Element, ElementLength, SimpleElement};
-use crate::util::io::*;
 
 
 /// Internal module containing all raw elements numerical ids.
@@ -24,70 +23,47 @@ pub mod id {
 }
 
 
-/// Sent by the client to the server without encryption in order to authenticate,
-/// the server then compares with its internal login keys from past successful
-/// logins on the login app.
-/// 
-/// This element is usually a request, in such case a [`ServerSessionKey`] must be 
-/// sent as a reply.
-#[derive(Debug, Clone)]
-pub struct ClientAuth {
-    /// The login key that was sent by the login application, part of the  element
-    /// [`super::login::LoginSuccess`].
-    pub login_key: u32,
-    /// The current number of attempts.
-    pub attempt_num: u8,
-    /// Unknown 16-bits value at the end.
-    pub unk: u16,
+crate::__struct_simple_codec! {
+    /// Sent by the client to the server without encryption in order to authenticate,
+    /// the server then compares with its internal login keys from past successful
+    /// logins on the login app.
+    /// 
+    /// This element is usually a request, in such case a [`ServerSessionKey`] must be 
+    /// sent as a reply.
+    #[derive(Debug, Clone)]
+    pub struct ClientAuth {
+        /// The login key that was sent by the login application, part of the  element
+        /// [`super::login::LoginSuccess`].
+        pub login_key: u32,
+        /// The current number of attempts.
+        pub attempt_num: u8,
+        /// Unknown 16-bits value at the end.
+        pub unk: u16,
+    }
 }
 
-impl SimpleElement for ClientAuth {
-
+impl SimpleElement_ for ClientAuth {
     const ID: u8 = id::CLIENT_AUTH;
     const LEN: ElementLength = ElementLength::Fixed(7);
-    
-    fn encode(&self, write: &mut dyn Write) -> io::Result<()> {
-        write.write_u32(self.login_key)?;
-        write.write_u8(self.attempt_num)?;
-        write.write_u16(self.unk)
-    }
-
-    fn decode(read: &mut dyn Read, _len: usize) -> io::Result<Self> {
-        Ok(Self {
-            login_key: read.read_u32()?, 
-            attempt_num: read.read_u8()?,
-            unk: read.read_u16()?,
-        })
-    }
-    
-
 }
 
 
-/// This element can be used in two cases:
-/// - As a reply to [`ClientAuth`] from the server to the client in order to give it
-///   the initial session key.
-/// - Sent by the client on login (and apparently randomly after login) to return 
-///   the session key that was sent by the server in the initial reply (first case).
-#[derive(Debug, Clone)]
-pub struct ClientSessionKey {
-    /// The server session key
-    pub session_key: u32,
+crate::__struct_simple_codec! {
+    /// This element can be used in two cases:
+    /// - As a reply to [`ClientAuth`] from the server to the client in order to give it
+    ///   the initial session key.
+    /// - Sent by the client on login (and apparently randomly after login) to return 
+    ///   the session key that was sent by the server in the initial reply (first case).
+    #[derive(Debug, Clone)]
+    pub struct ClientSessionKey {
+        /// The server session key
+        pub session_key: u32,
+    }
 }
 
-impl SimpleElement for ClientSessionKey {
-
+impl SimpleElement_ for ClientSessionKey {
     const ID: u8 = id::CLIENT_SESSION_KEY;
     const LEN: ElementLength = ElementLength::Fixed(4);
-    
-    fn encode(&self, write: &mut dyn Write) -> io::Result<()> {
-        write.write_u32(self.session_key)
-    }
-
-    fn decode(read: &mut dyn Read, _len: usize) -> io::Result<Self> {
-        Ok(Self { session_key: read.read_u32()? })
-    }
-
 }
 
 
@@ -99,130 +75,32 @@ pub struct BaseEntityMethod<M: Method> {
     pub inner: M,
 }
 
-impl<M: Method> Element for BaseEntityMethod<M> {
+impl<M: Method> Element_<()> for BaseEntityMethod<M> {
 
-    type Config = ();
-
-    fn encode_length(&self, _config: &Self::Config) -> ElementLength {
-        ElementLength::Variable16
+    fn write_length(&self, _config: &()) -> io::Result<ElementLength> {
+        Ok(ElementLength::Variable16)
     }
 
-    fn encode(&self, write: &mut dyn Write, _config: &Self::Config) -> io::Result<u8> {
-        let exposed_id = self.inner.encode(write)?;
+    fn write(&self, write: &mut dyn Write, _config: &()) -> io::Result<u8> {
+        let exposed_id = self.inner.write(write)?;
         if exposed_id >= id::BASE_ENTITY_METHOD.slots_count() as u16 {
-            todo!("support for sub-id");
+            return Err(io::Error::new(io::ErrorKind::InvalidData, "missing support for sub-id"));
         }
         Ok(id::BASE_ENTITY_METHOD.first + exposed_id as u8)
     }
 
-    fn decode_length(_config: &Self::Config, _id: u8) -> ElementLength {
-        ElementLength::Variable16
+    fn read_length(_config: &(), _id: u8) -> io::Result<ElementLength> {
+        Ok(ElementLength::Variable16)
     }
 
-    fn decode(read: &mut dyn Read, _len: usize, _config: &Self::Config, id: u8) -> io::Result<Self> {
+    fn read(read: &mut dyn Read, _config: &(), _len: usize, id: u8) -> io::Result<Self> {
         if !id::BASE_ENTITY_METHOD.contains(id) {
-            panic!("unexpected base entity method element id: {id:02X}");
+            return Err(io::Error::new(io::ErrorKind::InvalidData, format!("unexpected base entity method element id: {id:02X}")));
         }
-        let inner = M::decode(read, (id - id::BASE_ENTITY_METHOD.first) as u16)?;
+        let inner = M::read(read, (id - id::BASE_ENTITY_METHOD.first) as u16)?;
         Ok(Self {
             inner,
         })
     }
 
 }
-
-
-// /// Sent by the client to the base app to call a cell method for the given
-// /// entity ID.
-// #[derive(Debug, Clone)]
-// pub struct CellEntityMethod<M: MethodCall> {
-//     /// The entity ID on which we'll call the method, must be set to 0 if
-//     /// the current player is targeted.
-//     pub entity_id: u32,
-//     /// The method call.
-//     pub method: M,
-// }
-
-// impl<M: MethodCall> CellEntityMethod<M> {
-
-//     /// Write this cell entity method call to the given bundle.
-//     pub fn write(self, writer: BundleElementWriter) {
-//         MethodCallWrapper::new(self.method, CellEntityMethodExt {
-//             entity_id: self.entity_id,
-//         }).write(writer);
-//     }
-
-//     /// Read this cell entity method call from the given top element reader.
-//     pub fn read(reader: TopElementReader) -> io::Result<BundleElement<Self>> {
-//         MethodCallWrapper::<M, CellEntityMethodExt>::read(reader).map(|res| {
-//             res.map(|wrapper| Self {
-//                 entity_id: wrapper.ext.entity_id,
-//                 method: wrapper.method,
-//             })
-//         })
-//     }
-
-// }
-
-// struct CellEntityMethodExt {
-//     entity_id: u32,
-// }
-
-// impl MethodCallExt for CellEntityMethodExt {
-//     const ID_RANGE: ElementIdRange = id::CELL_ENTITY_METHOD;
-// }
-
-// impl SimpleElement for CellEntityMethodExt {
-
-//     fn encode(&self, write: &mut impl Write) -> io::Result<()> {
-//         write.write_u32(self.entity_id)
-//     }
-
-//     fn decode(read: &mut impl Read, _len: usize) -> io::Result<Self> {
-//         Ok(Self { entity_id: read.read_u32()? })
-//     }
-
-// }
-
-// impl TopElement for CellEntityMethodExt {
-//     const LEN: ElementLength = ElementLength::Variable16;
-// }
-
-
-// /// Sent by the client to the base app to call a base method for the 
-// /// currently connected entity.
-// #[derive(Debug, Clone)]
-// pub struct BaseEntityMethod<M: MethodCall> {
-//     pub method: M,
-// }
-
-// impl<M: MethodCall> BaseEntityMethod<M> {
-
-//     /// Write this base entity method call to the given bundle.
-//     pub fn write(self, writer: BundleElementWriter) {
-//         MethodCallWrapper::new(self.method, BaseEntityMethodExt).write(writer);
-//     }
-
-//     /// Read this base entity method call from the given top element reader.
-//     pub fn read(reader: TopElementReader) -> io::Result<BundleElement<Self>> {
-//         MethodCallWrapper::<M, BaseEntityMethodExt>::read(reader).map(|res| {
-//             res.map(|wrapper| Self {
-//                 method: wrapper.method,
-//             })
-//         })
-//     }
-
-// }
-
-// #[derive(Default)]
-// struct BaseEntityMethodExt;
-
-// impl MethodCallExt for BaseEntityMethodExt {
-//     const ID_RANGE: ElementIdRange = id::BASE_ENTITY_METHOD;
-// }
-
-// impl NoopElement for BaseEntityMethodExt {}
-
-// impl TopElement for BaseEntityMethodExt {
-//     const LEN: ElementLength = ElementLength::Variable16;
-// }

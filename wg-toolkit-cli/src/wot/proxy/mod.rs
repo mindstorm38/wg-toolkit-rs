@@ -14,7 +14,7 @@ use flate2::read::ZlibDecoder;
 use blowfish::Blowfish;
 use rsa::{RsaPrivateKey, RsaPublicKey};
 
-use wgtk::net::element::{DebugElementUndefined, DebugElementVariable16, SimpleElement};
+use wgtk::net::element::{DebugElementUndefined, DebugElementVariable16, SimpleElement_};
 use wgtk::net::bundle::{Bundle, ElementReader, TopElementReader};
 
 use wgtk::net::app::{login, base, client, proxy};

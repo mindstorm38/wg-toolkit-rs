@@ -8,8 +8,9 @@ use glam::Vec3;
 
 use tracing::warn;
 
-use crate::net::element::{DebugElementFixed, DebugElementVariable16, Element, ElementLength, EmptyElement, SimpleElement};
+use crate::net::element::{DebugElementFixed, DebugElementVariable16, ElementLength, Element_, SimpleElement_};
 use crate::util::io::{WgReadExt, WgWriteExt};
+use crate::net::codec::SimpleCodec;
 use crate::util::AsciiFmt;
 
 use crate::net::app::common::entity::{Entity, Method};
@@ -105,126 +106,79 @@ pub mod id {
 }
 
 
-#[derive(Debug, Clone)]
-pub struct Authenticate {
-    pub key: u32,
+crate::__struct_simple_codec! {
+    #[derive(Debug, Clone)]
+    pub struct Authenticate {
+        pub key: u32,
+    }
 }
 
-impl SimpleElement for Authenticate {
-
+impl SimpleElement_ for Authenticate {
     const ID: u8 = id::AUTHENTICATE;
     const LEN: ElementLength = ElementLength::Fixed(4);
-
-    fn encode(&self, write: &mut dyn Write) -> io::Result<()> {
-        write.write_u32(self.key)
-    }
-
-    fn decode(read: &mut dyn Read, _len: usize) -> io::Result<Self> {
-        Ok(Self {
-            key: read.read_u32()?,
-        })
-    }
-
 }
 
-#[derive(Debug, Clone)]
-pub struct BandwidthNotification {
-    pub bps: u32,
+
+crate::__struct_simple_codec! {
+    #[derive(Debug, Clone)]
+    pub struct BandwidthNotification {
+        pub bps: u32,
+    }
 }
 
-impl SimpleElement for BandwidthNotification {
-
+impl SimpleElement_ for BandwidthNotification {
     const ID: u8 = id::BANDWIDTH_NOTIFICATION;
     const LEN: ElementLength = ElementLength::Fixed(4);
-
-    fn encode(&self, write: &mut dyn Write) -> io::Result<()> {
-        write.write_u32(self.bps)
-    }
-
-    fn decode(read: &mut dyn Read, _len: usize) -> io::Result<Self> {
-        Ok(Self {
-            bps: read.read_u32()?,
-        })
-    }
-
 }
 
 
-/// The server informs us how frequently it is going to send update
-/// the the client, and also give the server game time (exactly the
-/// same as [`SetGameTime`] element, but inlined here).
-#[derive(Debug, Clone)]
-pub struct UpdateFrequencyNotification {
-    /// The frequency in hertz.
-    pub frequency: u8,
-    /// The server game time.
-    pub game_time: u32,
+crate::__struct_simple_codec! {
+    /// The server informs us how frequently it is going to send update
+    /// the the client, and also give the server game time (exactly the
+    /// same as [`SetGameTime`] element, but inlined here).
+    #[derive(Debug, Clone)]
+    pub struct UpdateFrequencyNotification {
+        /// The frequency in hertz.
+        pub frequency: u8,
+        /// Unknown value!
+        pub unknown: u16,
+        /// The server game time.
+        pub game_time: u32,
+    }
 }
 
-impl SimpleElement for UpdateFrequencyNotification {
-
+impl SimpleElement_ for UpdateFrequencyNotification {
     const ID: u8 = id::UPDATE_FREQUENCY_NOTIFICATION;
     const LEN: ElementLength = ElementLength::Fixed(7);
-
-    fn encode(&self, write: &mut dyn Write) -> io::Result<()> {
-        write.write_u8(self.frequency)?;
-        write.write_u16(1)?;
-        write.write_u32(self.game_time)
-    }
-
-    fn decode(read: &mut dyn Read, _len: usize) -> io::Result<Self> {
-        Ok(Self { 
-            frequency: read.read_u8()?,
-            // Skip 2 bytes that we don't use.
-            game_time: { read.read_u16()?; read.read_u32()? },
-        })
-    }
-
 }
 
 
-/// The server informs us of the current (server) game time.
-#[derive(Debug, Clone)]
-pub struct SetGameTime {
-    /// The server game time.
-    pub game_time: u32,
+crate::__struct_simple_codec! {
+    /// The server informs us of the current (server) game time.
+    #[derive(Debug, Clone)]
+    pub struct SetGameTime {
+        /// The server game time.
+        pub game_time: u32,
+    }
 }
 
-impl SimpleElement for SetGameTime {
-
+impl SimpleElement_ for SetGameTime {
     const ID: u8 = id::SET_GAME_TIME;
     const LEN: ElementLength = ElementLength::Fixed(4);
-
-    fn encode(&self, write: &mut dyn Write) -> io::Result<()> {
-        write.write_u32(self.game_time)
-    }
-
-    fn decode(read: &mut dyn Read, _len: usize) -> io::Result<Self> {
-        Ok(Self { game_time: read.read_u32()? })
-    }
-
 }
 
 
-/// The server wants to resets the entities in the Area of Interest (AoI).
-#[derive(Debug, Clone)]
-pub struct ResetEntities {
-    pub keep_player_on_base: bool,
+crate::__struct_simple_codec! {
+    /// The server wants to resets the entities in the Area of Interest (AoI).
+    #[derive(Debug, Clone)]
+    pub struct ResetEntities {
+        pub keep_player_on_base: bool,
+    }
 }
 
-impl SimpleElement for ResetEntities {
-
+impl SimpleElement_ for ResetEntities {
     const ID: u8 = id::RESET_ENTITIES;
     const LEN: ElementLength = ElementLength::Fixed(1);
-
-    fn encode(&self, write: &mut dyn Write) -> io::Result<()> {
-        write.write_bool(self.keep_player_on_base)
-    }
-
-    fn decode(read: &mut dyn Read, _len: usize) -> io::Result<Self> {
-        Ok(Self { keep_player_on_base: read.read_bool()? })
-    }
-
 }
 
 
@@ -238,16 +192,13 @@ pub struct CreateBasePlayerHeader {
     pub entity_type_id: u16,
 }
 
-impl SimpleElement for CreateBasePlayerHeader {
+impl SimpleCodec for CreateBasePlayerHeader {
 
-    const ID: u8 = id::CREATE_BASE_PLAYER;
-    const LEN: ElementLength = ElementLength::Variable16;
-
-    fn encode(&self, _write: &mut dyn Write) -> io::Result<()> {
+    fn write(&self, _write: &mut dyn Write) -> io::Result<()> {
         panic!("this header element should not be used for encoding");
     }
 
-    fn decode(read: &mut dyn Read, _len: usize) -> io::Result<Self> {
+    fn read(read: &mut dyn Read) -> io::Result<Self> {
         Ok(Self {
             entity_id: read.read_u32()?,
             entity_type_id: read.read_u16()?,
@@ -255,6 +206,12 @@ impl SimpleElement for CreateBasePlayerHeader {
     }
 
 }
+
+impl SimpleElement_ for CreateBasePlayerHeader {
+    const ID: u8 = id::CREATE_BASE_PLAYER;
+    const LEN: ElementLength = ElementLength::Variable16;
+}
+
 
 /// Sent from the base when a player should be created, the entity id
 /// is given with its type.
@@ -280,20 +237,17 @@ pub struct CreateBasePlayer<E: Entity> {
     pub entity_components_count: u8,
 }
 
-impl<E: Entity> SimpleElement for CreateBasePlayer<E> {
-    
-    const ID: u8 = id::CREATE_BASE_PLAYER;
-    const LEN: ElementLength = ElementLength::Variable16;
+impl<E: Entity> SimpleCodec for CreateBasePlayer<E> {
 
-    fn encode(&self, write: &mut dyn Write) -> io::Result<()> {
+    fn write(&self, write: &mut dyn Write) -> io::Result<()> {
         write.write_u32(self.entity_id)?;
         write.write_u16(self.entity_type_id)?;
         write.write_blob_variable(&[])?;  // Unknown blob or string?
-        self.entity_data.encode(&mut *write)?;
+        self.entity_data.write(&mut *write)?;
         write.write_u8(self.entity_components_count)
     }
 
-    fn decode(read: &mut dyn Read, _len: usize) -> io::Result<Self> {
+    fn read(read: &mut dyn Read) -> io::Result<Self> {
         let entity_id = read.read_u32()?;
         let entity_type_id = read.read_u16()?;
         let unk = read.read_blob_variable()?;
@@ -303,11 +257,16 @@ impl<E: Entity> SimpleElement for CreateBasePlayer<E> {
         Ok(Self {
             entity_id,
             entity_type_id,
-            entity_data: Box::new(E::decode(&mut *read)?),
+            entity_data: Box::new(E::read(&mut *read)?),
             entity_components_count: read.read_u8()?,
         })
     }
 
+}
+
+impl<E: Entity> SimpleElement_ for CreateBasePlayer<E> {
+    const ID: u8 = id::CREATE_BASE_PLAYER;
+    const LEN: ElementLength = ElementLength::Variable16;
 }
 
 
@@ -329,26 +288,19 @@ pub type EnterAoiOnVehicle = DebugElementFixed<{ id::ENTER_AOI_ON_VEHICLE }, 9>;
 pub type LeaveAoi = DebugElementVariable16<{ id::LEAVE_AOI }>;
 
 
-/// It is used as a timestamp for the elements in a bundle.
-#[derive(Debug, Clone)]
-pub struct TickSync {
-    pub tick: u8,
+crate::__struct_simple_codec! {
+    /// It is used as a timestamp for the elements in a bundle.
+    #[derive(Debug, Clone)]
+    pub struct TickSync {
+        pub tick: u8,
+    }
 }
 
-impl SimpleElement for TickSync {
-
+impl SimpleElement_ for TickSync {
     const ID: u8 = id::TICK_SYNC;
     const LEN: ElementLength = ElementLength::Fixed(1);
-
-    fn encode(&self, write: &mut dyn Write) -> io::Result<()> {
-        write.write_u8(self.tick)
-    }
-
-    fn decode(read: &mut dyn Read, _len: usize) -> io::Result<Self> {
-        Ok(Self { tick: read.read_u8()? })
-    }
-
 }
+
 
 pub type TickSyncPeriodic = DebugElementFixed<{ id::TICK_SYNC_PERIODIC }, 2>;
 pub type RelativePositionReference = DebugElementFixed<{ id::RELATIVE_POSITION_REFERENCE }, 1>;
@@ -358,53 +310,39 @@ pub type SelectAliasedEntity = DebugElementFixed<{ id::SELECT_ALIASED_ENTITY }, 
 pub type SelectEntity = DebugElementFixed<{ id::SELECT_ENTITY }, 4>;
 
 
-/// Sent by the server to inform that subsequent elements will target
-/// the player entity.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct SelectPlayerEntity;
-impl EmptyElement for SelectPlayerEntity {
+crate::__struct_simple_codec! {
+    /// Sent by the server to inform that subsequent elements will target
+    /// the player entity.
+    #[derive(Debug, Default, Clone, Copy)]
+    pub struct SelectPlayerEntity {}
+}
+
+impl SimpleElement_ for SelectPlayerEntity {
     const ID: u8 = id::SELECT_PLAYER_ENTITY;
     const LEN: ElementLength = ElementLength::Fixed(0);
 }
 
 
-/// This is when an update is being forced back for an (ordinarily)
-/// client controlled entity, including for the player. Usually this is
-/// due to a physics correction from the server, but it could be for any
-/// reason decided by the server (e.g. server-initiated teleport).
-#[derive(Debug, Clone)]
-pub struct ForcedPosition {
-    pub entity_id: u32,
-    pub space_id: u32,
-    pub vehicle_entity_id: u32,
-    pub position: Vec3,
-    pub direction: Vec3,
+crate::__struct_simple_codec! {
+    /// This is when an update is being forced back for an (ordinarily)
+    /// client controlled entity, including for the player. Usually this is
+    /// due to a physics correction from the server, but it could be for any
+    /// reason decided by the server (e.g. server-initiated teleport).
+    #[derive(Debug, Clone)]
+    pub struct ForcedPosition {
+        pub entity_id: u32,
+        pub space_id: u32,
+        pub vehicle_entity_id: u32,
+        pub position: Vec3,
+        pub direction: Vec3,
+    }
 }
 
-impl SimpleElement for ForcedPosition {
-
+impl SimpleElement_ for ForcedPosition {
     const ID: u8 = id::FORCED_POSITION;
     const LEN: ElementLength = ElementLength::Fixed(38);
-
-    fn encode(&self, write: &mut dyn Write) -> io::Result<()> {
-        write.write_u32(self.entity_id)?;
-        write.write_u32(self.space_id)?;
-        write.write_u32(self.vehicle_entity_id)?;
-        write.write_vec3(self.position)?;
-        write.write_vec3(self.direction)
-    }
-
-    fn decode(read: &mut dyn Read, _len: usize) -> io::Result<Self> {
-        Ok(Self {
-            entity_id: read.read_u32()?,
-            space_id: read.read_u32()?,
-            vehicle_entity_id: read.read_u32()?,
-            position: read.read_vec3()?,
-            direction: read.read_vec3()?,
-        })
-    }
-
 }
+
 
 pub type AvatarUpdateNoAliasDetailed = DebugElementFixed<{ id::AVATAR_UPDATE_NO_ALIAS_DETAILED }, 29>;
 pub type AvatarUpdateAliasDetailed = DebugElementFixed<{ id::AVATAR_UPDATE_ALIAS_DETAILED }, 26>;
@@ -436,24 +374,26 @@ pub struct ResourceHeader {
     pub description: Vec<u8>,
 }
 
-impl SimpleElement for ResourceHeader {
-    
-    const ID: u8 = id::RESOURCE_HEADER;
-    const LEN: ElementLength = ElementLength::Variable16;
+impl SimpleCodec for ResourceHeader {
 
-    fn encode(&self, write: &mut dyn Write) -> io::Result<()> {
+    fn write(&self, write: &mut dyn Write) -> io::Result<()> {
         write.write_u16(self.id)?;
         write.write_blob_variable(&self.description)?;
         Ok(())
     }
 
-    fn decode(read: &mut dyn Read, _len: usize) -> io::Result<Self> {
+    fn read(read: &mut dyn Read) -> io::Result<Self> {
         Ok(Self {
             id: read.read_u16()?,
             description: read.read_blob_variable()?,
         })
     }
 
+}
+
+impl SimpleElement_ for ResourceHeader {
+    const ID: u8 = id::RESOURCE_HEADER;
+    const LEN: ElementLength = ElementLength::Variable16;
 }
 
 impl fmt::Debug for ResourceHeader {
@@ -465,6 +405,7 @@ impl fmt::Debug for ResourceHeader {
     }
 }
 
+
 /// Header describing a resource that will be downloaded in possibly many fragments.
 #[derive(Clone)]
 pub struct ResourceFragment {
@@ -474,12 +415,9 @@ pub struct ResourceFragment {
     pub data: Vec<u8>,
 }
 
-impl SimpleElement for ResourceFragment {
-    
-    const ID: u8 = id::RESOURCE_FRAGMENT;
-    const LEN: ElementLength = ElementLength::Variable16;
+impl SimpleCodec for ResourceFragment {
 
-    fn encode(&self, write: &mut dyn Write) -> io::Result<()> {
+    fn write(&self, write: &mut dyn Write) -> io::Result<()> {
         write.write_u16(self.id)?;
         write.write_u8(self.sequence_num)?;
         write.write_bool(self.last)?;
@@ -487,15 +425,20 @@ impl SimpleElement for ResourceFragment {
         Ok(())
     }
 
-    fn decode(read: &mut dyn Read, len: usize) -> io::Result<Self> {
+    fn read(read: &mut dyn Read) -> io::Result<Self> {
         Ok(Self {
             id: read.read_u16()?,
             sequence_num: read.read_u8()?,
             last: read.read_bool()?,
-            data: read.read_blob(len - 4)?,
+            data: read.read_blob_to_end()?,
         })
     }
 
+}
+
+impl SimpleElement_ for ResourceFragment {
+    const ID: u8 = id::RESOURCE_FRAGMENT;
+    const LEN: ElementLength = ElementLength::Variable16;
 }
 
 impl fmt::Debug for ResourceFragment {
@@ -509,7 +452,21 @@ impl fmt::Debug for ResourceFragment {
     }
 }
 
-pub type LoggedOff = DebugElementFixed<{ id::LOGGED_OFF }, 1>;
+
+crate::__struct_simple_codec! {
+    /// Sent by the server to inform that subsequent elements will target
+    /// the player entity.
+    #[derive(Debug, Default, Clone, Copy)]
+    pub struct LoggedOff {
+        reason: u8,
+    }
+}
+
+impl SimpleElement_ for LoggedOff {
+    const ID: u8 = id::LOGGED_OFF;
+    const LEN: ElementLength = ElementLength::Fixed(1);
+}
+
 
 pub type DetailedPosition = DebugElementFixed<{ id::DETAILED_POSITION }, 24>;
 
@@ -529,35 +486,33 @@ pub struct EntityMethod<M: Method> {
     pub inner: M,
 }
 
-impl<M: Method> Element for EntityMethod<M> {
+impl<M: Method> Element_<()> for EntityMethod<M> {
 
-    type Config = ();
-
-    fn encode_length(&self, _config: &Self::Config) -> ElementLength {
+    fn write_length(&self, _config: &()) -> io::Result<ElementLength> {
         // TODO: Support for sub-id
-        self.inner.encode_length()
+        Ok(self.inner.write_length())
     }
 
-    fn encode(&self, write: &mut dyn Write, _config: &Self::Config) -> io::Result<u8> {
-        let exposed_id = self.inner.encode(write)?;
+    fn write(&self, write: &mut dyn Write, _config: &()) -> io::Result<u8> {
+        let exposed_id = self.inner.write(write)?;
         if exposed_id >= id::ENTITY_METHOD.slots_count() as u16 {
             todo!("support for sub-id");
         }
         Ok(id::ENTITY_METHOD.first + exposed_id as u8)
     }
 
-    fn decode_length(_config: &Self::Config, id: u8) -> ElementLength {
+    fn read_length(_config: &(), id: u8) -> io::Result<ElementLength> {
         if !id::ENTITY_METHOD.contains(id) {
-            panic!("unexpected entity method element id: {id:02X}");
+            return Err(io::Error::new(io::ErrorKind::InvalidData, format!("unexpected entity method element id: {id:02X}")));
         }
-        M::decode_length((id - id::ENTITY_METHOD.first) as u16)
+        Ok(M::read_length((id - id::ENTITY_METHOD.first) as u16))
     }
 
-    fn decode(read: &mut dyn Read, _len: usize, _config: &Self::Config, id: u8) -> io::Result<Self> {
+    fn read(read: &mut dyn Read, _config: &(), _len: usize, id: u8) -> io::Result<Self> {
         if !id::ENTITY_METHOD.contains(id) {
             panic!("unexpected entity method element id: {id:02X}");
         }
-        let inner = M::decode(read, (id - id::ENTITY_METHOD.first) as u16)?;
+        let inner = M::read(read, (id - id::ENTITY_METHOD.first) as u16)?;
         Ok(Self {
             inner,
         })

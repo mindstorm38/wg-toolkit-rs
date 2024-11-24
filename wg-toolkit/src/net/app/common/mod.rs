@@ -2,7 +2,7 @@
 //! definition of how to encode entities, their components/interfaces and the method 
 //! calls.
 
-pub mod data;
+// pub mod data;
 pub mod entity;
 
 use std::collections::HashMap;
@@ -11,7 +11,6 @@ use std::io;
 
 use crate::net::bundle::{Bundle, ElementReader, TopElementReader};
 use crate::net::socket::PacketSocket;
-use crate::net::element::Element;
 use crate::net::proto::Protocol;
 
 
@@ -98,14 +97,6 @@ impl<'a> Peer<'a> {
     #[inline]
     pub fn addr(&self) -> SocketAddr {
         self.internal.addr
-    }
-
-    pub fn write<E: Element>(&mut self, element: E, config: &E::Config) {
-        self.bundle.element_writer().write(element, config);
-    }
-
-    pub fn write_simple<E: Element<Config = ()>>(&mut self, element: E) {
-        self.bundle.element_writer().write_simple(element);
     }
 
 }

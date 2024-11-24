@@ -4,7 +4,7 @@ use super::alias::*;
 // ======              Wheels              ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct Wheels {
         pub steeringAngles: Vec<u8>,
@@ -14,15 +14,15 @@ wgtk::__bootstrap_struct_data_type! {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -30,13 +30,13 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ====== VehiclesSpawnListStorage_Avatar  ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct VehiclesSpawnListStorage_Avatar {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
     #[derive(Debug)]
     pub struct VehiclesSpawnListStorage_Avatar_updateSpawnList {
@@ -45,11 +45,11 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -57,13 +57,13 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ====== VehicleRemovalController_Avatar  ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct VehicleRemovalController_Avatar {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
     #[derive(Debug)]
     pub struct VehicleRemovalController_Avatar_removeVehicle {
@@ -72,11 +72,11 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -84,22 +84,22 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======         VehicleObserver          ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct VehicleObserver {
         pub remoteCamera: REMOTE_CAMERA_DATA,
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
     #[derive(Debug)]
     pub struct VehicleObserver_setRemoteCamera {
@@ -112,13 +112,13 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ====== VehicleHealthBroadcastListenerComponent_Avatar ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct VehicleHealthBroadcastListenerComponent_Avatar {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
     #[derive(Debug)]
     pub struct VehicleHealthBroadcastListenerComponent_Avatar_onVehicleHealthChanged {
@@ -131,11 +131,11 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -143,21 +143,21 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======          VehicleAIProxy          ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct VehicleAIProxy {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -165,13 +165,13 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======    TriggersController_Avatar     ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct TriggersController_Avatar {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
     #[derive(Debug)]
     pub struct TriggersController_Avatar_externalTrigger {
@@ -181,11 +181,11 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -193,21 +193,21 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======         TransactionUser          ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct TransactionUser {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -215,21 +215,21 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======         ThrottledMethods         ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct ThrottledMethods {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -237,13 +237,13 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======       TeamHealthBar_Avatar       ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct TeamHealthBar_Avatar {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
     #[derive(Debug)]
     pub struct TeamHealthBar_Avatar_updateTeamsHealthPercentage {
@@ -252,11 +252,11 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -264,21 +264,21 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======         TeamBase_Vehicle         ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct TeamBase_Vehicle {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -286,21 +286,21 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======     StepRepairPoint_Vehicle      ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct StepRepairPoint_Vehicle {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -308,21 +308,21 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======     SmokeController_Vehicle      ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct SmokeController_Vehicle {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -330,21 +330,21 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======          SessionTracker          ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct SessionTracker {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -352,21 +352,21 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======        ServerSideReplays         ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct ServerSideReplays {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -374,21 +374,21 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======          Sector_Vehicle          ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct Sector_Vehicle {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -396,21 +396,21 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======        SectorBase_Vehicle        ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct SectorBase_Vehicle {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -418,21 +418,21 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======    RespawnController_Vehicle     ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct RespawnController_Vehicle {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -440,13 +440,13 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======     RespawnController_Avatar     ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct RespawnController_Avatar {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
     #[derive(Debug)]
     pub struct RespawnController_Avatar_redrawVehicleOnRespawn {
@@ -492,7 +492,7 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
     #[derive(Debug)]
     pub struct RespawnController_Avatar_respawnController_requestRespawnGroupChange {
@@ -522,7 +522,7 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -530,21 +530,21 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======        RepairBase_Vehicle        ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct RepairBase_Vehicle {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -552,21 +552,21 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======     RecoveryMechanic_Vehicle     ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct RecoveryMechanic_Vehicle {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
     #[derive(Debug)]
     pub struct RecoveryMechanic_Vehicle_recoveryMechanic_startRecovering {
@@ -582,13 +582,13 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======     RecoveryMechanic_Avatar      ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct RecoveryMechanic_Avatar {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
     #[derive(Debug)]
     pub struct RecoveryMechanic_Avatar_notifyCannotStartRecovering {
@@ -608,11 +608,11 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -620,21 +620,21 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======          QuestProcessor          ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct QuestProcessor {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -642,21 +642,21 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======      ProtectionZone_Vehicle      ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct ProtectionZone_Vehicle {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -664,21 +664,21 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ====== ProtectionZoneController_Avatar  ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct ProtectionZoneController_Avatar {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -686,13 +686,13 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======      PlayerMessenger_chat2       ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct PlayerMessenger_chat2 {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
     #[derive(Debug)]
     pub struct PlayerMessenger_chat2_messenger_onActionByServer_chat2 {
@@ -703,7 +703,7 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
     #[derive(Debug)]
     pub struct PlayerMessenger_chat2_messenger_onActionByClient_chat2 {
@@ -714,7 +714,7 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -722,21 +722,21 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======            PlayLimits            ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct PlayLimits {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -744,22 +744,22 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======     PlaneTrajectoryArenaInfo     ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct PlaneTrajectoryArenaInfo {
         pub planeTrajectory: PLANE_TRAJECTORY,
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -767,7 +767,7 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======          Perks_Vehicle           ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct Perks_Vehicle {
         pub perkEffects: ANON79,
@@ -776,15 +776,15 @@ wgtk::__bootstrap_struct_data_type! {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -792,21 +792,21 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======            Invoicing             ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct Invoicing {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -814,13 +814,13 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======        InvitationsClient         ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct InvitationsClient {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
     #[derive(Debug)]
     pub struct InvitationsClient_processInvitations {
@@ -829,11 +829,11 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -841,21 +841,21 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======           Invitations            ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct Invitations {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -863,21 +863,21 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======        InterclusterSender        ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct InterclusterSender {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -885,21 +885,21 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======               Harm               ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct Harm {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -907,21 +907,21 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======            EntityTrap            ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct EntityTrap {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -929,21 +929,21 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======    DestructibleEntity_Vehicle    ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct DestructibleEntity_Vehicle {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -951,21 +951,21 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======    DestructibleEntity_Avatar     ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct DestructibleEntity_Avatar {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -973,21 +973,21 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======           Destructible           ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct Destructible {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -995,21 +995,21 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ====== DefenderBonusController_Vehicle  ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct DefenderBonusController_Vehicle {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -1017,21 +1017,21 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======           ControlPoint           ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct ControlPoint {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -1039,13 +1039,13 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======        ClientCommandsPort        ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct ClientCommandsPort {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
     #[derive(Debug)]
     pub struct ClientCommandsPort_onCmdResponse {
@@ -1064,7 +1064,7 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
     #[derive(Debug)]
     pub struct ClientCommandsPort_doCmdNoArgs {
@@ -1172,7 +1172,7 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -1180,13 +1180,13 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======               Chat               ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct Chat {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
     #[derive(Debug)]
     pub struct Chat_onChatAction {
@@ -1195,7 +1195,7 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
     #[derive(Debug)]
     pub struct Chat_chatCommandFromClient {
@@ -1237,7 +1237,7 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -1245,21 +1245,21 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======      BattleResultProcessor       ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct BattleResultProcessor {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -1267,21 +1267,21 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======          BattleFeedback          ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct BattleFeedback {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -1289,7 +1289,7 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======          AvatarObserver          ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct AvatarObserver {
         pub remoteCamera: REMOTE_CAMERA_DATA,
@@ -1298,15 +1298,15 @@ wgtk::__bootstrap_struct_data_type! {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
     #[derive(Debug)]
     pub struct AvatarObserver_switchObserverFPV {
@@ -1319,13 +1319,13 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======            AvatarEpic            ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct AvatarEpic {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
     #[derive(Debug)]
     pub struct AvatarEpic_welcomeToSector {
@@ -1415,7 +1415,7 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
     #[derive(Debug)]
     pub struct AvatarEpic_enableFrontLineDevInfo {
@@ -1424,7 +1424,7 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -1432,21 +1432,21 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======          AvatarCreator           ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct AvatarCreator {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -1454,22 +1454,22 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======          AccountVersion          ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct AccountVersion {
         pub requiredVersion_12610: AutoString,
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -1477,21 +1477,21 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======        AccountUnitRemote         ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct AccountUnitRemote {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -1499,17 +1499,17 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======        AccountUnitClient         ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct AccountUnitClient {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
     #[derive(Debug)]
     pub struct AccountUnitClient_accountUnitClient_create {
@@ -1555,7 +1555,7 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -1563,17 +1563,17 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======        AccountUnitBrowser        ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct AccountUnitBrowser {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
     #[derive(Debug)]
     pub struct AccountUnitBrowser_accountUnitBrowser_subscribe {
@@ -1599,7 +1599,7 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -1607,21 +1607,21 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======       AccountUnitAssembler       ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct AccountUnitAssembler {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -1629,21 +1629,21 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======           AccountUnit            ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct AccountUnit {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -1651,21 +1651,21 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======       AccountSysMessenger        ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct AccountSysMessenger {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -1673,21 +1673,21 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======       AccountSpaProcessor        ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct AccountSpaProcessor {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -1695,17 +1695,17 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======         AccountPrebattle         ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct AccountPrebattle {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
     #[derive(Debug)]
     pub struct AccountPrebattle_accountPrebattle_createTraining {
@@ -1732,7 +1732,7 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -1740,21 +1740,21 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======       AccountIGRProcessing       ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct AccountIGRProcessing {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -1762,17 +1762,17 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======    AccountGlobalMapConnector     ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct AccountGlobalMapConnector {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
     #[derive(Debug)]
     pub struct AccountGlobalMapConnector_accountGlobalMapConnector_callGlobalMapMethod {
@@ -1784,7 +1784,7 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -1792,21 +1792,21 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======          AccountEditor           ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct AccountEditor {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -1814,17 +1814,17 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======         AccountDebugger          ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct AccountDebugger {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
     #[derive(Debug)]
     pub struct AccountDebugger_accountDebugger_registerDebugTaskResult {
@@ -1842,7 +1842,7 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -1850,21 +1850,21 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======           AccountClan            ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct AccountClan {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -1872,17 +1872,17 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======          AccountAvatar           ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct AccountAvatar {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
     #[derive(Debug)]
     pub struct AccountAvatar_accountAvatar_sendAccountStats {
@@ -1892,7 +1892,7 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -1900,13 +1900,13 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======  AccountAuthTokenProviderClient  ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct AccountAuthTokenProviderClient {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
     #[derive(Debug)]
     pub struct AccountAuthTokenProviderClient_onTokenReceived {
@@ -1917,11 +1917,11 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -1929,17 +1929,17 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======     AccountAuthTokenProvider     ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct AccountAuthTokenProvider {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
     #[derive(Debug)]
     pub struct AccountAuthTokenProvider_requestToken {
@@ -1949,7 +1949,7 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 
@@ -1957,21 +1957,21 @@ wgtk::__bootstrap_struct_data_type! {  // Methods on cell
 // ======           AccountAdmin           ====== //
 // ============================================== //
 
-wgtk::__bootstrap_struct_data_type! {
+wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct AccountAdmin {
     }
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on client
+wgtk::__struct_simple_codec! {  // Methods on client
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on base
+wgtk::__struct_simple_codec! {  // Methods on base
 
 }
 
-wgtk::__bootstrap_struct_data_type! {  // Methods on cell
+wgtk::__struct_simple_codec! {  // Methods on cell
 
 }
 

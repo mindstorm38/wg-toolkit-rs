@@ -13,14 +13,13 @@ use tracing::{trace, trace_span};
 use crate::net::bundle::{Bundle, ElementReader, ReplyElementReader, TopElementReader};
 use crate::net::app::login::element::{ChallengeResponse, CuckooCycleResponse};
 use crate::net::app::proxy::{UNSPECIFIED_ADDR, RECV_TIMEOUT};
-use crate::net::proto::Protocol;
-use crate::net::element::SimpleElement;
 use crate::net::socket::PacketSocket;
+use crate::net::proto::Protocol;
 use crate::net::packet::Packet;
 
 use crate::util::thread::{ThreadPoll, ThreadPollHandle};
 
-use super::element::{LoginError, LoginRequest, LoginRequestEncryption, LoginResponse, LoginResponseEncryption, Ping};
+use super::element::{self, LoginError, LoginRequest, LoginResponse, Ping};
 use super::io_invalid_data;
 
 
@@ -303,9 +302,9 @@ impl Inner {
 
     fn handle_out_element(&mut self, reader: TopElementReader, peer: &mut Peer) -> io::Result<()> {
         match reader.id() {
-            Ping::ID => self.handle_out_ping(reader, peer),
-            LoginRequest::ID => self.handle_login_request(reader, peer),
-            CuckooCycleResponse::ID => self.handle_challenge_response(reader, peer),
+            element::id::PING => self.handle_out_ping(reader, peer),
+            element::id::LOGIN_REQUEST => self.handle_login_request(reader, peer),
+            element::id::CHALLENGE_RESPONSE => self.handle_challenge_response(reader, peer),
             id => Err(io_invalid_data(format_args!("unexpected element #{id}"))),
         }
     }
@@ -332,12 +331,13 @@ impl Inner {
     /// Handle a login request to the login node.
     fn handle_login_request(&mut self, elt: TopElementReader, peer: &mut Peer) -> io::Result<()> {
         
-        let recv_encryption = self.encryption_key.as_ref()
-            .map(|key| LoginRequestEncryption::Server(Arc::clone(&key)))
-            .unwrap_or(LoginRequestEncryption::Clear);
+        let login;
+        if let Some(encryption_key) = self.encryption_key.as_deref() {
+            login = elt.read::<_, LoginRequest>(encryption_key)?;
+        } else {
+            login = elt.read_simple::<LoginRequest>()?;
+        }
 
-        let login = elt.read::<LoginRequest>(&recv_encryption)?;
-        
         let request_id = login.request_id
             .ok_or_else(|| io_invalid_data(format_args!("login should be a request")))?;
 
@@ -350,11 +350,11 @@ impl Inner {
             kind: PeerLastRequestKind::Login { blowfish },
         });
 
-        let send_encryption = self.real_encryption_key.as_ref()
-            .map(|key| LoginRequestEncryption::Client(Arc::clone(&key)))
-            .unwrap_or(LoginRequestEncryption::Clear);
-
-        self.bundle.element_writer().write_request(login.element.clone(), &send_encryption, request_id);
+        if let Some(encryption_key) = self.real_encryption_key.as_deref() {
+            self.bundle.element_writer().write_request(login.element.clone(), encryption_key, request_id);
+        } else {
+            self.bundle.element_writer().write_simple_request(login.element.clone(), request_id);
+        }
 
         Ok(())
 
@@ -427,20 +427,19 @@ impl Inner {
                 }));
 
                 let ping = elt.read_simple::<Ping>()?;
-                self.bundle.element_writer().write_simple_reply(ping.element, request_id);
+                self.bundle.element_writer().write_simple_reply(ping, request_id);
                 
             }
             PeerLastRequestKind::Login { blowfish } => {
 
-                let encryption = LoginResponseEncryption::Encrypted(Arc::clone(&blowfish));
-                let mut login = elt.read::<LoginResponse>(&encryption)?;
+                let mut login = elt.read::<_, LoginResponse>(&*blowfish)?;
                 
-                if let LoginResponse::Success(success) = &mut login.element {
+                if let LoginResponse::Success(success) = &mut login {
 
                     *inherit_prefix = true;
                     self.events.push_back(Event::LoginSuccess(LoginSuccessEvent {
                         addr: peer.addr,
-                        blowfish,
+                        blowfish: Arc::clone(&blowfish),
                         real_base_app_addr: success.addr,
                         login_key: success.login_key,
                         server_message: success.server_message.clone(),
@@ -452,7 +451,7 @@ impl Inner {
                         success.addr = base_app_addr;
                     }
                     
-                } else if let LoginResponse::Error(error, data) = &login.element {
+                } else if let LoginResponse::Error(error, data) = &login {
                     
                     self.events.push_back(Event::LoginError(LoginErrorEvent {
                         addr: peer.addr,
@@ -462,7 +461,7 @@ impl Inner {
 
                 }
 
-                self.bundle.element_writer().write_reply(login.element, &encryption, request_id);
+                self.bundle.element_writer().write_reply(login, &*blowfish, request_id);
                 
             }
         }

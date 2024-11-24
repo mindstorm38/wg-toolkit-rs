@@ -9,14 +9,14 @@
 
 use std::io::{self, Read, Write};
 use std::net::SocketAddrV4;
-use std::sync::Arc;
 use std::time::Duration;
 
 use rsa::{RsaPrivateKey, RsaPublicKey};
 use blowfish::Blowfish;
 
 use crate::net::filter::{RsaWriter, RsaReader, BlowfishWriter, BlowfishReader};
-use crate::net::element::{Element, SimpleElement, ElementLength};
+use crate::net::element::{ElementLength, SimpleElement_};
+use crate::net::codec::{Codec, SimpleCodec};
 use crate::util::io::*;
 
 
@@ -28,28 +28,20 @@ pub mod id {
 }
 
 
-/// A ping sent from the client to the login app or replied from the
-/// login app to the client.
-#[derive(Debug, Clone, Copy)]
-pub struct Ping {
-    /// The number of the ping, the same number must be sent back to
-    /// the client when login app receives it.
-    pub num: u8,
+crate::__struct_simple_codec! {
+    /// A ping sent from the client to the login app or replied from the
+    /// login app to the client.
+    #[derive(Debug, Clone, Copy)]
+    pub struct Ping {
+        /// The number of the ping, the same number must be sent back to
+        /// the client when login app receives it.
+        pub num: u8,
+    }
 }
 
-impl SimpleElement for Ping {
-
+impl SimpleElement_ for Ping {
     const ID: u8 = id::PING;
     const LEN: ElementLength = ElementLength::Fixed(1);
-
-    fn encode(&self, write: &mut dyn Write) -> io::Result<()> {
-        write.write_u8(self.num)
-    }
-
-    fn decode(read: &mut dyn Read, _len: usize) -> io::Result<Self> {
-        Ok(Self { num: read.read_u8()? })
-    }
-
 }
 
 
@@ -71,68 +63,66 @@ pub struct LoginRequest {
     pub nonce: u32,
 }
 
-/// Describe the type of encryption to use for encoding/decoding
-/// a login request. This must be provided as configuration when
-/// writing or reading the element.
-#[derive(Debug)]
-pub enum LoginRequestEncryption {
-    /// Clear transmission between server and client.
-    Clear,
-    /// Encrypted encoding.
-    Client(Arc<RsaPublicKey>),
-    /// Encrypted decoding.
-    Server(Arc<RsaPrivateKey>),
-}
+/// Implementation without encryption!
+impl Codec<()> for LoginRequest {
 
-impl LoginRequest {
-    pub const ID: u8 = id::LOGIN_REQUEST;
-}
-
-impl Element for LoginRequest {
-
-    type Config = LoginRequestEncryption;
-
-    fn encode_length(&self, _config: &Self::Config) -> ElementLength {
-        ElementLength::Variable16
-    }
-
-    fn encode(&self, write: &mut dyn Write, config: &Self::Config) -> io::Result<u8> {
+    fn write(&self, write: &mut dyn Write, _config: &()) -> io::Result<()> {
         write.write_u32(self.protocol)?;
-        match config {
-            LoginRequestEncryption::Clear => {
-                write.write_u8(0)?;
-                encode_login_params(write, self)?;
-            }
-            LoginRequestEncryption::Client(key) => {
-                write.write_u8(1)?;
-                encode_login_params(RsaWriter::new(write, &key), self)?;
-            }
-            LoginRequestEncryption::Server(_) => panic!("missing client public encryption key to encode the login request"),
-        }
-        Ok(Self::ID)
+        write.write_bool(false)?;
+        write_login_request(write, self)
     }
 
-    fn decode_length(_config: &Self::Config, _id: u8) -> ElementLength {
-        ElementLength::Variable16
-    }
-
-    fn decode(read: &mut dyn Read, _len: usize, config: &Self::Config, id: u8) -> io::Result<Self> {
-        debug_assert_eq!(id, Self::ID);
+    fn read(read: &mut dyn Read, _config: &()) -> io::Result<Self> {
         let protocol = read.read_u32()?;
-        if read.read_u8()? != 0 {
-            if let LoginRequestEncryption::Server(key) = config {
-                decode_login_params(RsaReader::new(read, &key), protocol)
-            } else {
-                Err(io::Error::new(io::ErrorKind::InvalidData, "missing server private encryption key to decode the login request"))
-            }
+        if read.read_bool()? {
+            return Err(io::Error::new(io::ErrorKind::InvalidData, "missing private encryption key to decode the login request"));
+        }
+        read_login_request(read, protocol)
+    }
+
+}
+
+/// Implementation with only client-side encryption.
+impl Codec<RsaPublicKey> for LoginRequest {
+
+    fn write(&self, write: &mut dyn Write, config: &RsaPublicKey) -> io::Result<()> {
+        write.write_u32(self.protocol)?;
+        write.write_bool(true)?;
+        write_login_request(&mut RsaWriter::new(write, config), self)
+    }
+
+    fn read(read: &mut dyn Read, _config: &RsaPublicKey) -> io::Result<Self> {
+        let protocol = read.read_u32()?;
+        if read.read_bool()? {
+            return Err(io::Error::new(io::ErrorKind::InvalidData, "only private encryption key can decode login request"));
+        }
+        read_login_request(read, protocol)
+    }
+
+}
+
+/// Implementation with both server-side decryption and client-side encryption (derived
+/// from private key).
+impl Codec<RsaPrivateKey> for LoginRequest {
+
+    fn write(&self, write: &mut dyn Write, config: &RsaPrivateKey) -> io::Result<()> {
+        write.write_u32(self.protocol)?;
+        write.write_bool(true)?;
+        write_login_request(&mut RsaWriter::new(write, &config.to_public_key()), self)
+    }
+
+    fn read(read: &mut dyn Read, config: &RsaPrivateKey) -> io::Result<Self> {
+        let protocol = read.read_u32()?;
+        if read.read_bool()? {
+            read_login_request(&mut RsaReader::new(read, config), protocol)
         } else {
-            decode_login_params(read, protocol)
+            read_login_request(read, protocol)
         }
     }
 
 }
 
-fn encode_login_params(mut write: impl Write, input: &LoginRequest) -> io::Result<()> {
+fn write_login_request(write: &mut dyn Write, input: &LoginRequest) -> io::Result<()> {
     write.write_u8(if input.digest.is_some() { 0x01 } else { 0x00 })?;
     write.write_string_variable(&input.username)?;
     write.write_string_variable(&input.password)?;
@@ -144,7 +134,7 @@ fn encode_login_params(mut write: impl Write, input: &LoginRequest) -> io::Resul
     write.write_u32(input.nonce)
 }
 
-fn decode_login_params(mut input: impl Read, protocol: u32) -> io::Result<LoginRequest> {
+fn read_login_request(input: &mut dyn Read, protocol: u32) -> io::Result<LoginRequest> {
     let flags = input.read_u8()?;
     Ok(LoginRequest {
         protocol,
@@ -161,6 +151,12 @@ fn decode_login_params(mut input: impl Read, protocol: u32) -> io::Result<LoginR
         },
         nonce: input.read_u32()?
     })
+}
+
+impl<C> SimpleElement_<C> for LoginRequest
+where LoginRequest: Codec<C> {
+    const ID: u8 = id::LOGIN_REQUEST;
+    const LEN: ElementLength = ElementLength::Variable16;
 }
 
 
@@ -238,49 +234,27 @@ pub enum LoginError {
     ChallengeError = 85,
 }
 
-/// Describe if the login response has to be encrypted or not. This must be 
-/// provided as configuration when writing or reading the element.
-#[derive(Debug)]
-pub enum LoginResponseEncryption {
-    /// The login response is not encrypted. This should be selected if the
-    /// login request contains an empty blowfish key.
-    Clear,
-    /// The login response is encrypted with the given blowfish key.
-    /// This blowfish key should be created from the key provided by the client
-    /// in the login request.
-    /// 
-    /// *The blowfish key is only actually used when encoding or decoding a
-    /// login success, other statuses do not require the key.*
-    Encrypted(Arc<Blowfish>),
-}
-
 /// Text identifier of the cuckoo cycle challenge type.
 const CHALLENGE_CUCKOO_CYCLE: &'static str = "cuckoo_cycle";
 
-impl Element for LoginResponse {
+impl LoginResponse {
 
-    type Config = LoginResponseEncryption;
+    fn write_inner(&self, write: &mut dyn Write, bf: Option<&Blowfish>) -> io::Result<()> {
 
-    fn encode_length(&self, _config: &Self::Config) -> ElementLength {
-        ElementLength::ZERO
-    }
-
-    fn encode(&self, write: &mut dyn Write, config: &Self::Config) -> io::Result<u8> {
-        
         match self {
             Self::Success(success) => {
                 
                 write.write_u8(1)?; // Logged-on
                 
-                if let LoginResponseEncryption::Encrypted(bf) = config {
-                    encode_login_success(BlowfishWriter::new(write, &bf), success)?;
+                if let Some(bf) = bf {
+                    write_login_success(&mut BlowfishWriter::new(write, bf), success)?;
                 } else {
-                    encode_login_success(write, success)?;
+                    write_login_success(write, success)?;
                 }
-
+    
             }
             Self::Challenge(challenge) => {
-
+    
                 write.write_u8(66)?;
                 
                 match challenge {
@@ -298,25 +272,21 @@ impl Element for LoginResponse {
             }
             Self::Unknown(code) => write.write_u8(*code)?
         }
-
-        Ok(0)
+    
+        Ok(())
 
     }
 
-    fn decode_length(_config: &Self::Config, _id: u8) -> ElementLength {
-        ElementLength::ZERO
-    }
+    fn read_inner(read: &mut dyn Read, bf: Option<&Blowfish>) -> io::Result<Self> {
 
-    fn decode(read: &mut dyn Read, _len: usize, config: &Self::Config, _id: u8) -> io::Result<Self> {
-        
         let error = match read.read_u8()? {
             1 => {
                 
                 let success = 
-                if let LoginResponseEncryption::Encrypted(bf) = config {
-                    decode_login_success(BlowfishReader::new(read, &bf))?
+                if let Some(bf) = bf {
+                    read_login_success(&mut BlowfishReader::new(read, bf))?
                 } else {
-                    decode_login_success(read)?
+                    read_login_success(read)?
                 };
 
                 return Ok(LoginResponse::Success(success));
@@ -360,9 +330,34 @@ impl Element for LoginResponse {
 
 }
 
+/// Login response without decryption capability for login success.
+impl Codec<()> for LoginResponse {
+
+    fn write(&self, write: &mut dyn Write, _config: &()) -> io::Result<()> {
+        Self::write_inner(self, write, None)
+    }
+
+    fn read(read: &mut dyn Read, _config: &()) -> io::Result<Self> {
+        Self::read_inner(read, None)
+    }
+
+}
+
+impl Codec<Blowfish> for LoginResponse {
+
+    fn write(&self, write: &mut dyn Write, config: &Blowfish) -> io::Result<()> {
+        Self::write_inner(self, write, Some(config))
+    }
+
+    fn read(read: &mut dyn Read, config: &Blowfish) -> io::Result<Self> {
+        Self::read_inner(read, Some(config))
+    }
+
+}
+
 /// Internal function for encoding login success. It is extracted here
 /// in order to be usable with optional encryption.
-fn encode_login_success<W: Write>(mut write: W, success: &LoginSuccess) -> io::Result<()> {
+fn write_login_success(write: &mut dyn Write, success: &LoginSuccess) -> io::Result<()> {
     write.write_sock_addr_v4(success.addr)?;
     write.write_u32(success.login_key)?;
     if !success.server_message.is_empty() {
@@ -373,7 +368,7 @@ fn encode_login_success<W: Write>(mut write: W, success: &LoginSuccess) -> io::R
 
 /// Internal function for decoding login success. It is extracted here
 /// in order to be usable with optional encryption.
-fn decode_login_success<R: Read>(mut read: R) -> io::Result<LoginSuccess> {
+fn read_login_success(read: &mut dyn Read) -> io::Result<LoginSuccess> {
     Ok(LoginSuccess { 
         addr: read.read_sock_addr_v4()?, 
         login_key: read.read_u32()?, 
@@ -390,11 +385,32 @@ fn decode_login_success<R: Read>(mut read: R) -> io::Result<LoginSuccess> {
 /// that's not expecting any reply, because the client sends a new login request just
 /// after.
 #[derive(Debug, Clone)]
-pub struct ChallengeResponse<T> {
+pub struct ChallengeResponse<D> {
     /// Resolve duration of the challenge.
     pub duration: Duration,
     /// Inner data of the challenge response.
-    pub data: T,
+    pub data: D,
+}
+
+impl<C, D: Codec<C>> Codec<C> for ChallengeResponse<D> {
+
+    fn write(&self, write: &mut dyn Write, config: &C) -> io::Result<()> {
+        write.write_f32(self.duration.as_secs_f32())?;
+        self.data.write(write, config)
+    }
+
+    fn read(read: &mut dyn Read, config: &C) -> io::Result<Self> {
+        Ok(Self { 
+            duration: Duration::from_secs_f32(read.read_f32()?), 
+            data: D::read(read, config)?
+        })
+    }
+
+}
+
+impl<C, D: Codec<C>> SimpleElement_<C> for ChallengeResponse<D> {
+    const ID: u8 = id::CHALLENGE_RESPONSE;
+    const LEN: ElementLength = ElementLength::Variable16;
 }
 
 /// Describe a challenge response for cuckoo cycle challenge type.
@@ -407,38 +423,9 @@ pub struct CuckooCycleResponse {
     pub solution: Vec<u32>,
 }
 
-impl<E: Element> Element for ChallengeResponse<E> {
+impl SimpleCodec for CuckooCycleResponse {
 
-    type Config = E::Config;
-
-    fn encode_length(&self, _config: &Self::Config) -> ElementLength {
-        ElementLength::Variable16
-    }
-
-    fn encode(&self, write: &mut dyn Write, config: &Self::Config) -> io::Result<u8> {
-        write.write_f32(self.duration.as_secs_f32())?;
-        self.data.encode(write, config)
-    }
-
-    fn decode_length(_config: &Self::Config, _id: u8) -> ElementLength {
-        ElementLength::Variable16
-    }
-
-    fn decode(read: &mut dyn Read, len: usize, config: &Self::Config, id: u8) -> io::Result<Self> {
-        Ok(ChallengeResponse { 
-            duration: Duration::from_secs_f32(read.read_f32()?), 
-            data: E::decode(read, len - 4, config, id)?
-        })
-    }
-
-}
-
-impl SimpleElement for CuckooCycleResponse {
-    
-    const ID: u8 = id::CHALLENGE_RESPONSE;
-    const LEN: ElementLength = ElementLength::ZERO;  // Not used by ChallengeResponse<E>
-
-    fn encode(&self, write: &mut dyn Write) -> io::Result<()> {
+    fn write(&self, write: &mut dyn Write) -> io::Result<()> {
         write.write_blob_variable(&self.key)?;
         for &nonce in &self.solution {
             write.write_u32(nonce)?;
@@ -446,7 +433,7 @@ impl SimpleElement for CuckooCycleResponse {
         Ok(())
     }
 
-    fn decode(read: &mut dyn Read, _len: usize) -> io::Result<Self> {
+    fn read(read: &mut dyn Read) -> io::Result<Self> {
 
         let key = read.read_blob_variable()?;
         let mut solution = Vec::with_capacity(42);

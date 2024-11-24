@@ -21,6 +21,7 @@
 //! 
 //! See the [`app`] module for detailed descriptions of applications.
 
+pub mod codec;
 pub mod element;
 
 pub mod seq;
