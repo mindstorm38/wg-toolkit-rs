@@ -392,7 +392,7 @@ pub struct ChallengeResponse<D> {
     pub data: D,
 }
 
-impl<C, D: Codec<C>> Codec<C> for ChallengeResponse<D> {
+impl<D: Codec<C>, C> Codec<C> for ChallengeResponse<D> {
 
     fn write(&self, write: &mut dyn Write, config: &C) -> io::Result<()> {
         write.write_f32(self.duration.as_secs_f32())?;
@@ -408,7 +408,7 @@ impl<C, D: Codec<C>> Codec<C> for ChallengeResponse<D> {
 
 }
 
-impl<C, D: Codec<C>> SimpleElement_<C> for ChallengeResponse<D> {
+impl<D: Codec<C>, C> SimpleElement_<C> for ChallengeResponse<D> {
     const ID: u8 = id::CHALLENGE_RESPONSE;
     const LEN: ElementLength = ElementLength::Variable16;
 }

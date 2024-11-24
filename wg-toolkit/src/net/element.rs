@@ -75,131 +75,6 @@ impl<E: SimpleElement_<C>, C> Element_<C> for E {
 
 }
 
-/*
-/// A trait to be implemented on a structure that can be interpreted as
-/// bundle's elements. Elements are slices of data in a bundle of packets. 
-/// If a bundle contains multiple elements they are written contiguously.
-/// 
-/// Note that elements doesn't need to specify their length because they
-/// could be used for replies to requests, if you want to use the element
-/// as a top element (which mean that it provides a way to know its length
-/// in the bundle), implement the [`TopElement`] trait and specify its type
-/// of length.
-/// 
-/// You must provide a configuration type that will be given to encode
-/// and decode functions.
-pub trait Element: Sized {
-
-    /// Type of the element's config that is being encoded and decoded.
-    type Config;
-
-    /// Get the length to use when encoding the element, this can return any value for 
-    /// non-top-elements (replies), like [`ElementLength::ZERO`].
-    fn encode_length(&self, config: &Self::Config) -> ElementLength;
-
-    /// Encode the element with the given writer and the given configuration. On success
-    /// this function must return the element's numeric ID that will be used to identify
-    /// it, note that this value is ignored for non-top-elements (in replies).
-    fn encode(&self, write: &mut dyn Write, config: &Self::Config) -> io::Result<u8>;
-
-    /// Get the length to use when decoding the element, given the id, this can return 
-    /// any value for non-top-elements (replies), like [`ElementLength::ZERO`].
-    fn decode_length(config: &Self::Config, id: u8) -> ElementLength;
-
-    /// Decode the element from the given reader and the given configuration. The id the
-    /// element is being decoded for is also given. This ID should be ignored for
-    /// non-top-elements (in replies).
-    fn decode(read: &mut dyn Read, len: usize, config: &Self::Config, id: u8) -> io::Result<Self>;
-
-}
-
-/// This trait provides an easier implementation of [`Element`] without config value as
-/// opposed to regular elements, therefore both traits cannot be implemented at the same 
-/// time.
-pub trait SimpleElement: Sized {
-
-    /// The numeric ID for this element, you can use any value if this element is not
-    /// made to be a top element.
-    const ID: u8;
-
-    /// The type of length that prefixes the element's content and describe how much 
-    /// space is taken by the element, this value can be left undef for non-top-elements.
-    const LEN: ElementLength;
-
-    /// Encode the element with the given writer.
-    fn encode(&self, write: &mut dyn Write) -> io::Result<()>;
-
-    /// Decode the element from the given reader.
-    /// 
-    /// The total length that is available in the reader is also given. **Note
-    /// that** the given length will be equal to zero if the element's length
-    /// is set to [`ElementLength::Undefined`] (relevant for top elements).
-    fn decode(read: &mut dyn Read, len: usize) -> io::Result<Self>;
-
-}
-
-impl<E: SimpleElement> Element for E {
-
-    type Config = ();
-
-    #[inline]
-    fn encode_length(&self, _config: &Self::Config) -> ElementLength {
-        Self::LEN
-    }
-    
-    #[inline]
-    fn encode(&self, write: &mut dyn Write, _config: &Self::Config) -> io::Result<u8> {
-        SimpleElement::encode(self, write).map(|()| Self::ID)
-    }
-
-    #[inline]
-    fn decode_length(_config: &Self::Config, _id: u8) -> ElementLength {
-        Self::LEN
-    }
-
-    #[inline]
-    fn decode(read: &mut dyn Read, len: usize, _config: &Self::Config, _id: u8) -> io::Result<Self> {
-        // FIXME: Remove for now, because in case of reply
-        // debug_assert_eq!(id, Self::ID);
-        SimpleElement::decode(read, len)
-    }
-
-}
-
-/// A trait even simple than [`SimpleElement`] that provides a default 
-pub trait EmptyElement: Default {
-
-    /// The numeric ID for this element, you can use any value if this element is not
-    /// made to be a top element.
-    const ID: u8;
-
-    /// The type of length that prefixes the element's content and describe how much 
-    /// space is taken by the element, this value can be left undef for non-top-elements.
-    const LEN: ElementLength;
-
-}
-
-impl<E: EmptyElement> SimpleElement for E {
-
-    const ID: u8 = <E as EmptyElement>::ID;
-    const LEN: ElementLength = <E as EmptyElement>::LEN;
-
-    fn encode(&self, _write: &mut dyn Write) -> io::Result<()> {
-        Ok(())
-    }
-
-    fn decode(_read: &mut dyn Read, _len: usize) -> io::Result<Self> {
-        Ok(Self::default())
-    }
-    
-}
-
-/// Blank implementation for (), should not be used as a top-element because it's length
-/// is zero and it's numeric id is set to 0x00.
-impl EmptyElement for () {
-    const ID: u8 = 0x00;
-    const LEN: ElementLength = ElementLength::ZERO;
-}*/
 
 /// Type of length used by a specific message codec.
 /// This describes how the length of an element should be encoded in the packet.
@@ -291,6 +166,7 @@ impl ElementLength {
 
 }
 
+
 /// A wrapper for a reply element, with the request ID and the underlying element, use
 /// the empty element `()` as element in order to just read the request id.
 #[derive(Debug)]
@@ -330,35 +206,6 @@ impl<D: Codec<C>, C> SimpleElement_<C> for Reply<D> {
     const ID: u8 = REPLY_ID;
     const LEN: ElementLength = ElementLength::Variable32;
 }
-
-// impl<E: Element> Element for Reply<E> {
-
-//     type Config = E::Config;
-
-//     fn encode_length(&self, _config: &Self::Config) -> ElementLength {
-//         ElementLength::Variable32
-//     }
-
-//     fn encode(&self, write: &mut dyn Write, config: &Self::Config) -> io::Result<u8> {
-//         write.write_u32(self.request_id)?;
-//         self.element.encode(write, config)?;
-//         Ok(REPLY_ID)
-//     }
-
-//     fn decode_length(_config: &Self::Config, _id: u8) -> ElementLength {
-//         ElementLength::Variable32
-//     }
-
-//     fn decode(read: &mut dyn Read, len: usize, config: &Self::Config, id: u8) -> io::Result<Self> {
-//         // FIXME: Read same comment in impl of SimpleElement::decode
-//         // debug_assert_eq!(id, REPLY_ID);
-//         Ok(Self {
-//             request_id: read.read_u32()?,
-//             element: E::decode(read, len - 4, config, id)?,
-//         })
-//     }
-
-// }
 
 
 /// An element of fixed sized that just buffer the data.

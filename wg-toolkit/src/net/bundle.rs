@@ -454,8 +454,7 @@ impl<E> BundleElement<E> {
     /// Map this read element's type into another one with the given 
     /// closure.
     pub fn map<U, F: FnOnce(E) -> U>(self, f: F) -> BundleElement<U> {
-        BundleElement { 
-            // id: self.id, 
+        BundleElement {
             element: f(self.element), 
             request_id: self.request_id
         }
