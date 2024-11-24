@@ -333,7 +333,7 @@ impl Inner {
         
         let login;
         if let Some(encryption_key) = self.encryption_key.as_deref() {
-            login = elt.read::<_, LoginRequest>(encryption_key)?;
+            login = elt.read::<LoginRequest, _>(encryption_key)?;
         } else {
             login = elt.read_simple::<LoginRequest>()?;
         }
@@ -351,7 +351,7 @@ impl Inner {
         });
 
         if let Some(encryption_key) = self.real_encryption_key.as_deref() {
-            self.bundle.element_writer().write_request(login.element.clone(), encryption_key, request_id);
+            self.bundle.element_writer().write_request(login.element.clone(), request_id, encryption_key);
         } else {
             self.bundle.element_writer().write_simple_request(login.element.clone(), request_id);
         }
@@ -432,7 +432,7 @@ impl Inner {
             }
             PeerLastRequestKind::Login { blowfish } => {
 
-                let mut login = elt.read::<_, LoginResponse>(&*blowfish)?;
+                let mut login = elt.read::<LoginResponse, _>(&*blowfish)?;
                 
                 if let LoginResponse::Success(success) = &mut login {
 
@@ -461,7 +461,7 @@ impl Inner {
 
                 }
 
-                self.bundle.element_writer().write_reply(login, &*blowfish, request_id);
+                self.bundle.element_writer().write_reply(login, request_id, &*blowfish);
                 
             }
         }

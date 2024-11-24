@@ -51,7 +51,7 @@ pub trait SimpleElement_<C = ()>: Codec<C> {
 
 }
 
-impl<C, E: SimpleElement_<C>> Element_<C> for E {
+impl<E: SimpleElement_<C>, C> Element_<C> for E {
 
     #[inline]
     fn write_length(&self, _config: &C) -> io::Result<ElementLength> {
@@ -310,7 +310,7 @@ impl<D> Reply<D> {
     
 }
 
-impl<C, D: Codec<C>> Codec<C> for Reply<D> {
+impl<D: Codec<C>, C> Codec<C> for Reply<D> {
 
     fn write(&self, write: &mut dyn Write, config: &C) -> io::Result<()> {
         write.write_u32(self.request_id)?;
@@ -326,7 +326,7 @@ impl<C, D: Codec<C>> Codec<C> for Reply<D> {
 
 }
 
-impl<C, D: Codec<C>> SimpleElement_<C> for Reply<D> {
+impl<D: Codec<C>, C> SimpleElement_<C> for Reply<D> {
     const ID: u8 = REPLY_ID;
     const LEN: ElementLength = ElementLength::Variable32;
 }

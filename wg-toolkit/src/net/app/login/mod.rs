@@ -185,7 +185,7 @@ impl App {
 
         let login;
         if let Some(encryption_key) = self.encryption_key.as_deref() {
-            login = elt.read::<_, LoginRequest>(encryption_key)?;
+            login = elt.read::<LoginRequest, _>(encryption_key)?;
         } else {
             login = elt.read_simple::<LoginRequest>()?;
         }
@@ -333,7 +333,7 @@ impl App {
     fn send_response(&mut self, response: PendingResponse) -> io::Result<()> {
 
         self.bundle.clear();
-        self.bundle.element_writer().write_reply(response.inner, &*response.request.blowfish, response.request.request_id);
+        self.bundle.element_writer().write_reply(response.inner, response.request.request_id, &*response.request.blowfish);
 
         self.protocol.off_channel(response.addr).prepare(&mut self.bundle, false);
         self.socket.send_bundle_without_encryption(&self.bundle, response.addr)?;

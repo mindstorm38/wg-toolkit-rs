@@ -463,16 +463,6 @@ impl<E> BundleElement<E> {
 
 }
 
-// impl<E: Element> From<BundleElement<Reply<E>>> for BundleElement<E> {
-//     fn from(read: BundleElement<Reply<E>>) -> Self {
-//         BundleElement {
-//             // id: REPLY_ID,
-//             element: read.element.data,
-//             request_id: read.request_id
-//         }
-//     }
-// }
-
 
 /// The structure used to write elements to a bundle.
 pub struct BundleElementWriter<'a> {
@@ -489,7 +479,7 @@ impl<'a> BundleElementWriter<'a> {
 
     /// Add an element to this bundle.
     #[inline]
-    pub fn write<C, E: Element_<C>>(&mut self, element: E, config: &C) {
+    pub fn write<E: Element_<C>, C>(&mut self, element: E, config: &C) {
         self.write_raw(BundleElement { element, request_id: None }, config)
     }
 
@@ -501,7 +491,7 @@ impl<'a> BundleElementWriter<'a> {
 
     /// Add a request element to this bundle, with a given request ID.
     #[inline]
-    pub fn write_request<C, E: Element_<C>>(&mut self, element: E, config: &C, request_id: u32) {
+    pub fn write_request<E: Element_<C>, C>(&mut self, element: E, request_id: u32, config: &C) {
         self.write_raw(BundleElement { element, request_id: Some(request_id) }, config)
     }
 
@@ -509,7 +499,7 @@ impl<'a> BundleElementWriter<'a> {
     /// Such elements have no config.
     #[inline]
     pub fn write_simple_request<E: Element_<()>>(&mut self, element: E, request_id: u32) {
-        self.write_request(element, &(), request_id)
+        self.write_request(element, request_id, &())
     }
 
     /// Add a reply element to this bundle, for a given request ID.
@@ -518,7 +508,7 @@ impl<'a> BundleElementWriter<'a> {
     /// are always of  a 32-bit variable length and prefixed with the 
     /// request ID.
     #[inline]
-    pub fn write_reply<C, D: Codec<C>>(&mut self, data: D, config: &C, request_id: u32) {
+    pub fn write_reply<D: Codec<C>, C>(&mut self, data: D, request_id: u32, config: &C) {
         self.write(Reply::new(request_id, data), config)
     }
 
@@ -526,12 +516,12 @@ impl<'a> BundleElementWriter<'a> {
     /// Such elements have no config.
     #[inline]
     pub fn write_simple_reply<D: Codec<()>>(&mut self, data: D, request_id: u32) {
-        self.write_reply(data, &(), request_id)
+        self.write_reply(data, request_id, &())
     }
 
     /// Raw method to add an element to this bundle, given an ID, the 
     /// element and its config. With an optional request ID.
-    pub fn write_raw<C, E: Element_<C>>(&mut self, element: BundleElement<E>, config: &C) {
+    pub fn write_raw<E: Element_<C>, C>(&mut self, element: BundleElement<E>, config: &C) {
 
         let elt_len_kind = element.element.write_length(config).unwrap();  // FIXME: NO UNWRAP!!
 
@@ -833,25 +823,25 @@ impl TopElementReader<'_, '_> {
 
     /// Same as `read` but never go to the next element *(this is why this method doesn't take
     /// self by value)*.
-    pub fn read_stable<C, E: Element_<C>>(&mut self, config: &C) -> io::Result<BundleElement<E>> {
+    pub fn read_stable<E: Element_<C>, C>(&mut self, config: &C) -> io::Result<BundleElement<E>> {
         self.0.read_element(config, false)
     }
 
     #[inline]
     pub fn read_simple_stable<E: Element_<()>>(&mut self) -> io::Result<BundleElement<E>> {
-        self.read_stable::<(), E>(&())
+        self.read_stable::<E, ()>(&())
     }
 
     /// Read the element using the given codec. This method take self by value and automatically
     /// go the next element if read is successful, if not successful you will need to call
     /// `Bundle::next_element` again.
-    pub fn read<C, E: Element_<C>>(self, config: &C) -> io::Result<BundleElement<E>> {
+    pub fn read<E: Element_<C>, C>(self, config: &C) -> io::Result<BundleElement<E>> {
         self.0.read_element(config, true)
     }
 
     #[inline]
     pub fn read_simple<E: Element_<()>>(self) -> io::Result<BundleElement<E>> {
-        self.read::<(), E>(&())
+        self.read::<E, ()>(&())
     }
 
 }
@@ -878,7 +868,7 @@ impl ReplyElementReader<'_, '_> {
     /// self by value)*.
     ///
     /// This method doesn't returns the reply element but the final element.
-    pub fn read_stable<C, D: Codec<C>>(&mut self, config: &C) -> io::Result<D> {
+    pub fn read_stable<D: Codec<C>, C>(&mut self, config: &C) -> io::Result<D> {
         let reply = self.0.read_element::<C, Reply<D>>(config, false)?;
         if reply.request_id.is_some() {
             return Err(io::Error::new(io::ErrorKind::InvalidData, "got request id on a reply"));
@@ -888,7 +878,7 @@ impl ReplyElementReader<'_, '_> {
 
     #[inline]
     pub fn read_simple_stable<D: Codec<()>>(&mut self) -> io::Result<D> {
-        self.read_stable::<(), D>(&())
+        self.read_stable::<D, ()>(&())
     }
 
     /// Read the reply element using the given codec. This method take self by value and
@@ -896,7 +886,7 @@ impl ReplyElementReader<'_, '_> {
     /// will need to call `Bundle::next_element` again.
     ///
     /// This method doesn't returns the reply element but the final element.
-    pub fn read<C, D: Codec<C>>(self, config: &C) -> io::Result<D> {
+    pub fn read<D: Codec<C>, C>(self, config: &C) -> io::Result<D> {
         let reply = self.0.read_element::<C, Reply<D>>(config, true)?;
         if reply.request_id.is_some() {
             return Err(io::Error::new(io::ErrorKind::InvalidData, "got request id on a reply"));
@@ -906,7 +896,7 @@ impl ReplyElementReader<'_, '_> {
 
     #[inline]
     pub fn read_simple<D: Codec<()>>(self) -> io::Result<D> {
-        self.read::<(), D>(&())
+        self.read::<D, ()>(&())
     }
 
 }
