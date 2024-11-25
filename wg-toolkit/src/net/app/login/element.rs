@@ -15,7 +15,7 @@ use rsa::{RsaPrivateKey, RsaPublicKey};
 use blowfish::Blowfish;
 
 use crate::net::filter::{RsaWriter, RsaReader, BlowfishWriter, BlowfishReader};
-use crate::net::element::{ElementLength, SimpleElement_};
+use crate::net::element::{ElementLength, SimpleElement};
 use crate::net::codec::{Codec, SimpleCodec};
 use crate::util::io::*;
 
@@ -39,7 +39,7 @@ crate::__struct_simple_codec! {
     }
 }
 
-impl SimpleElement_ for Ping {
+impl SimpleElement for Ping {
     const ID: u8 = id::PING;
     const LEN: ElementLength = ElementLength::Fixed(1);
 }
@@ -153,7 +153,7 @@ fn read_login_request(input: &mut dyn Read, protocol: u32) -> io::Result<LoginRe
     })
 }
 
-impl<C> SimpleElement_<C> for LoginRequest
+impl<C> SimpleElement<C> for LoginRequest
 where LoginRequest: Codec<C> {
     const ID: u8 = id::LOGIN_REQUEST;
     const LEN: ElementLength = ElementLength::Variable16;
@@ -408,7 +408,7 @@ impl<D: Codec<C>, C> Codec<C> for ChallengeResponse<D> {
 
 }
 
-impl<D: Codec<C>, C> SimpleElement_<C> for ChallengeResponse<D> {
+impl<D: Codec<C>, C> SimpleElement<C> for ChallengeResponse<D> {
     const ID: u8 = id::CHALLENGE_RESPONSE;
     const LEN: ElementLength = ElementLength::Variable16;
 }

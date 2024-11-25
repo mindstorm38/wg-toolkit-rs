@@ -5,7 +5,7 @@
 
 use std::io::{self, Read, Write};
 
-use crate::net::element::{ElementLength, Element_, SimpleElement_};
+use crate::net::element::{ElementLength, Element, SimpleElement};
 use crate::net::app::common::entity::Method;
 
 
@@ -14,8 +14,10 @@ pub mod id {
 
     use crate::net::element::ElementIdRange;
 
-    pub const CLIENT_AUTH: u8           = 0x00;
-    pub const CLIENT_SESSION_KEY: u8    = 0x01;
+    pub const LOGIN_KEY: u8             = 0x00;
+    pub const SESSION_KEY: u8           = 0x01;
+    pub const ENABLE_ENTITIES: u8       = 0x0A;
+    pub const DISCONNECT_CLIENT: u8     = 0x0C;
 
     // pub const CELL_ENTITY_METHOD: ElementIdRange = ElementIdRange::new(0x0F, 0x87);
     pub const BASE_ENTITY_METHOD: ElementIdRange = ElementIdRange::new(0x87, 0xFE);
@@ -28,10 +30,10 @@ crate::__struct_simple_codec! {
     /// the server then compares with its internal login keys from past successful
     /// logins on the login app.
     /// 
-    /// This element is usually a request, in such case a [`ServerSessionKey`] must be 
-    /// sent as a reply.
+    /// This element is usually a request, in such case a [`SessionKey`] must be sent as 
+    /// a reply, which is the server session key (not the same as login key).
     #[derive(Debug, Clone)]
-    pub struct ClientAuth {
+    pub struct LoginKey {
         /// The login key that was sent by the login application, part of the  element
         /// [`super::login::LoginSuccess`].
         pub login_key: u32,
@@ -42,8 +44,8 @@ crate::__struct_simple_codec! {
     }
 }
 
-impl SimpleElement_ for ClientAuth {
-    const ID: u8 = id::CLIENT_AUTH;
+impl SimpleElement for LoginKey {
+    const ID: u8 = id::LOGIN_KEY;
     const LEN: ElementLength = ElementLength::Fixed(7);
 }
 
@@ -55,15 +57,43 @@ crate::__struct_simple_codec! {
     /// - Sent by the client on login (and apparently randomly after login) to return 
     ///   the session key that was sent by the server in the initial reply (first case).
     #[derive(Debug, Clone)]
-    pub struct ClientSessionKey {
-        /// The server session key
+    pub struct SessionKey {
+        /// The server session key.
         pub session_key: u32,
     }
 }
 
-impl SimpleElement_ for ClientSessionKey {
-    const ID: u8 = id::CLIENT_SESSION_KEY;
+impl SimpleElement for SessionKey {
+    const ID: u8 = id::SESSION_KEY;
     const LEN: ElementLength = ElementLength::Fixed(4);
+}
+
+
+crate::__struct_simple_codec! {
+    /// This is sent by the client to the base application as an acknowledgment of a
+    /// reset entity request sent to the client.
+    #[derive(Debug, Clone)]
+    pub struct EnableEntities {}
+}
+
+impl SimpleElement for EnableEntities {
+    const ID: u8 = id::ENABLE_ENTITIES;
+    const LEN: ElementLength = ElementLength::ZERO;
+}
+
+
+crate::__struct_simple_codec! {
+    /// This is sent by the client to the base application as an acknowledgment of a
+    /// reset entity request sent to the client.
+    #[derive(Debug, Clone)]
+    pub struct DisconnectClient {
+        pub reason: u8,
+    }
+}
+
+impl SimpleElement for DisconnectClient {
+    const ID: u8 = id::DISCONNECT_CLIENT;
+    const LEN: ElementLength = ElementLength::Fixed(1);
 }
 
 
@@ -75,7 +105,7 @@ pub struct BaseEntityMethod<M: Method> {
     pub inner: M,
 }
 
-impl<M: Method> Element_<()> for BaseEntityMethod<M> {
+impl<M: Method> Element<()> for BaseEntityMethod<M> {
 
     fn write_length(&self, _config: &()) -> io::Result<ElementLength> {
         Ok(ElementLength::Variable16)

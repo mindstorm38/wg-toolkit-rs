@@ -17,7 +17,7 @@ pub const REPLY_ID: u8 = 0xFF;
 /// numerical identifier, this is an alternative to [`Codec`], specifically for elements.
 /// If the element's is simple, then it can instead implements [`Codec`] and be derived
 /// using the simpler trait [`SimpleElement`]. 
-pub trait Element_<C>: Sized {
+pub trait Element<C>: Sized {
 
     /// Provide the configuration of this elements when writing it, possibly depending on
     /// the configuration.
@@ -37,9 +37,9 @@ pub trait Element_<C>: Sized {
 
 }
 
-/// A simpler alternative trait to [`Element_`] for types that already implements the
+/// A simpler alternative trait to [`Element`] for types that already implements the
 /// [`Codec`] trait but with a static numerical identifier and preferred length.
-pub trait SimpleElement_<C = ()>: Codec<C> {
+pub trait SimpleElement<C = ()>: Codec<C> {
 
     /// The numeric ID for this element.
     const ID: u8;
@@ -51,7 +51,7 @@ pub trait SimpleElement_<C = ()>: Codec<C> {
 
 }
 
-impl<E: SimpleElement_<C>, C> Element_<C> for E {
+impl<E: SimpleElement<C>, C> Element<C> for E {
 
     #[inline]
     fn write_length(&self, _config: &C) -> io::Result<ElementLength> {
@@ -202,7 +202,7 @@ impl<D: Codec<C>, C> Codec<C> for Reply<D> {
 
 }
 
-impl<D: Codec<C>, C> SimpleElement_<C> for Reply<D> {
+impl<D: Codec<C>, C> SimpleElement<C> for Reply<D> {
     const ID: u8 = REPLY_ID;
     const LEN: ElementLength = ElementLength::Variable32;
 }
@@ -228,7 +228,7 @@ impl<const ID: u8, const LEN: usize> SimpleCodec for DebugElementFixed<ID, LEN> 
 
 }
 
-impl<const ID: u8, const LEN: usize> SimpleElement_ for DebugElementFixed<ID, LEN> {
+impl<const ID: u8, const LEN: usize> SimpleElement for DebugElementFixed<ID, LEN> {
     const ID: u8 = ID;
     const LEN: ElementLength = ElementLength::Fixed(LEN as u32);
 }
@@ -290,7 +290,7 @@ macro_rules! impl_debug_element_var {
 
         }
 
-        impl<const ID: u8> SimpleElement_ for $ident<ID> {
+        impl<const ID: u8> SimpleElement for $ident<ID> {
             const ID: u8 = ID;
             const LEN: ElementLength = $len;
         }

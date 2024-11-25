@@ -16,14 +16,14 @@ use rand::rngs::OsRng;
 use rand::RngCore;
 
 use crate::net::bundle::{Bundle, NextElementReader, ElementReader};
-use crate::net::element::SimpleElement_;
+use crate::net::element::SimpleElement;
 use crate::net::socket::PacketSocket;
 use crate::net::proto::Protocol;
 
 use super::common::entity::Entity;
 use super::io_invalid_data;
 
-use element::{ClientAuth, ClientSessionKey};
+use element::{LoginKey, SessionKey};
 
 
 /// The base application.
@@ -114,15 +114,15 @@ impl App {
     /// Handle an element read from the given address.
     fn handle_element(&mut self, addr: SocketAddr, reader: ElementReader) -> io::Result<()> {
         match reader.id() {
-            ClientAuth::ID => self.handle_client_auth(addr, reader),
-            ClientSessionKey::ID => self.handle_client_session_key(addr, reader),
+            LoginKey::ID => self.handle_client_auth(addr, reader),
+            SessionKey::ID => self.handle_client_session_key(addr, reader),
             id => Err(io_invalid_data(format_args!("unexpected element #{id}"))),
         }
     }
 
     fn handle_client_auth(&mut self, addr: SocketAddr, reader: ElementReader) -> io::Result<()> {
         
-        let auth = reader.read_simple::<ClientAuth>()?;
+        let auth = reader.read_simple::<LoginKey>()?;
         let request_id = auth.request_id
             .ok_or_else(|| io_invalid_data(format_args!("auth should be a request")))?;
 

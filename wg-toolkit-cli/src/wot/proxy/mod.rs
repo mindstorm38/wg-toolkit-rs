@@ -14,7 +14,7 @@ use flate2::read::ZlibDecoder;
 use blowfish::Blowfish;
 use rsa::{RsaPrivateKey, RsaPublicKey};
 
-use wgtk::net::element::{DebugElementUndefined, DebugElementVariable16, SimpleElement_};
+use wgtk::net::element::{DebugElementUndefined, DebugElementVariable16, SimpleElement};
 use wgtk::net::bundle::{Bundle, NextElementReader, ElementReader};
 
 use wgtk::net::app::{login, base, client, proxy};
@@ -243,9 +243,18 @@ impl BaseThread {
         use base::element::*;
 
         match elt.id() {
-            ClientSessionKey::ID => {
-                let elt = elt.read_simple::<ClientSessionKey>()?;
+            // LoginKey::ID => {}  // This should not be encrypted so we just ignore it!
+            SessionKey::ID => {
+                let elt = elt.read_simple::<SessionKey>()?;
                 info!(%addr, "-> Session key: 0x{:08X}", elt.element.session_key);
+            }
+            EnableEntities::ID => {
+                let _ee = elt.read_simple::<EnableEntities>()?;
+                info!(%addr, "-> Enable entities");
+            }
+            DisconnectClient::ID => {
+                let dc = elt.read_simple::<DisconnectClient>()?;
+                info!(%addr, "-> Disconnect: 0x{:02X}", dc.element.reason);
             }
             id if id::BASE_ENTITY_METHOD.contains(id) => {
 
@@ -341,7 +350,7 @@ impl BaseThread {
             }
             LoggedOff::ID => {
                 let lo = elt.read_simple::<LoggedOff>()?;
-                info!(%addr, "<- Logged off: {lo:?}");
+                info!(%addr, "<- Logged off: 0x{:02X}", lo.element.reason);
             }
             CreateBasePlayerHeader::ID => {
 

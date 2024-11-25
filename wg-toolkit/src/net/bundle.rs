@@ -6,7 +6,7 @@ use std::fmt;
 use tracing::warn;
 
 use super::packet::{self, PacketConfig, PacketLocked, Packet};
-use super::element::{Element_, Reply, REPLY_ID};
+use super::element::{Element, Reply, REPLY_ID};
 use super::codec::Codec;
 
 use crate::util::io::{WgReadExt, WgWriteExt, IoCounter};
@@ -478,26 +478,26 @@ impl<'a> BundleElementWriter<'a> {
 
     /// Add an element to this bundle.
     #[inline]
-    pub fn write<E: Element_<C>, C>(&mut self, element: E, config: &C) {
+    pub fn write<E: Element<C>, C>(&mut self, element: E, config: &C) {
         self.write_raw(BundleElement { element, request_id: None }, config)
     }
 
     /// Add a simple element to this bundle. Such elements have no config.
     #[inline]
-    pub fn write_simple<E: Element_<()>>(&mut self, element: E) {
+    pub fn write_simple<E: Element<()>>(&mut self, element: E) {
         self.write(element, &())
     }
 
     /// Add a request element to this bundle, with a given request ID.
     #[inline]
-    pub fn write_request<E: Element_<C>, C>(&mut self, element: E, request_id: u32, config: &C) {
+    pub fn write_request<E: Element<C>, C>(&mut self, element: E, request_id: u32, config: &C) {
         self.write_raw(BundleElement { element, request_id: Some(request_id) }, config)
     }
 
     /// Add a request element to this bundle, with a given request ID. 
     /// Such elements have no config.
     #[inline]
-    pub fn write_simple_request<E: Element_<()>>(&mut self, element: E, request_id: u32) {
+    pub fn write_simple_request<E: Element<()>>(&mut self, element: E, request_id: u32) {
         self.write_request(element, request_id, &())
     }
 
@@ -520,7 +520,7 @@ impl<'a> BundleElementWriter<'a> {
 
     /// Raw method to add an element to this bundle, given an ID, the 
     /// element and its config. With an optional request ID.
-    pub fn write_raw<E: Element_<C>, C>(&mut self, element: BundleElement<E>, config: &C) {
+    pub fn write_raw<E: Element<C>, C>(&mut self, element: BundleElement<E>, config: &C) {
 
         let elt_len_kind = element.element.write_length(config).unwrap();  // FIXME: NO UNWRAP!!
 
@@ -658,7 +658,7 @@ impl<'a> BundleElementReader<'a> {
 
     /// Try to decode the current element using a given codec. You can choose to go
     /// to the next element using the `next` argument.
-    pub fn read<E: Element_<C>, C>(&mut self, config: &C, next: bool) -> io::Result<BundleElement<E>> {
+    pub fn read<E: Element<C>, C>(&mut self, config: &C, next: bool) -> io::Result<BundleElement<E>> {
 
         // Here we ensure that we have some bytes to read the next element from.
         let Some(slice) = self.bundle_reader.ensure() else {
@@ -819,24 +819,24 @@ impl ElementReader<'_, '_> {
 
     /// Same as `read` but never go to the next element *(this is why this method doesn't take
     /// self by value)*.
-    pub fn read_stable<E: Element_<C>, C>(&mut self, config: &C) -> io::Result<BundleElement<E>> {
+    pub fn read_stable<E: Element<C>, C>(&mut self, config: &C) -> io::Result<BundleElement<E>> {
         self.0.read(config, false)
     }
 
     #[inline]
-    pub fn read_simple_stable<E: Element_<()>>(&mut self) -> io::Result<BundleElement<E>> {
+    pub fn read_simple_stable<E: Element<()>>(&mut self) -> io::Result<BundleElement<E>> {
         self.read_stable::<E, ()>(&())
     }
 
     /// Read the element using the given codec. This method take self by value and automatically
     /// go the next element if read is successful, if not successful you will need to call
     /// `Bundle::next_element` again.
-    pub fn read<E: Element_<C>, C>(self, config: &C) -> io::Result<BundleElement<E>> {
+    pub fn read<E: Element<C>, C>(self, config: &C) -> io::Result<BundleElement<E>> {
         self.0.read(config, true)
     }
 
     #[inline]
-    pub fn read_simple<E: Element_<()>>(self) -> io::Result<BundleElement<E>> {
+    pub fn read_simple<E: Element<()>>(self) -> io::Result<BundleElement<E>> {
         self.read::<E, ()>(&())
     }
 

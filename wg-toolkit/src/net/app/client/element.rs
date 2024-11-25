@@ -8,7 +8,7 @@ use glam::Vec3;
 
 use tracing::warn;
 
-use crate::net::element::{DebugElementFixed, DebugElementVariable16, ElementLength, Element_, SimpleElement_};
+use crate::net::element::{DebugElementFixed, DebugElementVariable16, ElementLength, Element, SimpleElement};
 use crate::util::io::{WgReadExt, WgWriteExt};
 use crate::net::codec::SimpleCodec;
 use crate::util::AsciiFmt;
@@ -113,7 +113,7 @@ crate::__struct_simple_codec! {
     }
 }
 
-impl SimpleElement_ for Authenticate {
+impl SimpleElement for Authenticate {
     const ID: u8 = id::AUTHENTICATE;
     const LEN: ElementLength = ElementLength::Fixed(4);
 }
@@ -126,7 +126,7 @@ crate::__struct_simple_codec! {
     }
 }
 
-impl SimpleElement_ for BandwidthNotification {
+impl SimpleElement for BandwidthNotification {
     const ID: u8 = id::BANDWIDTH_NOTIFICATION;
     const LEN: ElementLength = ElementLength::Fixed(4);
 }
@@ -147,7 +147,7 @@ crate::__struct_simple_codec! {
     }
 }
 
-impl SimpleElement_ for UpdateFrequencyNotification {
+impl SimpleElement for UpdateFrequencyNotification {
     const ID: u8 = id::UPDATE_FREQUENCY_NOTIFICATION;
     const LEN: ElementLength = ElementLength::Fixed(7);
 }
@@ -162,7 +162,7 @@ crate::__struct_simple_codec! {
     }
 }
 
-impl SimpleElement_ for SetGameTime {
+impl SimpleElement for SetGameTime {
     const ID: u8 = id::SET_GAME_TIME;
     const LEN: ElementLength = ElementLength::Fixed(4);
 }
@@ -176,7 +176,7 @@ crate::__struct_simple_codec! {
     }
 }
 
-impl SimpleElement_ for ResetEntities {
+impl SimpleElement for ResetEntities {
     const ID: u8 = id::RESET_ENTITIES;
     const LEN: ElementLength = ElementLength::Fixed(1);
 }
@@ -207,7 +207,7 @@ impl SimpleCodec for CreateBasePlayerHeader {
 
 }
 
-impl SimpleElement_ for CreateBasePlayerHeader {
+impl SimpleElement for CreateBasePlayerHeader {
     const ID: u8 = id::CREATE_BASE_PLAYER;
     const LEN: ElementLength = ElementLength::Variable16;
 }
@@ -264,7 +264,7 @@ impl<E: Entity> SimpleCodec for CreateBasePlayer<E> {
 
 }
 
-impl<E: Entity> SimpleElement_ for CreateBasePlayer<E> {
+impl<E: Entity> SimpleElement for CreateBasePlayer<E> {
     const ID: u8 = id::CREATE_BASE_PLAYER;
     const LEN: ElementLength = ElementLength::Variable16;
 }
@@ -296,7 +296,7 @@ crate::__struct_simple_codec! {
     }
 }
 
-impl SimpleElement_ for TickSync {
+impl SimpleElement for TickSync {
     const ID: u8 = id::TICK_SYNC;
     const LEN: ElementLength = ElementLength::Fixed(1);
 }
@@ -317,7 +317,7 @@ crate::__struct_simple_codec! {
     pub struct SelectPlayerEntity {}
 }
 
-impl SimpleElement_ for SelectPlayerEntity {
+impl SimpleElement for SelectPlayerEntity {
     const ID: u8 = id::SELECT_PLAYER_ENTITY;
     const LEN: ElementLength = ElementLength::Fixed(0);
 }
@@ -338,7 +338,7 @@ crate::__struct_simple_codec! {
     }
 }
 
-impl SimpleElement_ for ForcedPosition {
+impl SimpleElement for ForcedPosition {
     const ID: u8 = id::FORCED_POSITION;
     const LEN: ElementLength = ElementLength::Fixed(38);
 }
@@ -391,7 +391,7 @@ impl SimpleCodec for ResourceHeader {
 
 }
 
-impl SimpleElement_ for ResourceHeader {
+impl SimpleElement for ResourceHeader {
     const ID: u8 = id::RESOURCE_HEADER;
     const LEN: ElementLength = ElementLength::Variable16;
 }
@@ -436,7 +436,7 @@ impl SimpleCodec for ResourceFragment {
 
 }
 
-impl SimpleElement_ for ResourceFragment {
+impl SimpleElement for ResourceFragment {
     const ID: u8 = id::RESOURCE_FRAGMENT;
     const LEN: ElementLength = ElementLength::Variable16;
 }
@@ -458,11 +458,11 @@ crate::__struct_simple_codec! {
     /// the player entity.
     #[derive(Debug, Default, Clone, Copy)]
     pub struct LoggedOff {
-        reason: u8,
+        pub reason: u8,
     }
 }
 
-impl SimpleElement_ for LoggedOff {
+impl SimpleElement for LoggedOff {
     const ID: u8 = id::LOGGED_OFF;
     const LEN: ElementLength = ElementLength::Fixed(1);
 }
@@ -486,7 +486,7 @@ pub struct EntityMethod<M: Method> {
     pub inner: M,
 }
 
-impl<M: Method> Element_<()> for EntityMethod<M> {
+impl<M: Method> Element<()> for EntityMethod<M> {
 
     fn write_length(&self, _config: &()) -> io::Result<ElementLength> {
         // TODO: Support for sub-id
