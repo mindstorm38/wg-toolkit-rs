@@ -381,7 +381,7 @@ fn read_login_success(read: &mut dyn Read) -> io::Result<LoginSuccess> {
 }
 
 
-/// Describe a generic challenge response of a given generic type. This is a top element
+/// Describe a generic challenge response of a given generic type. This is an element
 /// that's not expecting any reply, because the client sends a new login request just
 /// after.
 #[derive(Debug, Clone)]

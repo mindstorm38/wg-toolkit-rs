@@ -19,7 +19,7 @@ use rand::RngCore;
 
 use tracing::trace;
 
-use crate::net::bundle::{Bundle, ElementReader, TopElementReader};
+use crate::net::bundle::{Bundle, NextElementReader, ElementReader};
 use crate::util::cuckoo::CuckooContext;
 use crate::net::socket::PacketSocket;
 use crate::net::proto::Protocol;
@@ -129,16 +129,16 @@ impl App {
 
             // Fully read the bundle to determine how to handle that client.
             let mut reader = bundle.element_reader();
-            while let Some(reader) = reader.next_element() {
+            while let Some(reader) = reader.next() {
                 match reader {
-                    ElementReader::Top(reader) => {
-                        if let Err(error) = self.handle_element(addr, reader) {
+                    NextElementReader::Element(elt) => {
+                        if let Err(error) = self.handle_element(elt, addr) {
                             return Event::IoError(IoErrorEvent { error, addr: Some(addr) });
                         }
                     }
-                    ElementReader::Reply(reader) => {
+                    NextElementReader::Reply(reply) => {
                         return Event::IoError(IoErrorEvent {
-                            error: io_invalid_data(format_args!("unexpected reply #{}", reader.request_id())),
+                            error: io_invalid_data(format_args!("unexpected reply #{}", reply.request_id())),
                             addr: Some(addr),
                         });
                     }
@@ -149,17 +149,17 @@ impl App {
     }
 
     /// Handle an element read from the given address.
-    fn handle_element(&mut self, addr: SocketAddr, reader: TopElementReader) -> io::Result<()> {
-        match reader.id() {
-            element::id::PING => self.handle_ping(addr, reader),
-            element::id::LOGIN_REQUEST => self.handle_login_request(addr, reader),
-            element::id::CHALLENGE_RESPONSE => self.handle_challenge_response(addr, reader),
+    fn handle_element(&mut self, elt: ElementReader, addr: SocketAddr) -> io::Result<()> {
+        match elt.id() {
+            element::id::PING => self.handle_ping(elt, addr),
+            element::id::LOGIN_REQUEST => self.handle_login_request(elt, addr),
+            element::id::CHALLENGE_RESPONSE => self.handle_challenge_response(elt, addr),
             id => Err(io_invalid_data(format_args!("unexpected element #{id}"))),
         }
     }
 
     /// Handle a ping request to the login node, we answer as fast as possible.
-    fn handle_ping(&mut self, addr: SocketAddr, elt: TopElementReader) -> io::Result<()> {
+    fn handle_ping(&mut self, elt: ElementReader, addr: SocketAddr) -> io::Result<()> {
 
         let ping = elt.read_simple::<Ping>()?;
         let request_id = ping.request_id
@@ -181,7 +181,7 @@ impl App {
     }
 
     /// Handle a login request to the login node.
-    fn handle_login_request(&mut self, addr: SocketAddr, elt: TopElementReader) -> io::Result<()> {
+    fn handle_login_request(&mut self, elt: ElementReader, addr: SocketAddr) -> io::Result<()> {
 
         let login;
         if let Some(encryption_key) = self.encryption_key.as_deref() {
@@ -211,7 +211,7 @@ impl App {
 
     }
 
-    fn handle_challenge_response(&mut self, addr: SocketAddr, elt: TopElementReader) -> io::Result<()> {
+    fn handle_challenge_response(&mut self, elt: ElementReader, addr: SocketAddr) -> io::Result<()> {
 
         let Some(pending_challenge) = self.pending_challenges.remove(&addr) else {
             return Err(io_invalid_data(format_args!("unexpected challenge")));

@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::io;
 
-use crate::net::bundle::{Bundle, ElementReader, TopElementReader};
+use crate::net::bundle::{Bundle, ElementReader, NextElementReader, ReplyReader};
 use crate::net::socket::PacketSocket;
 use crate::net::proto::Protocol;
 
@@ -53,15 +53,15 @@ impl App {
 
         while let Some(bundle) = channel.next_bundle() {
             let mut reader = bundle.element_reader();
-            while let Some(elt) = reader.next_element() {
+            while let Some(elt) = reader.next() {
                 match elt {
-                    ElementReader::Top(elt) => {
-                        handler.handle_element(Peer {
+                    NextElementReader::Element(elt) => {
+                        handler.handle_element(elt, Peer {
                             internal: &mut *peer,
                             bundle: &mut self.bundle,
-                        }, elt)?;
+                        })?;
                     }
-                    ElementReader::Reply(_elt) => {
+                    NextElementReader::Reply(_reply) => {
 
                     }
                 }
@@ -78,9 +78,9 @@ impl App {
 pub trait Handler {
 
     /// Handle an incoming top element from the given peer.
-    fn handle_element(&mut self, peer: Peer, elt: TopElementReader) -> io::Result<()>;
+    fn handle_element(&mut self, elt: ElementReader, peer: Peer) -> io::Result<()>;
 
-    fn handle_reply(&mut self, peer: Peer);
+    fn handle_reply(&mut self, reply: ReplyReader, peer: Peer) -> io::Result<()>;
 
 }
 

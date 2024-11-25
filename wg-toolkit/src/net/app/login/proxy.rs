@@ -10,7 +10,7 @@ use blowfish::Blowfish;
 
 use tracing::{trace, trace_span};
 
-use crate::net::bundle::{Bundle, ElementReader, ReplyElementReader, TopElementReader};
+use crate::net::bundle::{Bundle, NextElementReader, ReplyReader, ElementReader};
 use crate::net::app::login::element::{ChallengeResponse, CuckooCycleResponse};
 use crate::net::app::proxy::{UNSPECIFIED_ADDR, RECV_TIMEOUT};
 use crate::net::socket::PacketSocket;
@@ -279,12 +279,12 @@ impl Inner {
         self.bundle.clear();
 
         let mut reader = bundle.element_reader();
-        while let Some(reader) = reader.next_element() {
+        while let Some(reader) = reader.next() {
             match reader {
-                ElementReader::Top(reader) => 
-                    self.handle_out_element(reader, peer)?,
-                ElementReader::Reply(reader) => 
-                    return Err(io_invalid_data(format_args!("unexpected reply #{}", reader.request_id()))),
+                NextElementReader::Element(elt) => 
+                    self.handle_out_element(elt, peer)?,
+                NextElementReader::Reply(reply) => 
+                    return Err(io_invalid_data(format_args!("unexpected reply #{}", reply.request_id()))),
             }
         }
 
@@ -300,17 +300,17 @@ impl Inner {
 
     }
 
-    fn handle_out_element(&mut self, reader: TopElementReader, peer: &mut Peer) -> io::Result<()> {
-        match reader.id() {
-            element::id::PING => self.handle_out_ping(reader, peer),
-            element::id::LOGIN_REQUEST => self.handle_login_request(reader, peer),
-            element::id::CHALLENGE_RESPONSE => self.handle_challenge_response(reader, peer),
+    fn handle_out_element(&mut self, elt: ElementReader, peer: &mut Peer) -> io::Result<()> {
+        match elt.id() {
+            element::id::PING => self.handle_out_ping(elt, peer),
+            element::id::LOGIN_REQUEST => self.handle_login_request(elt, peer),
+            element::id::CHALLENGE_RESPONSE => self.handle_challenge_response(elt, peer),
             id => Err(io_invalid_data(format_args!("unexpected element #{id}"))),
         }
     }
 
     /// Handle a ping request to the login node, we answer as fast as possible.
-    fn handle_out_ping(&mut self, elt: TopElementReader, peer: &mut Peer) -> io::Result<()> {
+    fn handle_out_ping(&mut self, elt: ElementReader, peer: &mut Peer) -> io::Result<()> {
 
         let ping = elt.read_simple::<Ping>()?;
         let request_id = ping.request_id
@@ -329,7 +329,7 @@ impl Inner {
     }
 
     /// Handle a login request to the login node.
-    fn handle_login_request(&mut self, elt: TopElementReader, peer: &mut Peer) -> io::Result<()> {
+    fn handle_login_request(&mut self, elt: ElementReader, peer: &mut Peer) -> io::Result<()> {
         
         let login;
         if let Some(encryption_key) = self.encryption_key.as_deref() {
@@ -360,7 +360,7 @@ impl Inner {
 
     }
 
-    fn handle_challenge_response(&mut self, elt: TopElementReader, _peer: &mut Peer) -> io::Result<()> {
+    fn handle_challenge_response(&mut self, elt: ElementReader, _peer: &mut Peer) -> io::Result<()> {
         let challenge = elt.read_simple::<ChallengeResponse<CuckooCycleResponse>>()?;
         self.bundle.element_writer().write_simple(challenge.element);
         Ok(())
@@ -384,12 +384,12 @@ impl Inner {
         let mut inherit_prefix = false;
 
         let mut reader = bundle.element_reader();
-        while let Some(reader) = reader.next_element() {
+        while let Some(reader) = reader.next() {
             match reader {
-                ElementReader::Top(reader) => 
-                    return Err(io_invalid_data(format_args!("unexpected element #{}", reader.id()))),
-                ElementReader::Reply(reader) => 
-                    self.handle_in_reply(reader, peer, &mut inherit_prefix)?,
+                NextElementReader::Element(elt) => 
+                    return Err(io_invalid_data(format_args!("unexpected element #{}", elt.id()))),
+                NextElementReader::Reply(reply) => 
+                    self.handle_in_reply(reply, peer, &mut inherit_prefix)?,
             }
         }
 
@@ -408,7 +408,7 @@ impl Inner {
 
     }
 
-    fn handle_in_reply(&mut self, elt: ReplyElementReader, peer: &mut Peer, inherit_prefix: &mut bool) -> io::Result<()> {
+    fn handle_in_reply(&mut self, elt: ReplyReader, peer: &mut Peer, inherit_prefix: &mut bool) -> io::Result<()> {
         
         let request_id = elt.request_id();
         if peer.last_request.as_ref().map(|l| l.request_id) != Some(request_id) {

@@ -15,7 +15,7 @@ use blowfish::Blowfish;
 use rsa::{RsaPrivateKey, RsaPublicKey};
 
 use wgtk::net::element::{DebugElementUndefined, DebugElementVariable16, SimpleElement_};
-use wgtk::net::bundle::{Bundle, ElementReader, TopElementReader};
+use wgtk::net::bundle::{Bundle, NextElementReader, ElementReader};
 
 use wgtk::net::app::{login, base, client, proxy};
 use wgtk::net::app::common::entity::Entity;
@@ -200,8 +200,8 @@ impl BaseThread {
                 Event::Bundle(bundle) => {
                     
                     let res = match bundle.direction {
-                        PacketDirection::Out => self.read_out_bundle(bundle.addr, bundle.bundle),
-                        PacketDirection::In => self.read_in_bundle(bundle.addr, bundle.bundle),
+                        PacketDirection::Out => self.read_out_bundle(bundle.bundle, bundle.addr),
+                        PacketDirection::In => self.read_in_bundle(bundle.bundle, bundle.addr),
                     };
 
                     if let Err(e) = res {
@@ -215,20 +215,20 @@ impl BaseThread {
 
     }
 
-    fn read_out_bundle(&mut self, addr: SocketAddr, bundle: Bundle) -> io::Result<()> {
+    fn read_out_bundle(&mut self, bundle: Bundle, addr: SocketAddr) -> io::Result<()> {
 
         let mut reader = bundle.element_reader();
-        while let Some(elt) = reader.next_element() {
+        while let Some(elt) = reader.next() {
             match elt {
-                ElementReader::Top(elt) => {
-                    if !self.read_out_element(addr, elt)? {
+                NextElementReader::Element(elt) => {
+                    if !self.read_out_element(elt, addr)? {
                         break;
                     }
                 }
-                ElementReader::Reply(elt) => {
-                    let request_id = elt.request_id();
-                    let _elt = elt.read_simple::<()>()?;
-                    warn!(%addr, "-> Reply element #{request_id}");
+                NextElementReader::Reply(reply) => {
+                    let request_id = reply.request_id();
+                    let _elt = reply.read_simple::<()>()?;
+                    warn!(%addr, "-> Reply #{request_id}");
                     break;
                 }
             }
@@ -238,7 +238,7 @@ impl BaseThread {
 
     }
 
-    fn read_out_element(&mut self, addr: SocketAddr, elt: TopElementReader) -> io::Result<bool> {
+    fn read_out_element(&mut self, elt: ElementReader, addr: SocketAddr) -> io::Result<bool> {
         
         use base::element::*;
 
@@ -264,7 +264,7 @@ impl BaseThread {
             }
             id => {
                 let elt = elt.read_simple::<DebugElementUndefined<0>>()?;
-                error!(%addr, "-> Top element #{id} {:?} (request: {:?})", elt.element, elt.request_id);
+                error!(%addr, "-> Element #{id} {:?} (request: {:?})", elt.element, elt.request_id);
                 return Ok(false);
             }
         }
@@ -273,20 +273,20 @@ impl BaseThread {
 
     }
 
-    fn read_in_bundle(&mut self, addr: SocketAddr, bundle: Bundle) -> io::Result<()> {
+    fn read_in_bundle(&mut self, bundle: Bundle, addr: SocketAddr) -> io::Result<()> {
 
         let mut reader = bundle.element_reader();
-        while let Some(elt) = reader.next_element() {
+        while let Some(elt) = reader.next() {
             match elt {
-                ElementReader::Top(elt) => {
-                    if !self.read_in_element(addr, elt)? {
+                NextElementReader::Element(elt) => {
+                    if !self.read_in_element(elt, addr)? {
                         break;
                     }
                 }
-                ElementReader::Reply(elt) => {
-                    let request_id = elt.request_id();
-                    let _elt = elt.read_simple::<()>()?;
-                    warn!(%addr, "<- Reply element #{request_id}");
+                NextElementReader::Reply(reply) => {
+                    let request_id = reply.request_id();
+                    let _elt = reply.read_simple::<()>()?;
+                    warn!(%addr, "<- Reply #{request_id}");
                     break;
                 }
             }
@@ -296,7 +296,7 @@ impl BaseThread {
 
     }
 
-    fn read_in_element(&mut self, addr: SocketAddr, mut elt: TopElementReader) -> io::Result<bool> {
+    fn read_in_element(&mut self, mut elt: ElementReader, addr: SocketAddr) -> io::Result<bool> {
 
         use client::element::*;
 
@@ -508,7 +508,7 @@ impl BaseThread {
             }
             id => {
                 let elt = elt.read_simple::<DebugElementUndefined<0>>()?;
-                error!(%addr, "<- Top element #{id} {:?} (request: {:?})", elt.element, elt.request_id);
+                error!(%addr, "<- Element #{id} {:?} (request: {:?})", elt.element, elt.request_id);
                 return Ok(false);
             }
         }
@@ -517,7 +517,7 @@ impl BaseThread {
 
     }
 
-    fn read_create_base_player<E>(&mut self, addr: SocketAddr, elt: TopElementReader) -> io::Result<bool>
+    fn read_create_base_player<E>(&mut self, addr: SocketAddr, elt: ElementReader) -> io::Result<bool>
     where E: Entity + fmt::Debug,
     {
 
@@ -535,7 +535,7 @@ impl BaseThread {
 
     }
 
-    fn read_entity_method<E>(&mut self, addr: SocketAddr, entity_id: u32, elt: TopElementReader) -> io::Result<bool>
+    fn read_entity_method<E>(&mut self, addr: SocketAddr, entity_id: u32, elt: ElementReader) -> io::Result<bool>
     where 
         E: Entity,
         E::ClientMethod: fmt::Debug,
@@ -546,7 +546,7 @@ impl BaseThread {
         Ok(true)
     }
 
-    fn read_base_entity_method<E>(&mut self, addr: SocketAddr, entity_id: u32, elt: TopElementReader) -> io::Result<bool>
+    fn read_base_entity_method<E>(&mut self, addr: SocketAddr, entity_id: u32, elt: ElementReader) -> io::Result<bool>
     where 
         E: Entity,
         E::BaseMethod: fmt::Debug,
@@ -562,9 +562,9 @@ impl BaseThread {
 /// Represent an entity type and its associated static functions.
 #[derive(Debug)]
 struct EntityType {
-    create_base_player: fn(&mut BaseThread, SocketAddr, TopElementReader) -> io::Result<bool>,
-    entity_method: fn(&mut BaseThread, SocketAddr, u32, TopElementReader) -> io::Result<bool>,
-    base_entity_method: fn(&mut BaseThread, SocketAddr, u32, TopElementReader) -> io::Result<bool>,
+    create_base_player: fn(&mut BaseThread, SocketAddr, ElementReader) -> io::Result<bool>,
+    entity_method: fn(&mut BaseThread, SocketAddr, u32, ElementReader) -> io::Result<bool>,
+    base_entity_method: fn(&mut BaseThread, SocketAddr, u32, ElementReader) -> io::Result<bool>,
 }
 
 impl EntityType {

@@ -15,7 +15,7 @@ use blowfish::Blowfish;
 use rand::rngs::OsRng;
 use rand::RngCore;
 
-use crate::net::bundle::{Bundle, ElementReader, TopElementReader};
+use crate::net::bundle::{Bundle, NextElementReader, ElementReader};
 use crate::net::element::SimpleElement_;
 use crate::net::socket::PacketSocket;
 use crate::net::proto::Protocol;
@@ -92,16 +92,16 @@ impl App {
 
             // Fully read the bundle to determine how to handle that client.
             let mut reader = bundle.element_reader();
-            while let Some(reader) = reader.next_element() {
+            while let Some(reader) = reader.next() {
                 match reader {
-                    ElementReader::Top(reader) => {
-                        if let Err(error) = self.handle_element(addr, reader) {
+                    NextElementReader::Element(elt) => {
+                        if let Err(error) = self.handle_element(addr, elt) {
                             return Event::IoError(IoErrorEvent { error, addr: Some(addr) });
                         }
                     }
-                    ElementReader::Reply(reader) => {
+                    NextElementReader::Reply(reply) => {
                         return Event::IoError(IoErrorEvent {
-                            error: io_invalid_data(format_args!("unexpected reply #{}", reader.request_id())),
+                            error: io_invalid_data(format_args!("unexpected reply #{}", reply.request_id())),
                             addr: Some(addr),
                         });
                     }
@@ -112,7 +112,7 @@ impl App {
     }
 
     /// Handle an element read from the given address.
-    fn handle_element(&mut self, addr: SocketAddr, reader: TopElementReader) -> io::Result<()> {
+    fn handle_element(&mut self, addr: SocketAddr, reader: ElementReader) -> io::Result<()> {
         match reader.id() {
             ClientAuth::ID => self.handle_client_auth(addr, reader),
             ClientSessionKey::ID => self.handle_client_session_key(addr, reader),
@@ -120,7 +120,7 @@ impl App {
         }
     }
 
-    fn handle_client_auth(&mut self, addr: SocketAddr, reader: TopElementReader) -> io::Result<()> {
+    fn handle_client_auth(&mut self, addr: SocketAddr, reader: ElementReader) -> io::Result<()> {
         
         let auth = reader.read_simple::<ClientAuth>()?;
         let request_id = auth.request_id
@@ -138,7 +138,7 @@ impl App {
 
     }
 
-    fn handle_client_session_key(&mut self, addr: SocketAddr, reader: TopElementReader) -> io::Result<()> {
+    fn handle_client_session_key(&mut self, addr: SocketAddr, reader: ElementReader) -> io::Result<()> {
         let _ = (addr, reader);
         Ok(())
     }

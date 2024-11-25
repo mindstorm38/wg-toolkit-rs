@@ -41,12 +41,12 @@ pub trait Element_<C>: Sized {
 /// [`Codec`] trait but with a static numerical identifier and preferred length.
 pub trait SimpleElement_<C = ()>: Codec<C> {
 
-    /// The numeric ID for this element, you can use any value if this element is not
-    /// made to be a top element.
+    /// The numeric ID for this element.
     const ID: u8;
 
-    /// The type of length that prefixes the element's content and describe how much 
-    /// space is taken by the element.
+    /// The preferred length to be prefixed before the element, if more length is actually
+    /// taken then the element will be *oversized* and will induce some overhead to encode
+    /// the real length!
     const LEN: ElementLength;
 
 }

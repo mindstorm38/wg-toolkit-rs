@@ -628,27 +628,6 @@ impl<'a> BundleElementReader<'a> {
         
     }
 
-    /// Read the current element, return a guard that you should use a codec to decode
-    /// the element depending on its type with. *This is a simpler version to use over
-    /// standard `read_element` method because it handle reply elements for you.*
-    pub fn next_element(&mut self) -> Option<ElementReader<'_, 'a>> {
-        match self.next_id() {
-            Some(REPLY_ID) => {
-                match self.read_element::<(), Reply<()>>(&(), false) {
-                    Ok(elt) => {
-                        debug_assert!(elt.request_id.is_none(), "replies should not be request at the same time");
-                        Some(ElementReader::Reply(ReplyElementReader(self, elt.element.request_id)))
-                    }
-                    Err(_) => None
-                }
-            }
-            Some(id) => {
-                Some(ElementReader::Top(TopElementReader(self, id)))
-            }
-            None => None
-        }
-    }   
-
     /// Read the current element's identifier. This call return the same result until
     /// you explicitly choose to go to the next element while reading the element. This
     /// method takes self by mutable reference because it may need to go to the next
@@ -657,9 +636,29 @@ impl<'a> BundleElementReader<'a> {
         self.bundle_reader.ensure().map(|content| content[0])
     }
 
+    /// Read the current element, return a guard that you should use with a 
+    /// the element depending on its type with. *This is a simpler version to use over
+    /// standard `read_element` method because it handle reply elements for you.*
+    pub fn next(&mut self) -> Option<NextElementReader<'_, 'a>> {
+        match self.next_id() {
+            Some(REPLY_ID) => {
+                match self.read::<Reply<()>, ()>(&(), false) {
+                    Ok(elt) => {
+                        Some(NextElementReader::Reply(ReplyReader(self, elt.element.request_id)))
+                    }
+                    Err(_) => None
+                }
+            }
+            Some(id) => {
+                Some(NextElementReader::Element(ElementReader(self, id)))
+            }
+            None => None
+        }
+    }
+
     /// Try to decode the current element using a given codec. You can choose to go
     /// to the next element using the `next` argument.
-    pub fn read_element<C, E: Element_<C>>(&mut self, config: &C, next: bool) -> io::Result<BundleElement<E>> {
+    pub fn read<E: Element_<C>, C>(&mut self, config: &C, next: bool) -> io::Result<BundleElement<E>> {
 
         // Here we ensure that we have some bytes to read the next element from.
         let Some(slice) = self.bundle_reader.ensure() else {
@@ -767,7 +766,6 @@ impl<'a> BundleElementReader<'a> {
         }
 
         Ok(BundleElement {
-            // id: elt_id,
             element,
             request_id: reply_id
         })
@@ -785,34 +783,33 @@ impl fmt::Debug for BundleElementReader<'_> {
     }
 }
 
-/// Bundle element variant iterated from `BundleElementIter`.
-/// This enum provides a better way to read replies using sub codecs.
+/// A handle for reading an element or reply on the [`BundleElementReader`].
 #[derive(Debug)]
-pub enum ElementReader<'reader, 'bundle> {
+pub enum NextElementReader<'reader, 'bundle> {
     /// A top element with a proper ID and a reader.
-    Top(TopElementReader<'reader, 'bundle>),
+    Element(ElementReader<'reader, 'bundle>),
     /// A reply element with request ID and a reader.
-    Reply(ReplyElementReader<'reader, 'bundle>)
+    Reply(ReplyReader<'reader, 'bundle>)
 }
 
-impl ElementReader<'_, '_> {
+impl NextElementReader<'_, '_> {
 
     /// Return `true` if this element is a simple one.
-    pub fn is_simple(&self) -> bool {
-        matches!(self, ElementReader::Top(_))
+    pub fn is_element(&self) -> bool {
+        matches!(self, NextElementReader::Element(_))
     }
 
     /// Return `true` if this element is a reply.
     pub fn is_reply(&self) -> bool {
-        matches!(self, ElementReader::Reply(_))
+        matches!(self, NextElementReader::Reply(_))
     }
 
 }
 
 /// The simple variant of element, provides direct decoding using a codec.
-pub struct TopElementReader<'reader, 'bundle>(&'reader mut BundleElementReader<'bundle>, u8);
+pub struct ElementReader<'reader, 'bundle>(&'reader mut BundleElementReader<'bundle>, u8);
 
-impl TopElementReader<'_, '_> {
+impl ElementReader<'_, '_> {
 
     /// Get the numeric identifier of the element being read.
     #[inline]
@@ -823,7 +820,7 @@ impl TopElementReader<'_, '_> {
     /// Same as `read` but never go to the next element *(this is why this method doesn't take
     /// self by value)*.
     pub fn read_stable<E: Element_<C>, C>(&mut self, config: &C) -> io::Result<BundleElement<E>> {
-        self.0.read_element(config, false)
+        self.0.read(config, false)
     }
 
     #[inline]
@@ -835,7 +832,7 @@ impl TopElementReader<'_, '_> {
     /// go the next element if read is successful, if not successful you will need to call
     /// `Bundle::next_element` again.
     pub fn read<E: Element_<C>, C>(self, config: &C) -> io::Result<BundleElement<E>> {
-        self.0.read_element(config, true)
+        self.0.read(config, true)
     }
 
     #[inline]
@@ -845,17 +842,17 @@ impl TopElementReader<'_, '_> {
 
 }
 
-impl fmt::Debug for TopElementReader<'_, '_> {
+impl fmt::Debug for ElementReader<'_, '_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("TopElementReader").field("id", &self.1).finish()
+        f.debug_struct("ElementReader").field("id", &self.1).finish()
     }
 }
 
 /// The reply variant of element, provides a way to read replies and get `Reply` elements
 /// containing the final element.
-pub struct ReplyElementReader<'reader, 'bundle>(&'reader mut BundleElementReader<'bundle>, u32);
+pub struct ReplyReader<'reader, 'bundle>(&'reader mut BundleElementReader<'bundle>, u32);
 
-impl ReplyElementReader<'_, '_> {
+impl ReplyReader<'_, '_> {
 
     /// Get the request id this reply is for.
     #[inline]
@@ -868,7 +865,7 @@ impl ReplyElementReader<'_, '_> {
     ///
     /// This method doesn't returns the reply element but the final element.
     pub fn read_stable<D: Codec<C>, C>(&mut self, config: &C) -> io::Result<D> {
-        let reply = self.0.read_element::<C, Reply<D>>(config, false)?;
+        let reply = self.0.read::<Reply<D>, C>(config, false)?;
         if reply.request_id.is_some() {
             return Err(io::Error::new(io::ErrorKind::InvalidData, "got request id on a reply"));
         }
@@ -886,7 +883,7 @@ impl ReplyElementReader<'_, '_> {
     ///
     /// This method doesn't returns the reply element but the final element.
     pub fn read<D: Codec<C>, C>(self, config: &C) -> io::Result<D> {
-        let reply = self.0.read_element::<C, Reply<D>>(config, true)?;
+        let reply = self.0.read::<Reply<D>, C>(config, true)?;
         if reply.request_id.is_some() {
             return Err(io::Error::new(io::ErrorKind::InvalidData, "got request id on a reply"));
         }
@@ -900,8 +897,8 @@ impl ReplyElementReader<'_, '_> {
 
 }
 
-impl fmt::Debug for ReplyElementReader<'_, '_> {
+impl fmt::Debug for ReplyReader<'_, '_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ReplyElementReader").field("request_id", &self.1).finish()
+        f.debug_struct("ReplyReader").field("request_id", &self.1).finish()
     }
 }
