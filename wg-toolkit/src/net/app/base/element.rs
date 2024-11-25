@@ -14,10 +14,20 @@ pub mod id {
 
     use crate::net::element::ElementIdRange;
 
-    pub const LOGIN_KEY: u8             = 0x00;
-    pub const SESSION_KEY: u8           = 0x01;
-    pub const ENABLE_ENTITIES: u8       = 0x0A;
-    pub const DISCONNECT_CLIENT: u8     = 0x0C;
+    pub const LOGIN_KEY: u8                     = 0x00;
+    pub const SESSION_KEY: u8                   = 0x01;
+
+    // Just from source code, to check that it's right id:
+    // pub const AVATAR_UPDATE_IMPLICIT: u8        = 0x02;
+    // pub const AVATAR_UPDATE_EXPLICIT: u8        = 0x03;
+    // pub const AVATAR_UPDATE_WARD_IMPLICIT: u8   = 0x04;
+    // pub const AVATAR_UPDATE_WARD_EXPLICIT: u8   = 0x05;
+    // pub const ACK_PHYSICS_CORRECTION: u8        = 0x06;
+    // pub const ACK_WARD_PHYSICS_CORRECTION: u8   = 0x07;
+    // pub const REQUEST_ENTITY_UPDATE: u8         = 0x08;
+
+    pub const ENABLE_ENTITIES: u8               = 0x0A;
+    pub const DISCONNECT_CLIENT: u8             = 0x0C;
 
     pub const CELL_ENTITY_METHOD: ElementIdRange = ElementIdRange::new(0x0F, 0x86);
     pub const BASE_ENTITY_METHOD: ElementIdRange = ElementIdRange::new(0x87, 0xFE);
