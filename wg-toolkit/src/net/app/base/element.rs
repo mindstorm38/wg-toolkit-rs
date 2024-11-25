@@ -19,7 +19,7 @@ pub mod id {
     pub const ENABLE_ENTITIES: u8       = 0x0A;
     pub const DISCONNECT_CLIENT: u8     = 0x0C;
 
-    // pub const CELL_ENTITY_METHOD: ElementIdRange = ElementIdRange::new(0x0F, 0x87);
+    pub const CELL_ENTITY_METHOD: ElementIdRange = ElementIdRange::new(0x0F, 0x86);
     pub const BASE_ENTITY_METHOD: ElementIdRange = ElementIdRange::new(0x87, 0xFE);
 
 }
