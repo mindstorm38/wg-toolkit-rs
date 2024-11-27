@@ -30,15 +30,16 @@ serde-pickle.workspace = true
 clap = { version = "4.5", features = ["derive", "wrap_help"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-dokan = "0.3.1"
-dokan-sys = "0.3.1"
-winapi = "0.3.9"
-widestring = "0.4.3"
+dokan = { version = "0.3.1", optional = true }
+dokan-sys = { version = "0.3.1", optional = true }
+winapi = { version = "0.3.9", optional = true }
+widestring = { version = "0.4.3", optional = true }
 
 [features]
-default = ["bootstrap", "wot"]
+default = ["bootstrap", "wot", "dokan"]
 bootstrap = []
 wot = []
+dokan = ["dep:dokan", "dep:dokan-sys", "dep:winapi", "dep:widestring"]
 
 [[bin]]
 name = "wgtk"

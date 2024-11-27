@@ -3,8 +3,8 @@
 pub mod package;
 
 use core::fmt;
-use std::io::{Read, Seek, SeekFrom};
 use std::collections::{BTreeMap, HashSet};
+use std::io::{Read, Seek, SeekFrom};
 use std::fs::{File, ReadDir};
 use std::sync::{Arc, Mutex};
 use std::path::PathBuf;
@@ -110,11 +110,13 @@ impl ResFilesystem {
 
         let native_file_path = self.shared.dir_path.join(node_path);
         match native_file_path.metadata() {
-            Ok(metadata) => return Ok(ResStat {
-                is_dir: metadata.is_dir(),
-                size: if metadata.is_dir() { 0 } else { metadata.len() },
-            }),
-            Err(_) => (),
+            Ok(metadata) => {
+                return Ok(ResStat {
+                    is_dir: metadata.is_dir(),
+                    size: if metadata.is_dir() { 0 } else { metadata.len() },
+                });
+            }
+            Err(_) => {}
         }
 
         self.shared.mutable.lock().unwrap().stat(node_path)
@@ -291,7 +293,8 @@ impl SharedMut {
 
         loop {
 
-            if let Some((_, node_info)) = self.node_cache.find_node(node_path) {
+            if let Some((_node_index, node_info)) = self.node_cache.find_node(node_path) {
+                // debug_assert!(node_index < u32::MAX as usize, "too much nodes");
                 return Ok(ResStat {
                     is_dir: node_info.as_dir().is_some(),
                     size: if let Some(file_info) = node_info.as_file() {
@@ -300,6 +303,7 @@ impl SharedMut {
                             .unwrap()
                             .size as u64
                     } else { 0 },
+                    // index: node_index as u64,
                 })
             }
 
@@ -501,7 +505,8 @@ impl Iterator for ResReadDir {
                                         .size as u64
                                 }
                                 NodeInfo::Dir(_) => 0,
-                            }
+                            },
+                            // index: node_index as u64,
                         },
                     }));
 
@@ -561,6 +566,10 @@ impl ResDirEntry {
 pub struct ResStat {
     is_dir: bool,
     size: u64,
+    // /// When the node is "native", we shift-left its index by 32 bit and set all low 32
+    // /// bits to 1, this implies that "packaged" nodes only have 32 bits (minus 1) to be 
+    // /// represented, which is largely enough!
+    // index: u64,
 }
 
 impl ResStat {
@@ -582,6 +591,12 @@ impl ResStat {
     pub fn size(&self) -> u64 {
         self.size
     }
+
+    // /// Debug-purpose file index within this whole filesystem, unique to each file.
+    // #[inline]
+    // pub fn index(&self) -> u64 {
+    //     self.index
+    // }
 
 }
 

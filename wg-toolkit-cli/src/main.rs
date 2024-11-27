@@ -110,6 +110,7 @@ pub enum ResCommand {
     List(ResListArgs),
     #[command(name = "cp")]
     Copy(ResCopyArgs),
+    #[cfg(feature = "dokan")]
     Dokan(ResDokanArgs),
 }
 
