@@ -30,6 +30,11 @@ serde-pickle.workspace = true
 clap = { version = "4.5", features = ["derive", "wrap_help"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
+dokan = "0.3.1"
+dokan-sys = "0.3.1"
+winapi = "0.3.9"
+widestring = "0.4.3"
+
 [features]
 default = ["bootstrap", "wot"]
 bootstrap = []

@@ -110,6 +110,7 @@ pub enum ResCommand {
     List(ResListArgs),
     #[command(name = "cp")]
     Copy(ResCopyArgs),
+    Dokan(ResDokanArgs),
 }
 
 /// Read a file and write its content on the standard output.
@@ -156,6 +157,13 @@ pub struct ResCopyArgs {
     /// is copied onto an existing directory, or if a directory is copied onto a existing 
     /// file, or for many other I/O errors.
     pub dest: PathBuf,
+}
+
+/// Start a Dokan (filesystem in userspace) that will make the virtual resource filesystem
+/// accessible as a regular filesystem to the OS, to later mounted.
+#[derive(Debug, Args)]
+pub struct ResDokanArgs {
+    pub mount_path: String,
 }
 
 /// Run a simple WoT server.

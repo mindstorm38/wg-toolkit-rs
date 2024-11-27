@@ -2,6 +2,7 @@
 
 pub mod package;
 
+use core::fmt;
 use std::io::{Read, Seek, SeekFrom};
 use std::collections::{BTreeMap, HashSet};
 use std::fs::{File, ReadDir};
@@ -182,14 +183,16 @@ impl ResFilesystem {
 
         Ok(ResReadDir {
             dir_path: Arc::from(dir_path),
-            native_read_dir,
-            package_read_dir: dir_index.map(|dir_index| PackageReadDir {
-                shared: Arc::clone(&self.shared),
-                dir_index,
-                native_names: HashSet::new(),
-                remaining_names: Vec::new(),
-                last_children_count: 0,
-                last_children_last_node_index: 0,
+            common: Box::new(CommonReadDir {
+                native_read_dir,
+                package_read_dir: dir_index.map(|dir_index| PackageReadDir {
+                    shared: Arc::clone(&self.shared),
+                    dir_index,
+                    native_names: HashSet::new(),
+                    remaining_names: Vec::new(),
+                    last_children_count: 0,
+                    last_children_last_node_index: 0,
+                }),
             }),
         })
     }
@@ -368,6 +371,11 @@ impl Seek for ResReadFile {
 pub struct ResReadDir {
     /// Directory path that we are listing. It has no trailing separator!
     dir_path: Arc<str>,
+    common: Box<CommonReadDir>,
+}
+
+#[derive(Debug)]
+struct CommonReadDir {
     /// The native read dir result that maybe used for iteration before the package part.
     native_read_dir: Option<ReadDir>,
     /// The package read dir mode, yielded after the native read dir if present.
@@ -408,7 +416,7 @@ impl Iterator for ResReadDir {
 
     fn next(&mut self) -> Option<Self::Item> {
 
-        if let Some(native_read_dir) = &mut self.native_read_dir {
+        if let Some(native_read_dir) = &mut self.common.native_read_dir {
             match native_read_dir.next() {
                 Some(Ok(entry)) => {
                     
@@ -424,7 +432,7 @@ impl Iterator for ResReadDir {
                     };
 
                     let name = Arc::<str>::from(file_name);
-                    if let Some(package_read_dir) = &mut self.package_read_dir {
+                    if let Some(package_read_dir) = &mut self.common.package_read_dir {
                         package_read_dir.native_names.insert(Arc::clone(&name));
                     }
 
@@ -439,11 +447,11 @@ impl Iterator for ResReadDir {
 
                 },
                 Some(Err(e)) => return Some(Err(e)),
-                None => self.native_read_dir = None,
+                None => self.common.native_read_dir = None,
             }
         }
 
-        if let Some(package_read_dir) = &mut self.package_read_dir {
+        if let Some(package_read_dir) = &mut self.common.package_read_dir {
 
             // Then we search the directory iteratively, and loop over if a pending package
             // has been opened.
@@ -579,7 +587,6 @@ impl ResStat {
 
 
 /// The node cache structure.
-#[derive(Debug)]
 struct NodeCache {
     /// Inner file informations tree.
     nodes: Vec<NodeInfo>,
@@ -798,4 +805,15 @@ impl NodeInfo {
         }
     }
 
+}
+
+impl fmt::Debug for NodeCache {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NodeCache")
+            .field("nodes_len", &self.nodes.len())
+            .field("dir_count", &self.dir_count)
+            .field("dir_children_max_count", &self.dir_children_max_count)
+            .field("node_name_max_len", &self.node_name_max_len)
+            .finish()
+    }
 }
