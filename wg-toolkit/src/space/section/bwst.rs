@@ -1,9 +1,10 @@
 use std::io::{Read, Seek, SeekFrom};
 use std::collections::HashMap;
 
-use super::{Section, SectionId};
 use crate::util::io::WgReadExt;
 use crate::util::fnv::fnv1a_64;
+
+use super::{Section, SectionId};
 
 
 /// StringTable section, providing a mapping from strings' FNV hashes to strings.

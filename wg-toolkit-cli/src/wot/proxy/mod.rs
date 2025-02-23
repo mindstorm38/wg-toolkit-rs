@@ -17,7 +17,7 @@ use rsa::{RsaPrivateKey, RsaPublicKey};
 use wgtk::net::element::{DebugElementUndefined, DebugElementVariable16, SimpleElement};
 use wgtk::net::bundle::{Bundle, NextElementReader, ElementReader};
 
-use wgtk::net::app::{login, base, client, proxy};
+use wgtk::net::app::{login_proxy, base, client, proxy};
 use wgtk::net::app::common::entity::Entity;
 use wgtk::net::app::proxy::PacketDirection;
 
@@ -35,7 +35,7 @@ pub fn run(
     real_encryption_key: Option<Arc<RsaPublicKey>>,
 ) -> CliResult<()> {
 
-    let mut login_app = login::proxy::App::new(login_app_addr.into(), real_login_app_addr.into(), real_encryption_key)
+    let mut login_app = login_proxy::App::new(login_app_addr.into(), real_login_app_addr.into(), real_encryption_key)
         .map_err(|e| format!("Failed to bind login app: {e}"))?;
     
     if let Some(encryption_key) = encryption_key {
@@ -83,7 +83,7 @@ pub fn run(
 
 #[derive(Debug)]
 struct LoginThread {
-    app: login::proxy::App,
+    app: login_proxy::App,
     shared: Arc<Shared>,
 }
 
@@ -127,7 +127,7 @@ impl LoginThread {
     #[instrument(name = "login", skip_all)]
     fn run(mut self) {
 
-        use login::proxy::Event;
+        use login_proxy::Event;
 
         info!("Running on: {}", self.app.addr().unwrap());
         

@@ -1,3 +1,5 @@
+//! The login proxy application for intercepting and forwarding login requests.
+
 use std::collections::{hash_map, HashMap, VecDeque};
 use std::net::{SocketAddr, SocketAddrV4};
 use std::time::{Duration, Instant};
@@ -19,14 +21,16 @@ use crate::net::packet::Packet;
 
 use crate::util::thread::{ThreadPoll, ThreadPollHandle};
 
-use super::element::{self, LoginError, LoginRequest, LoginResponse, Ping};
+use super::login::element::{self, LoginError, LoginRequest, LoginResponse, Ping};
 use super::io_invalid_data;
 
 
 const DEAD_PEER_TIMEOUT: Duration = Duration::from_secs(10);
 
 
-/// The login application.
+/// A special login application that acts as a proxy that forwards login request to a
+/// real login server by re-encrypting the requests in order to intercept in clear the
+/// requests.
 #[derive(Debug)]
 pub struct App {
     /// Internal state.

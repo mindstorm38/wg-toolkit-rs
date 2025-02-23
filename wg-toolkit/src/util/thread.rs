@@ -1,6 +1,6 @@
 //! Thread polling utilities.
 
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::thread;
 
@@ -61,9 +61,9 @@ impl<T: Send + 'static> ThreadPoll<T> {
         F: FnMut() -> Option<T>,
         F: Send + 'static,
     {
-        let alive = Arc::new(AtomicBool::new(true));
+        let alive = Arc::new(());
         let thread_alive = Arc::clone(&alive);
-        self.spawn(move || if thread_alive.load(Ordering::Relaxed) {
+        self.spawn(move || if Arc::strong_count(&thread_alive) > 1 {
             producer()
         } else {
             None
@@ -85,12 +85,8 @@ impl<T: Send + 'static> ThreadPoll<T> {
 
 }
 
-/// Represent a handle to a thread poll worker, when all handles to 
+/// Represent a handle to a thread poll worker, when all (cloned) handles are dropped
+/// then the producer will be stopped on the next iteration.
 #[derive(Debug, Clone)]
-pub struct ThreadPollHandle(Arc<AtomicBool>);
-
-impl Drop for ThreadPollHandle {
-    fn drop(&mut self) {
-        self.0.store(false, Ordering::Relaxed);
-    }
-}
+#[allow(unused)]
+pub struct ThreadPollHandle(Arc<()>);

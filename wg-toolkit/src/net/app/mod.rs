@@ -18,6 +18,7 @@
 pub mod proxy;
 
 pub mod login;
+pub mod login_proxy;
 
 pub mod common;
 pub mod client;

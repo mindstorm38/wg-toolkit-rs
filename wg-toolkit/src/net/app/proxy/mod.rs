@@ -12,10 +12,10 @@ use blowfish::Blowfish;
 
 use tracing::{trace, trace_span};
 
-use crate::net::packet::Packet;
 use crate::util::thread::ThreadPoll;
 use crate::net::proto::{ChannelIndex, Protocol};
 use crate::net::socket::{PacketSocket, decrypt_packet};
+use crate::net::packet::Packet;
 use crate::net::bundle::Bundle;
 use super::io_invalid_data;
 

@@ -2,12 +2,12 @@
 
 pub mod element;
 
-use core::fmt;
 use std::collections::{HashMap, VecDeque};
 use std::marker::PhantomData;
 use std::net::SocketAddr;
 use std::num::Wrapping;
 use std::sync::Arc;
+use std::fmt;
 use std::io;
 
 use blowfish::Blowfish;

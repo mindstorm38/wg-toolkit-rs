@@ -2,7 +2,6 @@
 //! to the base application afterward.
 
 pub mod element;
-pub mod proxy;
 
 use std::collections::{HashMap, VecDeque};
 use std::net::{SocketAddr, SocketAddrV4};

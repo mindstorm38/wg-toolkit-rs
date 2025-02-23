@@ -1,7 +1,8 @@
 use std::io::{Read, Seek};
 
-use super::{Section, SectionId};
 use crate::util::io::WgReadExt;
+
+use super::{Section, SectionId};
 
 
 /// CompiledSpaceSettings section.
