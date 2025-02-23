@@ -501,7 +501,7 @@ wgtk::__struct_simple_codec! {  // Methods on base
 
     #[derive(Debug)]
     pub struct RespawnController_Avatar_respawnController_chooseVehicleForRespawn {
-        pub int_cd: u16,
+        pub int_cd: u32,
     }
 
     #[derive(Debug)]
@@ -515,7 +515,7 @@ wgtk::__struct_simple_codec! {  // Methods on base
 
     #[derive(Debug)]
     pub struct RespawnController_Avatar_respawnController_switchSetup {
-        pub vehicle_id: u16,
+        pub vehicle_id: u32,
         pub group_id: u8,
         pub layout_index: u8,
     }
@@ -1109,8 +1109,8 @@ wgtk::__struct_simple_codec! {  // Methods on base
         pub command_id: i16,
         pub arg0: i64,
         pub arg1: i64,
-        pub arg2: i32,
-        pub arg3: i32,
+        pub arg2: i64,
+        pub arg3: i64,
     }
 
     #[derive(Debug)]
@@ -1457,7 +1457,7 @@ wgtk::__struct_simple_codec! {  // Methods on cell
 wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct AccountVersion {
-        pub requiredVersion_12610: AutoString,
+        pub requiredVersion_12710: AutoString,
     }
 }
 

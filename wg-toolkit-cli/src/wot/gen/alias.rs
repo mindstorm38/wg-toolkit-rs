@@ -7,6 +7,7 @@ pub type SHOT_ID = i32;
 pub type DB_ID = i64;
 pub type EXTRA_ID = u8;
 pub type VEH_TYPE_CD = u32;
+pub type ARENA_UNIQUE_ID = u64;
 
 wgtk::__struct_simple_codec! {
     #[derive(Debug)]
@@ -296,7 +297,7 @@ wgtk::__struct_simple_codec! {
         pub prebattle: Mailbox,
         pub isPrebattleCreator: BOOL,
         pub forbidInBattleInvitations: BOOL,
-        pub arenaUniqueID: u64,
+        pub arenaUniqueID: ARENA_UNIQUE_ID,
         pub team: u8,
         pub tkillRating: f32,
         pub cybersportRating: Vec<f32>,
@@ -319,8 +320,6 @@ wgtk::__struct_simple_codec! {
         pub overriddenBadge: u8,
         pub dogTag: BATTLE_DOG_TAG,
         pub userExtraSettings: USER_EXTRA_SETTINGS,
-        pub isSsrRecordEnabled: BOOL,
-        pub isSsrPlayEnabled: BOOL,
         pub componentsData: Python,
     }
 }

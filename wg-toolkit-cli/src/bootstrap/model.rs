@@ -178,6 +178,8 @@ pub enum TyDefault {
 /// Represent the a full model of resources.
 #[derive(Debug, Default)]
 pub struct Model {
+    /// The game version of the parsed model.
+    pub version: String,
     /// The type system in this model where all types are defined.
     pub tys: TySystem,
     /// The list of all interfaces available.

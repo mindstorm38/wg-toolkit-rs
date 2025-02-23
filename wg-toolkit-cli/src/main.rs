@@ -211,10 +211,10 @@ pub struct WotArgs {
 /// Use the following command to bootstrap the generated code without compiling the 
 /// generated code that may have compile errors:
 /// 
-///   $ cargo run --no-default-features --features cli-bootstrap -- bootstrap D:/Games/WoT/res ./wg-toolkit-cli/src/wot/gen/
+///   $ cargo run --no-default-features --features bootstrap -- bootstrap D:/Games/WoT ./wg-toolkit-cli/src/wot/gen/
 #[derive(Debug, Args)]
 pub struct BootstrapArgs {
-    /// Path to the game's resource (res/) directory.
+    /// Path to the game's directory.
     pub dir: PathBuf,
     /// Destination source code directory where all files will be generated.
     pub dest: PathBuf,
