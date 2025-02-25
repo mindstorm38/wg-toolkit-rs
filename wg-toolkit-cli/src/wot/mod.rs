@@ -1,6 +1,6 @@
 //! Implementation of a simple demonstration WoT server.
 
-pub mod gen;
+pub mod r#gen;
 pub mod proxy;
 pub mod emulator;
 
