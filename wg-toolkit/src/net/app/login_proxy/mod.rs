@@ -1,6 +1,6 @@
 //! The login proxy application for intercepting and forwarding login requests.
 
-use std::collections::{hash_map, HashMap, VecDeque};
+use std::collections::{hash_map, HashMap};
 use std::net::{SocketAddr, SocketAddrV4};
 use std::time::{Duration, Instant};
 use std::sync::Arc;
@@ -13,15 +13,15 @@ use blowfish::Blowfish;
 use tracing::{trace, trace_span};
 
 use crate::net::bundle::{Bundle, NextElementReader, ReplyReader, ElementReader};
-use crate::net::app::login::element::{ChallengeResponse, CuckooCycleResponse};
-use crate::net::app::proxy::{UNSPECIFIED_ADDR, RECV_TIMEOUT};
 use crate::net::socket::PacketSocket;
 use crate::net::proto::Protocol;
 use crate::net::packet::Packet;
 
 use crate::util::thread::{ThreadPoll, ThreadPollHandle};
 
-use super::login::element::{self, LoginError, LoginRequest, LoginResponse, Ping};
+pub use super::login::element;  // Re-export the login elements.
+use super::login::element::{LoginError, LoginRequest, LoginResponse, Ping, ChallengeResponse, CuckooCycleResponse};
+use super::proxy::{UNSPECIFIED_ADDR, RECV_TIMEOUT};
 use super::io_invalid_data;
 
 
@@ -41,8 +41,6 @@ pub struct App {
 
 #[derive(Debug)]
 struct Inner {
-    /// Pending events.
-    events: VecDeque<Event>,
     /// Thread poll for socket result.
     socket_poll: ThreadPoll<SocketPollRet>,
     /// Internal socket for this application.
@@ -51,8 +49,6 @@ struct Inner {
     /// implies that the client should use the matching public key when logging in in
     /// order to validate.
     encryption_key: Option<Arc<RsaPrivateKey>>,
-    /// Allows modifying the base app address returned to the client.
-    forced_base_app_addr: Option<SocketAddrV4>,
     /// The address of the real application where we proxy all packets.
     real_addr: SocketAddr,
     /// Encryption key for sending to the real login application.
@@ -68,8 +64,7 @@ struct Inner {
 #[derive(Debug)]
 struct Peer {
     /// Handle for drop-destruction of the poll thread worker, only used for drop.
-    #[allow(unused)]
-    socket_poll_handle: ThreadPollHandle,
+    _socket_poll_handle: ThreadPollHandle,
     /// The socket represent this peer for the real application.
     socket: PacketSocket,
     /// The address to send packets to the peer when receiving from real application.
@@ -119,11 +114,9 @@ impl App {
 
         Ok(Self {
             inner: Inner {
-                events: VecDeque::new(),
                 socket_poll,
                 socket,
                 encryption_key: None,
-                forced_base_app_addr: None,
                 real_addr,
                 real_encryption_key,
                 out_protocol: Protocol::new(),
@@ -156,121 +149,102 @@ impl App {
         self.inner.encryption_key.is_some()
     }
 
-    /// Forcing the base app address allow redirecting clients that successfully login
-    /// into a given base app.
-    pub fn set_forced_base_app_addr(&mut self, addr: SocketAddrV4) {
-        self.inner.forced_base_app_addr = Some(addr);
-    }
-
-    pub fn remove_forced_base_app_addr(&mut self) {
-        self.inner.forced_base_app_addr = None;
-    }
-
     /// Poll for the next event of this login app, blocking.
-    pub fn poll(&mut self) -> Event {
-        loop {
+    pub fn poll<H: Handler>(&mut self, handler: &mut H) -> Result<(), H::Error> {
 
-            // Dropping dead peers, this will also terminate poll threads.
-            if !self.peers.is_empty() {
-                let now = Instant::now();
-                self.peers.retain(|addr, peer| {
-                    if now - peer.last_time >= DEAD_PEER_TIMEOUT {
-                        trace!("Dropped dead peer: {addr}");
-                        false
-                    } else {
-                        true
-                    }
-                });
-            }
-
-            while let Some(event) = self.inner.events.pop_front() {
-                return event;
-            }
-            
-            let socket_poll_ret = self.inner.socket_poll.poll();
-
-            let (packet, addr) = match socket_poll_ret.res {
-                Ok(ret) => ret,
-                Err(e) if matches!(e.kind(), io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock) => continue,
-                Err(e) => {
-                    return Event::IoError(IoErrorEvent {
-                        error: e,
-                        addr: None,
-                    });
-                }
-            };
-            
-            // debug!("<{}: [{:08X}] {:?}", addr, packet.raw().read_prefix(), packet.raw());
-
+        // Dropping dead peers, this will also terminate poll threads.
+        if !self.peers.is_empty() {
             let now = Instant::now();
-
-            let _span;
-            let protocol;
-            let peer;
-            if let Some(peer_addr) = &socket_poll_ret.peer {
-                _span = trace_span!("in").entered();
-                protocol = &mut self.inner.in_protocol;
-                peer = match self.peers.get_mut(peer_addr) {
-                    Some(peer) => peer,
-                    None => continue, // Ignore if we received an event from a dead peer.
+            self.peers.retain(|addr, peer| {
+                if now - peer.last_time >= DEAD_PEER_TIMEOUT {
+                    trace!("Dropped dead peer: {addr}");
+                    false
+                } else {
+                    true
                 }
-            } else {
-                _span = trace_span!("out").entered();
-                protocol = &mut self.inner.out_protocol;
-                peer = match self.peers.entry(addr) {
-                    hash_map::Entry::Occupied(o) => o.into_mut(),
-                    hash_map::Entry::Vacant(v) => {
-                        
-                        fn new_peer_socket() -> io::Result<PacketSocket> {
-                            let socket = PacketSocket::bind(UNSPECIFIED_ADDR)?;
-                            socket.set_recv_timeout(Some(RECV_TIMEOUT))?;
-                            Ok(socket)
-                        }
+            });
+        }
 
-                        let socket = match new_peer_socket() {
-                            Ok(socket) => socket,
-                            Err(e) => {
-                                return Event::IoError(IoErrorEvent {
-                                    error: e,
-                                    addr: None,
-                                });
-                            }
-                        };
+        let socket_poll_ret = self.inner.socket_poll.poll();
 
-                        let thread_socket = socket.clone();
-                        let socket_poll_handle = self.inner.socket_poll.spawn_with_handle(move || Some(SocketPollRet {
-                            res: thread_socket.recv_without_encryption(),
-                            peer: Some(addr),
-                        }));
+        let (packet, addr) = match socket_poll_ret.res {
+            Ok(ret) => ret,
+            Err(e) if matches!(e.kind(), io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock) => return Ok(()),
+            Err(e) => return Err(e.into()),
+        };
+        
+        // debug!("<{}: [{:08X}] {:?}", addr, packet.raw().read_prefix(), packet.raw());
 
-                        v.insert(Peer {
-                            socket_poll_handle,
-                            socket,
-                            addr,
-                            last_time: now,
-                            last_request: None,
-                        })
+        let now = Instant::now();
+        let _span;
+        let protocol;
+        let peer;
 
-                    }
-                };
-            }
+        if let Some(peer_addr) = &socket_poll_ret.peer {
 
-            peer.last_time = now;
-
-            let Some(mut channel) = protocol.accept(packet, peer.addr) else {
-                continue;
+            // The packet has been received from the real login application and should be
+            // forwarded to the peer.
+            _span = trace_span!("in").entered();
+            protocol = &mut self.inner.in_protocol;
+            peer = match self.peers.get_mut(peer_addr) {
+                Some(peer) => peer,
+                None => return Ok(()), // Ignore if we received an event from a dead peer.
             };
 
-            let Some(bundle) = channel.next_bundle() else {
-                continue;
+        } else {
+            
+            // The packet has been received from the peer and should be forwarded to the 
+            // real login application.
+            _span = trace_span!("out").entered();
+            protocol = &mut self.inner.out_protocol;
+            peer = match self.peers.entry(addr) {
+                hash_map::Entry::Occupied(o) => o.into_mut(),
+                hash_map::Entry::Vacant(v) => {
+                    
+                    let socket = PacketSocket::bind(UNSPECIFIED_ADDR)?;
+                    socket.set_recv_timeout(Some(RECV_TIMEOUT))?;
+
+                    let thread_socket = socket.clone();
+                    let _socket_poll_handle = self.inner.socket_poll.spawn_with_handle(move || Some(SocketPollRet {
+                        res: thread_socket.recv_without_encryption(),
+                        peer: Some(addr),
+                    }));
+
+                    v.insert(Peer {
+                        _socket_poll_handle,
+                        socket,
+                        addr,
+                        last_time: now,
+                        last_request: None,
+                    })
+
+                }
             };
 
+        }
+
+        peer.last_time = now;
+
+        let Some(mut channel) = protocol.accept(packet, peer.addr) else {
+            return Ok(());
+        };
+
+        for bundle in channel.pop_bundles() {
             if socket_poll_ret.peer.is_some() {
-                self.inner.handle_in(bundle, peer).unwrap();
+                self.inner.handle_in(&mut *handler, peer, bundle)?;
             } else {
-                self.inner.handle_out(bundle, peer).unwrap();
+                self.inner.handle_out(peer, bundle)?;
             }
+        }
 
+        Ok(())
+
+    }
+
+    /// Same as [`Self::loop`] but indefinitely looping until an error is returned.
+    pub fn run<H: Handler>(&mut self, mut handler: H) -> Result<(), H::Error> {
+        loop {
+            self.poll(&mut handler)?;
         }
     }
 
@@ -278,7 +252,7 @@ impl App {
 
 impl Inner {
 
-    fn handle_out(&mut self, bundle: Bundle, peer: &mut Peer) -> io::Result<()> {
+    fn handle_out(&mut self, peer: &mut Peer, bundle: Bundle) -> io::Result<()> {
         
         self.bundle.clear();
 
@@ -286,7 +260,7 @@ impl Inner {
         while let Some(reader) = reader.next() {
             match reader {
                 NextElementReader::Element(elt) => 
-                    self.handle_out_element(elt, peer)?,
+                    self.handle_out_element(peer, elt)?,
                 NextElementReader::Reply(reply) => 
                     return Err(io_invalid_data(format_args!("unexpected reply #{}", reply.request_id()))),
             }
@@ -304,17 +278,17 @@ impl Inner {
 
     }
 
-    fn handle_out_element(&mut self, elt: ElementReader, peer: &mut Peer) -> io::Result<()> {
+    fn handle_out_element(&mut self, peer: &mut Peer, elt: ElementReader) -> io::Result<()> {
         match elt.id() {
-            element::id::PING => self.handle_out_ping(elt, peer),
-            element::id::LOGIN_REQUEST => self.handle_login_request(elt, peer),
-            element::id::CHALLENGE_RESPONSE => self.handle_challenge_response(elt, peer),
+            element::id::PING => self.handle_out_ping(peer, elt),
+            element::id::LOGIN_REQUEST => self.handle_login_request(peer, elt),
+            element::id::CHALLENGE_RESPONSE => self.handle_challenge_response(peer, elt),
             id => Err(io_invalid_data(format_args!("unexpected element #{id}"))),
         }
     }
 
     /// Handle a ping request to the login node, we answer as fast as possible.
-    fn handle_out_ping(&mut self, elt: ElementReader, peer: &mut Peer) -> io::Result<()> {
+    fn handle_out_ping(&mut self, peer: &mut Peer, elt: ElementReader) -> io::Result<()> {
 
         let ping = elt.read_simple::<Ping>()?;
         let request_id = ping.request_id
@@ -333,7 +307,7 @@ impl Inner {
     }
 
     /// Handle a login request to the login node.
-    fn handle_login_request(&mut self, elt: ElementReader, peer: &mut Peer) -> io::Result<()> {
+    fn handle_login_request(&mut self, peer: &mut Peer, elt: ElementReader) -> io::Result<()> {
         
         let login;
         if let Some(encryption_key) = self.encryption_key.as_deref() {
@@ -364,13 +338,13 @@ impl Inner {
 
     }
 
-    fn handle_challenge_response(&mut self, elt: ElementReader, _peer: &mut Peer) -> io::Result<()> {
+    fn handle_challenge_response(&mut self, _peer: &mut Peer, elt: ElementReader) -> io::Result<()> {
         let challenge = elt.read_simple::<ChallengeResponse<CuckooCycleResponse>>()?;
         self.bundle.element_writer().write_simple(challenge.element);
         Ok(())
     }
 
-    fn handle_in(&mut self, bundle: Bundle, peer: &mut Peer) -> io::Result<()> {
+    fn handle_in<H: Handler>(&mut self, handler: &mut H, peer: &mut Peer, bundle: Bundle) -> Result<(), H::Error> {
 
         self.bundle.clear();
         
@@ -391,9 +365,9 @@ impl Inner {
         while let Some(reader) = reader.next() {
             match reader {
                 NextElementReader::Element(elt) => 
-                    return Err(io_invalid_data(format_args!("unexpected element #{}", elt.id()))),
+                    return Err(io_invalid_data(format_args!("unexpected element #{}", elt.id())).into()),
                 NextElementReader::Reply(reply) => 
-                    self.handle_in_reply(reply, peer, &mut inherit_prefix)?,
+                    self.handle_in_reply(&mut *handler, peer, reply, &mut inherit_prefix)?,
             }
         }
 
@@ -412,11 +386,11 @@ impl Inner {
 
     }
 
-    fn handle_in_reply(&mut self, elt: ReplyReader, peer: &mut Peer, inherit_prefix: &mut bool) -> io::Result<()> {
+    fn handle_in_reply<H: Handler>(&mut self, handler: &mut H, peer: &mut Peer, elt: ReplyReader, inherit_prefix: &mut bool) -> Result<(), H::Error> {
         
         let request_id = elt.request_id();
         if peer.last_request.as_ref().map(|l| l.request_id) != Some(request_id) {
-            return Err(io_invalid_data(format_args!("unexpected reply #{}", request_id)));
+            return Err(io_invalid_data(format_args!("unexpected reply #{}", request_id)).into());
         }
 
         let last_request = peer.last_request.take().unwrap();
@@ -425,10 +399,7 @@ impl Inner {
         match last_request.kind {
             PeerLastRequestKind::Ping {  } => {
 
-                self.events.push_back(Event::Ping(PingEvent {
-                    addr: peer.addr,
-                    latency,
-                }));
+                handler.receive_ping(peer.addr, latency)?;
 
                 let ping = elt.read_simple::<Ping>()?;
                 self.bundle.element_writer().write_simple_reply(ping, request_id);
@@ -441,27 +412,17 @@ impl Inner {
                 if let LoginResponse::Success(success) = &mut login {
 
                     *inherit_prefix = true;
-                    self.events.push_back(Event::LoginSuccess(LoginSuccessEvent {
-                        addr: peer.addr,
-                        blowfish: Arc::clone(&blowfish),
-                        real_base_app_addr: success.addr,
-                        login_key: success.login_key,
-                        server_message: success.server_message.clone(),
-                    }));
-
-                    // Change the base app just after the event, so the event still get the
-                    // non-forced address.
-                    if let Some(base_app_addr) = self.forced_base_app_addr {
-                        success.addr = base_app_addr;
-                    }
+                    success.addr = handler.receive_login_success(
+                        peer.addr, 
+                        Arc::clone(&blowfish), 
+                        success.addr, 
+                        success.login_key, 
+                        success.server_message.clone(),
+                    )?;
                     
                 } else if let LoginResponse::Error(error, data) = &login {
-                    
-                    self.events.push_back(Event::LoginError(LoginErrorEvent {
-                        addr: peer.addr,
-                        error: *error,
-                        data: data.clone(),
-                    }));
+
+                    handler.receive_login_error(peer.addr, *error, data.clone())?;
 
                 }
 
@@ -476,56 +437,61 @@ impl Inner {
 
 }
 
-/// An event that happened in the proxy login app regarding the login process.
-#[derive(Debug)]
-pub enum Event {
-    IoError(IoErrorEvent),
-    Ping(PingEvent),
-    LoginSuccess(LoginSuccessEvent),
-    LoginError(LoginErrorEvent),
-}
+/// A handler for events when polling the application.
+pub trait Handler {
 
-/// Some IO error happened internally and optionally related to a client.
-#[derive(Debug)]
-pub struct IoErrorEvent {
-    /// The IO error.
-    pub error: io::Error,
-    /// An optional client address related to the error.
-    pub addr: Option<SocketAddr>,
-}
+    /// The error type that should be able to be constructed from I/O error.
+    type Error: From<io::Error>;
 
-/// A client has pinged the login app.
-#[derive(Debug)]
-pub struct PingEvent {
-    /// The address of the client that pinged the login app.
-    pub addr: SocketAddr,
-    /// Duration between proxy forwarding the ping packet to the real login application
-    /// and the response being received, this is basically the latency of the real login
-    /// application with a bit of internal latency of this proxy.
-    pub latency: Duration,
-}
+    /// The given peer has received a ping, the latency from sending to reception of the
+    /// ping by the peer is also given.
+    /// 
+    /// The default implementation does nothing.
+    fn receive_ping(&mut self,
+        addr: SocketAddr,
+        latency: Duration,
+    ) -> Result<(), Self::Error> {
+        let _ = (addr, latency);
+        Ok(())
+    }
 
-/// A client has successfully logged in the real login application.
-#[derive(Debug)]
-pub struct LoginSuccessEvent {
-    /// The address of the client that successfully logged in.
-    pub addr: SocketAddr,
-    /// The blowfish key the client sent with its login request and used to decode any
-    /// successful response, but also for any input/output packet with the base app.
-    pub blowfish: Arc<Blowfish>,
-    /// The address of the base app that was answered by the real server, if any base
-    /// app address is forced then this value is still the value of the real server.
-    pub real_base_app_addr: SocketAddrV4,
-    /// The login key returned, used to authenticate to the base app.
-    pub login_key: u32,
-    /// The server message returned with the login success, usually a stringified JSON.
-    pub server_message: String,
-}
+    /// The given peer has successfully logged into the real login application, this
+    /// function receives all the relevant information that have been intercepted.
+    /// 
+    /// The blowfish key is negotiated and must be used on the base application that
+    /// this peer is expected to connect to, the base app address is also given. The
+    /// first element sent to the base app is not encrypted with the blowfish key and
+    /// contains the negotiated login key.
+    /// 
+    /// A server message is also given by the server, which is usually a JSON string.
+    /// 
+    /// This function should return the base app address that will actually be returned
+    /// to the peer, this can be used to return a proxy base app that will forward to
+    /// the real base application.
+    /// 
+    /// The default implementation returns the base app address given in parameter.
+    fn receive_login_success(&mut self,
+        addr: SocketAddr,
+        blowfish: Arc<Blowfish>,
+        base_app_addr: SocketAddrV4,
+        login_key: u32,
+        server_message: String,
+    ) -> Result<SocketAddrV4, Self::Error> {
+        let _ = (addr, blowfish, login_key, server_message);
+        Ok(base_app_addr)
+    }
 
-#[derive(Debug)]
-pub struct LoginErrorEvent {
-    /// The address of the client that successfully logged in.
-    pub addr: SocketAddr,
-    pub error: LoginError,
-    pub data: String,
+    /// The given peer has failed its login process, this function receives all the
+    /// relevant information that have been intercepted.
+    /// 
+    /// The default implementation does nothing.
+    fn receive_login_error(&mut self,
+        addr: SocketAddr,
+        error: LoginError,
+        data: String,
+    ) -> Result<(), Self::Error> {
+        let _ = (addr, error, data);
+        Ok(())
+    }
+
 }

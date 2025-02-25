@@ -1,6 +1,7 @@
 //! Proxy login and base app used for debugging exchanged messages.
 
 use std::net::{SocketAddr, SocketAddrV4};
+use std::time::Duration;
 use std::{fmt, fs, io, thread};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -8,23 +9,23 @@ use std::path::PathBuf;
 use std::io::Write;
 use std::fs::File;
 
-use tracing::{error, info, instrument, warn};
+use tracing::{error, info, warn, info_span};
 
+use rsa::{RsaPrivateKey, RsaPublicKey};
 use flate2::read::ZlibDecoder;
 use blowfish::Blowfish;
-use rsa::{RsaPrivateKey, RsaPublicKey};
 
 use wgtk::net::element::{DebugElementUndefined, DebugElementVariable16, SimpleElement};
 use wgtk::net::bundle::{Bundle, NextElementReader, ElementReader};
 
-use wgtk::net::app::{login_proxy, base, client, proxy};
+use wgtk::net::app::{proxy, login_proxy, base, client};
 use wgtk::net::app::common::entity::Entity;
-use wgtk::net::app::proxy::PacketDirection;
+use wgtk::net::packet::Packet;
 
 use wgtk::util::io::serde_pickle_de_options;
 
 use crate::CliResult;
-use super::gen;
+use super::r#gen;
 
 
 pub fn run(
@@ -42,9 +43,7 @@ pub fn run(
         login_app.set_encryption(encryption_key);
     }
 
-    login_app.set_forced_base_app_addr(base_app_addr);
-
-    let base_app = proxy::App::new(base_app_addr.into())
+    let mut base_app = proxy::App::new(base_app_addr.into())
         .map_err(|e| format!("Failed to bind base app: {e}"))?;
 
     let dump_dir = PathBuf::from("proxy-dump");
@@ -52,19 +51,20 @@ pub fn run(
     fs::create_dir_all(&dump_dir).map_err(|e| format!("Failed to create proxy dump directory: {e}"))?;
 
     let shared = Arc::new(Shared {
+        base_app_addr,
+        login_app_addr,
         dump_dir,
         pending_clients: Mutex::new(HashMap::new()),
     });
 
-    let login_thread = LoginThread {
-        app: login_app,
+    let login_handler = LoginHandler {
         shared: Arc::clone(&shared),
     };
 
-    let base_thread = BaseThread {
-        app: base_app,
+    let base_handler = BaseHandler {
         shared,
         next_tick: None,
+        entity_types: r#gen::entity::collect_entity_types::<EntityTypeVec>().0,
         entities: HashMap::new(),
         selected_entity_id: None,
         player_entity_id: None,
@@ -72,8 +72,21 @@ pub fn run(
     };
     
     thread::scope(move |scope| {
-        scope.spawn(move || login_thread.run());
-        scope.spawn(move || base_thread.run());
+
+        scope.spawn(move || {
+            let _span = info_span!("login").entered();
+            if let Err(e) = login_app.run(login_handler) {
+                error!("Unexpected hard error: ({}) {e}", e.kind());
+            }
+        });
+
+        scope.spawn(move || {
+            let _span = info_span!("base").entered();
+            if let Err(e) = base_app.run(base_handler) {
+                error!("Unexpected hard error: ({}) {e}", e.kind());
+            }
+        });
+
     });
 
     Ok(())
@@ -82,17 +95,16 @@ pub fn run(
 
 
 #[derive(Debug)]
-struct LoginThread {
-    app: login_proxy::App,
+struct LoginHandler {
     shared: Arc<Shared>,
 }
 
 #[derive(Debug)]
-struct BaseThread {
-    app: proxy::App,
+struct BaseHandler {
     shared: Arc<Shared>,
     next_tick: Option<u8>,
-    entities: HashMap<u32, &'static EntityType>,
+    entity_types: Vec<Arc<EntityType>>,
+    entities: HashMap<u32, Arc<EntityType>>,
     selected_entity_id: Option<u32>,
     player_entity_id: Option<u32>,
     partial_resources: HashMap<u16, PartialResource>,
@@ -100,6 +112,9 @@ struct BaseThread {
 
 #[derive(Debug)]
 struct Shared {
+    base_app_addr: SocketAddrV4,
+    #[allow(unused)]
+    login_app_addr: SocketAddrV4,
     dump_dir: PathBuf,
     pending_clients: Mutex<HashMap<SocketAddr, PendingClient>>,
 }
@@ -122,106 +137,115 @@ struct PartialResource {
     data: Vec<u8>,
 }
 
-impl LoginThread {
-
-    #[instrument(name = "login", skip_all)]
-    fn run(mut self) {
-
-        use login_proxy::Event;
-
-        info!("Running on: {}", self.app.addr().unwrap());
+impl login_proxy::Handler for LoginHandler {
+    
+    type Error = io::Error;
+    
+    fn receive_ping(&mut self,
+        addr: SocketAddr,
+        latency: Duration,
+    ) -> Result<(), Self::Error> {
+        info!(%addr, "Ping-Pong: {:?}", latency);
+        Ok(())
+    }
+    
+    fn receive_login_success(&mut self,
+        addr: SocketAddr,
+        blowfish: Arc<Blowfish>,
+        base_app_addr: SocketAddrV4,
+        _login_key: u32,
+        _server_message: String,
+    ) -> Result<SocketAddrV4, Self::Error> {
         
-        if self.app.has_encryption() {
-            info!("Encryption enabled");
-        }
-
-        loop {
-            match self.app.poll() {
-                Event::IoError(error) => {
-                    if let Some(addr) = error.addr {
-                        warn!(%addr, "Error: {}", error.error);
-                    } else {
-                        warn!("Error: {}", error.error);
-                    }
-                }
-                Event::Ping(ping) => {
-                    info!(addr = %ping.addr, "Ping-Pong: {:?}", ping.latency);
-                }
-                Event::LoginSuccess(success) => {
-                    info!(addr = %success.addr, "Login success");
-                    self.shared.pending_clients.lock().unwrap().insert(success.addr, PendingClient { 
-                        base_app_addr: success.real_base_app_addr,
-                        blowfish: success.blowfish, 
-                    });
-                }
-                Event::LoginError(error) => {
-                    info!(addr = %error.addr, "Login error: {:?}", error.error);
-                }
-            }
-        }
+        info!(%addr, "Login success");
+        self.shared.pending_clients.lock().unwrap().insert(addr, PendingClient { 
+            base_app_addr,
+            blowfish, 
+        });
+        
+        // Return the proxy base app address instead of the expected one!
+        Ok(self.shared.base_app_addr)
 
     }
+    
+    fn receive_login_error(&mut self,
+        addr: SocketAddr,
+        error: login_proxy::element::LoginError,
+        data: String,
+    ) -> Result<(), Self::Error> {
+        info!(%addr, "Login error: {:?} ({data:?})", error);
+        Ok(())
+    }
+
+    
 
 }
 
-impl BaseThread {
+impl proxy::Handler for BaseHandler {
 
-    #[instrument(name = "base", skip_all)]
-    fn run(mut self) {
+    type Error = io::Error;
+    
+    fn accept_peer(&mut self, 
+        addr: SocketAddr,
+    ) -> Result<Option<proxy::PeerConfig>, Self::Error> {
 
-        use proxy::Event;
-
-        info!("Running on: {}", self.app.addr().unwrap());
-
-        loop {
-            match self.app.poll() {
-                Event::IoError(error) => {
-                    if let Some(addr) = error.addr {
-                        warn!(%addr, "Error: {}", error.error);
-                    } else {
-                        warn!("Error: {}", error.error);
-                    }
-                }
-                Event::Rejection(rejection) => {
-                    if let Some(pending_client) = self.shared.pending_clients.lock().unwrap().remove(&rejection.addr) {
-                        
-                        info!("Rejection of known peer: {} (to {})", rejection.addr, pending_client.base_app_addr);
-                        
-                        self.app.bind_peer(
-                            rejection.addr, 
-                            SocketAddr::V4(pending_client.base_app_addr), 
-                            Some(pending_client.blowfish),
-                            None).unwrap();
-
-                    } else {
-                        warn!("Rejection of unknown peer: {}", rejection.addr);
-                    }
-                }
-                Event::Bundle(bundle) => {
-                    
-                    let res = match bundle.direction {
-                        PacketDirection::Out => self.read_out_bundle(bundle.bundle, bundle.addr),
-                        PacketDirection::In => self.read_in_bundle(bundle.bundle, bundle.addr),
-                    };
-
-                    if let Err(e) = res {
-                        error!(addr = %bundle.addr, "Error while reading bundle: ({:?}) {e}", bundle.direction);
-                    }
-
-                }
-                    
-            }
+        if let Some(pending_client) = self.shared.pending_clients.lock().unwrap().remove(&addr) {
+            info!("Accepted a new peer: {addr} (to {})", pending_client.base_app_addr);
+            Ok(Some(proxy::PeerConfig {
+                real_addr: SocketAddr::V4(pending_client.base_app_addr),
+                blowfish: Some(pending_client.blowfish),
+            }))
+        } else {
+            warn!("Rejected an unknown peer: {addr}");
+            Ok(None)
         }
 
     }
+    
+    fn receive_invalid_packet_encryption(&mut self,
+        addr: SocketAddr,
+        _packet: Packet,
+        direction: proxy::PacketDirection, 
+    ) -> Result<(), Self::Error> {
+        error!(%addr, "Failed to decrypt a packet: ({direction:?})");
+        Ok(())
+    }
+    
+    fn receive_bundle(&mut self, 
+        addr: SocketAddr, 
+        bundle: Bundle, 
+        direction: proxy::PacketDirection, 
+        _channel: Option<proxy::PacketChannel>,
+    ) -> Result<(), Self::Error> {
+        
+        match direction {
+            proxy::PacketDirection::Out => {
+                if let Err(e) = self.read_out_bundle(addr, bundle) {
+                    error!(%addr, "-> Error while reading bundle: {e}");
+                }
+            }
+            proxy::PacketDirection::In => {
+                if let Err(e) = self.read_in_bundle(addr, bundle) {
+                    error!(%addr, "<- Error while reading bundle: {e}");
+                }
+            }
+        }
 
-    fn read_out_bundle(&mut self, bundle: Bundle, addr: SocketAddr) -> io::Result<()> {
+        Ok(())
+
+    }
+    
+}
+
+impl BaseHandler {
+
+    fn read_out_bundle(&mut self, addr: SocketAddr, bundle: Bundle) -> io::Result<()> {
 
         let mut reader = bundle.element_reader();
         while let Some(elt) = reader.next() {
             match elt {
                 NextElementReader::Element(elt) => {
-                    if !self.read_out_element(elt, addr)? {
+                    if !self.read_out_element(addr, elt)? {
                         break;
                     }
                 }
@@ -238,7 +262,7 @@ impl BaseThread {
 
     }
 
-    fn read_out_element(&mut self, elt: ElementReader, addr: SocketAddr) -> io::Result<bool> {
+    fn read_out_element(&mut self, addr: SocketAddr, elt: ElementReader) -> io::Result<bool> {
         
         use base::element::*;
 
@@ -262,7 +286,7 @@ impl BaseThread {
 
                 if let Some(entity_id) = self.player_entity_id {
                     // Unwrap because selected entity should exist!
-                    let entity_type = *self.entities.get(&entity_id).unwrap();
+                    let entity_type = self.entities.get(&entity_id).unwrap();
                     return (entity_type.base_entity_method)(&mut *self, addr, entity_id, elt);
                 }
 
@@ -282,13 +306,13 @@ impl BaseThread {
 
     }
 
-    fn read_in_bundle(&mut self, bundle: Bundle, addr: SocketAddr) -> io::Result<()> {
+    fn read_in_bundle(&mut self, addr: SocketAddr, bundle: Bundle) -> io::Result<()> {
 
         let mut reader = bundle.element_reader();
         while let Some(elt) = reader.next() {
             match elt {
                 NextElementReader::Element(elt) => {
-                    if !self.read_in_element(elt, addr)? {
+                    if !self.read_in_element(addr, elt)? {
                         break;
                     }
                 }
@@ -305,7 +329,7 @@ impl BaseThread {
 
     }
 
-    fn read_in_element(&mut self, mut elt: ElementReader, addr: SocketAddr) -> io::Result<bool> {
+    fn read_in_element(&mut self, addr: SocketAddr, mut elt: ElementReader) -> io::Result<bool> {
 
         use client::element::*;
 
@@ -356,8 +380,8 @@ impl BaseThread {
 
                 let cbp = elt.read_simple_stable::<CreateBasePlayerHeader>()?;
 
-                if let Some(entity_type) = cbp.element.entity_type_id.checked_sub(1).and_then(|i| ENTITY_TYPES.get(i as usize)) {
-                    self.entities.insert(cbp.element.entity_id, entity_type);
+                if let Some(entity_type) = cbp.element.entity_type_id.checked_sub(1).and_then(|i| self.entity_types.get(i as usize)) {
+                    self.entities.insert(cbp.element.entity_id, Arc::clone(&entity_type));
                     self.player_entity_id = Some(cbp.element.entity_id);
                     return (entity_type.create_base_player)(&mut *self, addr, elt);
                 }
@@ -501,7 +525,7 @@ impl BaseThread {
 
                 if let Some(entity_id) = self.selected_entity_id {
                     // Unwrap because selected entity should exist!
-                    let entity_type = *self.entities.get(&entity_id).unwrap();
+                    let entity_type = self.entities.get(&entity_id).unwrap();
                     return (entity_type.entity_method)(&mut *self, addr, entity_id, elt);
                 }
 
@@ -527,7 +551,8 @@ impl BaseThread {
     }
 
     fn read_create_base_player<E>(&mut self, addr: SocketAddr, elt: ElementReader) -> io::Result<bool>
-    where E: Entity + fmt::Debug,
+    where 
+        E: Entity + fmt::Debug,
     {
 
         use client::element::CreateBasePlayer;
@@ -571,9 +596,9 @@ impl BaseThread {
 /// Represent an entity type and its associated static functions.
 #[derive(Debug)]
 struct EntityType {
-    create_base_player: fn(&mut BaseThread, SocketAddr, ElementReader) -> io::Result<bool>,
-    entity_method: fn(&mut BaseThread, SocketAddr, u32, ElementReader) -> io::Result<bool>,
-    base_entity_method: fn(&mut BaseThread, SocketAddr, u32, ElementReader) -> io::Result<bool>,
+    create_base_player: fn(&mut BaseHandler, SocketAddr, ElementReader) -> io::Result<bool>,
+    entity_method: fn(&mut BaseHandler, SocketAddr, u32, ElementReader) -> io::Result<bool>,
+    base_entity_method: fn(&mut BaseHandler, SocketAddr, u32, ElementReader) -> io::Result<bool>,
 }
 
 impl EntityType {
@@ -585,24 +610,30 @@ impl EntityType {
         E::BaseMethod: fmt::Debug,
     {
         Self {
-            create_base_player: BaseThread::read_create_base_player::<E>,
-            entity_method: BaseThread::read_entity_method::<E>,
-            base_entity_method: BaseThread::read_base_entity_method::<E>,
+            create_base_player: BaseHandler::read_create_base_player::<E>,
+            entity_method: BaseHandler::read_entity_method::<E>,
+            base_entity_method: BaseHandler::read_base_entity_method::<E>,
         }
     }
 
 }
 
-const ENTITY_TYPES: &[EntityType] = &[
-    EntityType::new::<gen::entity::Account>(),
-    EntityType::new::<gen::entity::Avatar>(),
-    EntityType::new::<gen::entity::ArenaInfo>(),
-    EntityType::new::<gen::entity::ClientSelectableObject>(),
-    EntityType::new::<gen::entity::HangarVehicle>(),
-    EntityType::new::<gen::entity::Vehicle>(),
-    EntityType::new::<gen::entity::AreaDestructibles>(),
-    EntityType::new::<gen::entity::OfflineEntity>(),
-    EntityType::new::<gen::entity::Flock>(),
-    EntityType::new::<gen::entity::FlockExotic>(),
-    EntityType::new::<gen::entity::Login>(),
-];
+/// Internal entity type vector.
+struct EntityTypeVec(Vec<Arc<EntityType>>);
+impl r#gen::entity::EntityTypeCollection for EntityTypeVec {
+
+    fn new(len: usize) -> Self {
+        Self(Vec::with_capacity(len))
+    }
+
+    fn add<E: Entity>(&mut self)
+    where
+        E: std::fmt::Debug,
+        E::ClientMethod: std::fmt::Debug,
+        E::BaseMethod: std::fmt::Debug,
+        E::CellMethod: std::fmt::Debug,
+    {
+        self.0.push(Arc::new(EntityType::new::<E>()));
+    }
+
+}

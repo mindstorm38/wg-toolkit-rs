@@ -368,14 +368,18 @@ pub struct Channel<'a> {
 
 impl Channel<'_> {
 
+    /// Return true if this generic channel represents an actual on-channel one.
     pub fn is_on(&self) -> bool {
         self.inner.on.is_some()
     }
 
+    /// Return true if this generic channel represents an actual off-channel one.
     pub fn is_off(&self) -> bool {
         !self.is_on()
     }
 
+    /// If this generic channel is an actual on-channel one (see [`Self::is_on`]), and
+    /// it has and index (and version) then it's returned.
     pub fn index(&self) -> Option<ChannelIndex> {
         self.inner.on.as_deref().and_then(|on| on.index)
     }
@@ -384,6 +388,21 @@ impl Channel<'_> {
     /// received in the correct order!
     pub fn next_bundle(&mut self) -> Option<Bundle> {
         self.inner.off.in_bundles.pop_front()
+    }
+
+    /// Pop all the next bundles, in order, and without borrowing the channel, returning
+    /// an owned iterator. In general, it's better to use the [`Self::next_bundle`] 
+    /// function when borrowing is not an issue.
+    pub fn pop_bundles(&mut self) -> impl Iterator<Item = Bundle> {
+
+        // Our goal is to avoid allocation when we only have one bundle, so we use a vec
+        // only when necessary and return the chained option + vec.
+        let bundle = self.inner.off.in_bundles.pop_front();
+        // Collecting no bundle should not allocate any vector's memory.
+        let rest = self.inner.off.in_bundles.drain(..).collect::<Vec<_>>();
+
+        bundle.into_iter().chain(rest)
+
     }
 
     /// Prepare a bundle to be sent, adding acks and other configuration required by this

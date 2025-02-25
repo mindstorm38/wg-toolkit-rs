@@ -256,7 +256,8 @@ pub trait WgReadExt: Read {
     /// reads the length of the pickle's data in the packed header.
     fn read_python_pickle(&mut self) -> io::Result<serde_pickle::Value> {
         let length = self.read_packed_u24()?;
-        Ok(serde_pickle::value_from_reader(self.take(length as _), serde_pickle_de_options()).unwrap())
+        serde_pickle::value_from_reader(self.take(length as _), serde_pickle_de_options())
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("invalid python pickle: {e}")))
     }
 
     /// Read the size header for a single structure. To read the header of

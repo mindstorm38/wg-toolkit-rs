@@ -262,7 +262,6 @@ wgtk::__struct_simple_codec! {  // Methods on cell
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on client
-    #[derive(Debug)]
     pub enum Account_Client {
         Account_onArenaCreated(0x00, 0),
         Account_onPrebattleLeft(0x01, 0),
@@ -308,7 +307,6 @@ wgtk::__enum_entity_methods! {  // Entity methods on client
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on base
-    #[derive(Debug)]
     pub enum Account_Base {
         AccountUnitBrowser_accountUnitBrowser_unsubscribe(0x00, 0),
         Chat_onStreamComplete(0x01, 3),
@@ -354,7 +352,6 @@ wgtk::__enum_entity_methods! {  // Entity methods on base
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on cell
-    #[derive(Debug)]
     pub enum Account_Cell {
     }
 }
@@ -905,7 +902,6 @@ wgtk::__struct_simple_codec! {  // Methods on cell
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on client
-    #[derive(Debug)]
     pub enum Avatar_Client {
         RecoveryMechanic_Avatar_notifyCannotStartRecovering(0x00, 0),
         RecoveryMechanic_Avatar_notifyCancelled(0x01, 0),
@@ -990,7 +986,6 @@ wgtk::__enum_entity_methods! {  // Entity methods on client
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on base
-    #[derive(Debug)]
     pub enum Avatar_Base {
         RespawnController_Avatar_respawnController_performRespawn(0x00, 0),
         Avatar_logLag(0x01, 0),
@@ -1036,7 +1031,6 @@ wgtk::__enum_entity_methods! {  // Entity methods on base
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on cell
-    #[derive(Debug)]
     pub enum Avatar_Cell {
         Avatar_vehicle_shoot(0x00, 0),
         AvatarObserver_switchObserverFPV(0x01, 1),
@@ -1103,20 +1097,17 @@ wgtk::__struct_simple_codec! {  // Methods on cell
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on client
-    #[derive(Debug)]
     pub enum ArenaInfo_Client {
         ArenaInfo_showCarpetBombing(0x00, 30),
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on base
-    #[derive(Debug)]
     pub enum ArenaInfo_Base {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on cell
-    #[derive(Debug)]
     pub enum ArenaInfo_Cell {
     }
 }
@@ -1161,19 +1152,16 @@ wgtk::__struct_simple_codec! {  // Methods on cell
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on client
-    #[derive(Debug)]
     pub enum ClientSelectableObject_Client {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on base
-    #[derive(Debug)]
     pub enum ClientSelectableObject_Base {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on cell
-    #[derive(Debug)]
     pub enum ClientSelectableObject_Cell {
     }
 }
@@ -1211,19 +1199,16 @@ wgtk::__struct_simple_codec! {  // Methods on cell
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on client
-    #[derive(Debug)]
     pub enum HangarVehicle_Client {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on base
-    #[derive(Debug)]
     pub enum HangarVehicle_Base {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on cell
-    #[derive(Debug)]
     pub enum HangarVehicle_Cell {
     }
 }
@@ -1430,7 +1415,6 @@ wgtk::__struct_simple_codec! {  // Methods on cell
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on client
-    #[derive(Debug)]
     pub enum Vehicle_Client {
         Vehicle_onVehiclePickup(0x00, 0),
         Vehicle_showShooting(0x01, 2),
@@ -1447,13 +1431,11 @@ wgtk::__enum_entity_methods! {  // Entity methods on client
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on base
-    #[derive(Debug)]
     pub enum Vehicle_Base {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on cell
-    #[derive(Debug)]
     pub enum Vehicle_Cell {
         RecoveryMechanic_Vehicle_recoveryMechanic_startRecovering(0x00, 0),
         RecoveryMechanic_Vehicle_recoveryMechanic_stopRecovering(0x01, 0),
@@ -1506,19 +1488,16 @@ wgtk::__struct_simple_codec! {  // Methods on cell
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on client
-    #[derive(Debug)]
     pub enum AreaDestructibles_Client {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on base
-    #[derive(Debug)]
     pub enum AreaDestructibles_Base {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on cell
-    #[derive(Debug)]
     pub enum AreaDestructibles_Cell {
     }
 }
@@ -1556,19 +1535,16 @@ wgtk::__struct_simple_codec! {  // Methods on cell
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on client
-    #[derive(Debug)]
     pub enum OfflineEntity_Client {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on base
-    #[derive(Debug)]
     pub enum OfflineEntity_Base {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on cell
-    #[derive(Debug)]
     pub enum OfflineEntity_Cell {
     }
 }
@@ -1621,19 +1597,16 @@ wgtk::__struct_simple_codec! {  // Methods on cell
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on client
-    #[derive(Debug)]
     pub enum Flock_Client {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on base
-    #[derive(Debug)]
     pub enum Flock_Base {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on cell
-    #[derive(Debug)]
     pub enum Flock_Cell {
     }
 }
@@ -1692,19 +1665,16 @@ wgtk::__struct_simple_codec! {  // Methods on cell
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on client
-    #[derive(Debug)]
     pub enum FlockExotic_Client {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on base
-    #[derive(Debug)]
     pub enum FlockExotic_Base {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on cell
-    #[derive(Debug)]
     pub enum FlockExotic_Cell {
     }
 }
@@ -1759,7 +1729,6 @@ wgtk::__struct_simple_codec! {  // Methods on cell
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on client
-    #[derive(Debug)]
     pub enum Login_Client {
         Login_onKickedFromServer(0x00, 4),
         Login_receiveLoginQueueNumber(0x01, 8),
@@ -1768,13 +1737,11 @@ wgtk::__enum_entity_methods! {  // Entity methods on client
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on base
-    #[derive(Debug)]
     pub enum Login_Base {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on cell
-    #[derive(Debug)]
     pub enum Login_Cell {
     }
 }
@@ -1830,7 +1797,6 @@ wgtk::__struct_simple_codec! {  // Methods on cell
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on client
-    #[derive(Debug)]
     pub enum DetachedTurret_Client {
         DetachedTurret_onStaticCollision(0x00, 28),
         DetachedTurret_showDamageFromShot(0x01, var8),
@@ -1838,13 +1804,11 @@ wgtk::__enum_entity_methods! {  // Entity methods on client
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on base
-    #[derive(Debug)]
     pub enum DetachedTurret_Base {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on cell
-    #[derive(Debug)]
     pub enum DetachedTurret_Cell {
     }
 }
@@ -1883,19 +1847,16 @@ wgtk::__struct_simple_codec! {  // Methods on cell
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on client
-    #[derive(Debug)]
     pub enum DebugDrawEntity_Client {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on base
-    #[derive(Debug)]
     pub enum DebugDrawEntity_Base {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on cell
-    #[derive(Debug)]
     pub enum DebugDrawEntity_Cell {
     }
 }
@@ -1933,19 +1894,16 @@ wgtk::__struct_simple_codec! {  // Methods on cell
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on client
-    #[derive(Debug)]
     pub enum ClientSelectableCameraObject_Client {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on base
-    #[derive(Debug)]
     pub enum ClientSelectableCameraObject_Base {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on cell
-    #[derive(Debug)]
     pub enum ClientSelectableCameraObject_Cell {
     }
 }
@@ -1984,19 +1942,16 @@ wgtk::__struct_simple_codec! {  // Methods on cell
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on client
-    #[derive(Debug)]
     pub enum ClientSelectableCameraVehicle_Client {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on base
-    #[derive(Debug)]
     pub enum ClientSelectableCameraVehicle_Base {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on cell
-    #[derive(Debug)]
     pub enum ClientSelectableCameraVehicle_Cell {
     }
 }
@@ -2035,19 +1990,16 @@ wgtk::__struct_simple_codec! {  // Methods on cell
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on client
-    #[derive(Debug)]
     pub enum ClientSelectableWebLinksOpener_Client {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on base
-    #[derive(Debug)]
     pub enum ClientSelectableWebLinksOpener_Base {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on cell
-    #[derive(Debug)]
     pub enum ClientSelectableWebLinksOpener_Cell {
     }
 }
@@ -2089,19 +2041,16 @@ wgtk::__struct_simple_codec! {  // Methods on cell
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on client
-    #[derive(Debug)]
     pub enum ClientSelectableEasterEgg_Client {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on base
-    #[derive(Debug)]
     pub enum ClientSelectableEasterEgg_Base {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on cell
-    #[derive(Debug)]
     pub enum ClientSelectableEasterEgg_Cell {
     }
 }
@@ -2139,19 +2088,16 @@ wgtk::__struct_simple_codec! {  // Methods on cell
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on client
-    #[derive(Debug)]
     pub enum EmptyEntity_Client {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on base
-    #[derive(Debug)]
     pub enum EmptyEntity_Base {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on cell
-    #[derive(Debug)]
     pub enum EmptyEntity_Cell {
     }
 }
@@ -2189,19 +2135,16 @@ wgtk::__struct_simple_codec! {  // Methods on cell
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on client
-    #[derive(Debug)]
     pub enum LimitedVisibilityEntity_Client {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on base
-    #[derive(Debug)]
     pub enum LimitedVisibilityEntity_Base {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on cell
-    #[derive(Debug)]
     pub enum LimitedVisibilityEntity_Cell {
     }
 }
@@ -2242,19 +2185,16 @@ wgtk::__struct_simple_codec! {  // Methods on cell
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on client
-    #[derive(Debug)]
     pub enum HeroTank_Client {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on base
-    #[derive(Debug)]
     pub enum HeroTank_Base {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on cell
-    #[derive(Debug)]
     pub enum HeroTank_Cell {
     }
 }
@@ -2296,19 +2236,16 @@ wgtk::__struct_simple_codec! {  // Methods on cell
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on client
-    #[derive(Debug)]
     pub enum PlatoonTank_Client {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on base
-    #[derive(Debug)]
     pub enum PlatoonTank_Base {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on cell
-    #[derive(Debug)]
     pub enum PlatoonTank_Cell {
     }
 }
@@ -2347,19 +2284,16 @@ wgtk::__struct_simple_codec! {  // Methods on cell
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on client
-    #[derive(Debug)]
     pub enum PlatoonLighting_Client {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on base
-    #[derive(Debug)]
     pub enum PlatoonLighting_Base {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on cell
-    #[derive(Debug)]
     pub enum PlatoonLighting_Cell {
     }
 }
@@ -2409,19 +2343,16 @@ wgtk::__struct_simple_codec! {  // Methods on cell
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on client
-    #[derive(Debug)]
     pub enum SectorBase_Client {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on base
-    #[derive(Debug)]
     pub enum SectorBase_Base {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on cell
-    #[derive(Debug)]
     pub enum SectorBase_Cell {
     }
 }
@@ -2474,20 +2405,17 @@ wgtk::__struct_simple_codec! {  // Methods on cell
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on client
-    #[derive(Debug)]
     pub enum Sector_Client {
         Sector_showBomb(0x00, 12),
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on base
-    #[derive(Debug)]
     pub enum Sector_Base {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on cell
-    #[derive(Debug)]
     pub enum Sector_Cell {
     }
 }
@@ -2555,7 +2483,6 @@ wgtk::__struct_simple_codec! {  // Methods on cell
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on client
-    #[derive(Debug)]
     pub enum DestructibleEntity_Client {
         DestructibleEntity_showDamageFromExplosion(0x00, 8),
         DestructibleEntity_showDamageFromShot(0x01, 9),
@@ -2564,13 +2491,11 @@ wgtk::__enum_entity_methods! {  // Entity methods on client
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on base
-    #[derive(Debug)]
     pub enum DestructibleEntity_Base {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on cell
-    #[derive(Debug)]
     pub enum DestructibleEntity_Cell {
     }
 }
@@ -2610,19 +2535,16 @@ wgtk::__struct_simple_codec! {  // Methods on cell
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on client
-    #[derive(Debug)]
     pub enum StepRepairPoint_Client {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on base
-    #[derive(Debug)]
     pub enum StepRepairPoint_Base {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on cell
-    #[derive(Debug)]
     pub enum StepRepairPoint_Cell {
     }
 }
@@ -2665,19 +2587,16 @@ wgtk::__struct_simple_codec! {  // Methods on cell
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on client
-    #[derive(Debug)]
     pub enum ProtectionZone_Client {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on base
-    #[derive(Debug)]
     pub enum ProtectionZone_Base {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on cell
-    #[derive(Debug)]
     pub enum ProtectionZone_Cell {
     }
 }
@@ -2717,19 +2636,16 @@ wgtk::__struct_simple_codec! {  // Methods on cell
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on client
-    #[derive(Debug)]
     pub enum HangarPoster_Client {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on base
-    #[derive(Debug)]
     pub enum HangarPoster_Base {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on cell
-    #[derive(Debug)]
     pub enum HangarPoster_Cell {
     }
 }
@@ -2782,7 +2698,6 @@ wgtk::__struct_simple_codec! {  // Methods on cell
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on client
-    #[derive(Debug)]
     pub enum TeamInfo_Client {
         TeamInfo_onCombatEquipmentUsed(0x00, 8),
         TeamInfo_showHittingArea(0x01, 34),
@@ -2790,13 +2705,11 @@ wgtk::__enum_entity_methods! {  // Entity methods on client
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on base
-    #[derive(Debug)]
     pub enum TeamInfo_Base {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on cell
-    #[derive(Debug)]
     pub enum TeamInfo_Cell {
     }
 }
@@ -2835,19 +2748,16 @@ wgtk::__struct_simple_codec! {  // Methods on cell
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on client
-    #[derive(Debug)]
     pub enum AvatarInfo_Client {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on base
-    #[derive(Debug)]
     pub enum AvatarInfo_Base {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on cell
-    #[derive(Debug)]
     pub enum AvatarInfo_Cell {
     }
 }
@@ -2885,19 +2795,16 @@ wgtk::__struct_simple_codec! {  // Methods on cell
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on client
-    #[derive(Debug)]
     pub enum ArenaObserverInfo_Client {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on base
-    #[derive(Debug)]
     pub enum ArenaObserverInfo_Base {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on cell
-    #[derive(Debug)]
     pub enum ArenaObserverInfo_Cell {
     }
 }
@@ -2946,20 +2853,17 @@ wgtk::__struct_simple_codec! {  // Methods on cell
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on client
-    #[derive(Debug)]
     pub enum AreaOfEffect_Client {
         AreaOfEffect_playEffect(0x00, var8),
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on base
-    #[derive(Debug)]
     pub enum AreaOfEffect_Base {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on cell
-    #[derive(Debug)]
     pub enum AreaOfEffect_Cell {
     }
 }
@@ -2997,19 +2901,16 @@ wgtk::__struct_simple_codec! {  // Methods on cell
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on client
-    #[derive(Debug)]
     pub enum AttackBomber_Client {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on base
-    #[derive(Debug)]
     pub enum AttackBomber_Base {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on cell
-    #[derive(Debug)]
     pub enum AttackBomber_Cell {
     }
 }
@@ -3048,19 +2949,16 @@ wgtk::__struct_simple_codec! {  // Methods on cell
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on client
-    #[derive(Debug)]
     pub enum AttackArtilleryFort_Client {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on base
-    #[derive(Debug)]
     pub enum AttackArtilleryFort_Base {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on cell
-    #[derive(Debug)]
     pub enum AttackArtilleryFort_Cell {
     }
 }
@@ -3098,19 +2996,16 @@ wgtk::__struct_simple_codec! {  // Methods on cell
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on client
-    #[derive(Debug)]
     pub enum PersonalDeathZone_Client {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on base
-    #[derive(Debug)]
     pub enum PersonalDeathZone_Base {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on cell
-    #[derive(Debug)]
     pub enum PersonalDeathZone_Cell {
     }
 }
@@ -3148,19 +3043,16 @@ wgtk::__struct_simple_codec! {  // Methods on cell
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on client
-    #[derive(Debug)]
     pub enum ClientSelectableRankedObject_Client {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on base
-    #[derive(Debug)]
     pub enum ClientSelectableRankedObject_Base {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on cell
-    #[derive(Debug)]
     pub enum ClientSelectableRankedObject_Cell {
     }
 }
@@ -3216,19 +3108,16 @@ wgtk::__struct_simple_codec! {  // Methods on cell
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on client
-    #[derive(Debug)]
     pub enum SimulatedVehicle_Client {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on base
-    #[derive(Debug)]
     pub enum SimulatedVehicle_Base {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on cell
-    #[derive(Debug)]
     pub enum SimulatedVehicle_Cell {
     }
 }
@@ -3267,19 +3156,16 @@ wgtk::__struct_simple_codec! {  // Methods on cell
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on client
-    #[derive(Debug)]
     pub enum ClientSelectableHangarsSwitcher_Client {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on base
-    #[derive(Debug)]
     pub enum ClientSelectableHangarsSwitcher_Base {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on cell
-    #[derive(Debug)]
     pub enum ClientSelectableHangarsSwitcher_Cell {
     }
 }
@@ -3346,7 +3232,6 @@ wgtk::__struct_simple_codec! {  // Methods on cell
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on client
-    #[derive(Debug)]
     pub enum StaticDeathZone_Client {
         StaticDeathZone_onEntityEnteredInZone(0x00, 4),
         StaticDeathZone_onEntityLeftZone(0x01, 4),
@@ -3356,13 +3241,11 @@ wgtk::__enum_entity_methods! {  // Entity methods on client
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on base
-    #[derive(Debug)]
     pub enum StaticDeathZone_Base {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on cell
-    #[derive(Debug)]
     pub enum StaticDeathZone_Cell {
     }
 }
@@ -3407,19 +3290,16 @@ wgtk::__struct_simple_codec! {  // Methods on cell
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on client
-    #[derive(Debug)]
     pub enum BasicMine_Client {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on base
-    #[derive(Debug)]
     pub enum BasicMine_Base {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on cell
-    #[derive(Debug)]
     pub enum BasicMine_Cell {
     }
 }
@@ -3461,19 +3341,16 @@ wgtk::__struct_simple_codec! {  // Methods on cell
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on client
-    #[derive(Debug)]
     pub enum ApplicationPoint_Client {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on base
-    #[derive(Debug)]
     pub enum ApplicationPoint_Base {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on cell
-    #[derive(Debug)]
     pub enum ApplicationPoint_Cell {
     }
 }
@@ -3544,7 +3421,6 @@ wgtk::__struct_simple_codec! {  // Methods on cell
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on client
-    #[derive(Debug)]
     pub enum NetworkEntity_Client {
         NetworkEntity_activateGameObject(0x00, 0),
         NetworkEntity_activateGameObjectUnique(0x01, 0),
@@ -3557,13 +3433,11 @@ wgtk::__enum_entity_methods! {  // Entity methods on client
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on base
-    #[derive(Debug)]
     pub enum NetworkEntity_Base {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on cell
-    #[derive(Debug)]
     pub enum NetworkEntity_Cell {
     }
 }
@@ -3602,19 +3476,16 @@ wgtk::__struct_simple_codec! {  // Methods on cell
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on client
-    #[derive(Debug)]
     pub enum Comp7Lighting_Client {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on base
-    #[derive(Debug)]
     pub enum Comp7Lighting_Base {
     }
 }
 
 wgtk::__enum_entity_methods! {  // Entity methods on cell
-    #[derive(Debug)]
     pub enum Comp7Lighting_Cell {
     }
 }
@@ -3629,3 +3500,69 @@ impl SimpleEntity for Comp7Lighting {
     type CellMethod = Comp7Lighting_Cell;
 }
 
+// ============================================== //
+// ======           [COLLECTION]           ====== //
+// ============================================== //
+
+/// This internal trait can be used to visit each entity type in order.
+pub trait EntityTypeCollection {
+    /// Create a new instance of this collection that is expected to have the given
+    /// number of entity types.
+    fn new(len: usize) -> Self;
+    /// Visit the given entity type.
+    fn add<E: Entity>(&mut self)
+    where
+        E: std::fmt::Debug,
+        E::ClientMethod: std::fmt::Debug,
+        E::BaseMethod: std::fmt::Debug,
+        E::CellMethod: std::fmt::Debug;
+}
+
+/// Visit all entity types in order.
+pub fn collect_entity_types<C: EntityTypeCollection>() -> C {
+    let mut c = C::new(43);
+    c.add::<Account>();
+    c.add::<Avatar>();
+    c.add::<ArenaInfo>();
+    c.add::<ClientSelectableObject>();
+    c.add::<HangarVehicle>();
+    c.add::<Vehicle>();
+    c.add::<AreaDestructibles>();
+    c.add::<OfflineEntity>();
+    c.add::<Flock>();
+    c.add::<FlockExotic>();
+    c.add::<Login>();
+    c.add::<DetachedTurret>();
+    c.add::<DebugDrawEntity>();
+    c.add::<ClientSelectableCameraObject>();
+    c.add::<ClientSelectableCameraVehicle>();
+    c.add::<ClientSelectableWebLinksOpener>();
+    c.add::<ClientSelectableEasterEgg>();
+    c.add::<EmptyEntity>();
+    c.add::<LimitedVisibilityEntity>();
+    c.add::<HeroTank>();
+    c.add::<PlatoonTank>();
+    c.add::<PlatoonLighting>();
+    c.add::<SectorBase>();
+    c.add::<Sector>();
+    c.add::<DestructibleEntity>();
+    c.add::<StepRepairPoint>();
+    c.add::<ProtectionZone>();
+    c.add::<HangarPoster>();
+    c.add::<TeamInfo>();
+    c.add::<AvatarInfo>();
+    c.add::<ArenaObserverInfo>();
+    c.add::<AreaOfEffect>();
+    c.add::<AttackBomber>();
+    c.add::<AttackArtilleryFort>();
+    c.add::<PersonalDeathZone>();
+    c.add::<ClientSelectableRankedObject>();
+    c.add::<SimulatedVehicle>();
+    c.add::<ClientSelectableHangarsSwitcher>();
+    c.add::<StaticDeathZone>();
+    c.add::<BasicMine>();
+    c.add::<ApplicationPoint>();
+    c.add::<NetworkEntity>();
+    c.add::<Comp7Lighting>();
+    c
+}

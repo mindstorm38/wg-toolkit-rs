@@ -122,6 +122,15 @@ macro_rules! __enum_entity_methods {
                     })
                 }
             }
+
+            impl std::fmt::Debug for $enum_name {
+                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+                    match self {
+                        $( Self::$method_name (m) => std::fmt::Debug::fmt(m, f), )*
+                        _ => unreachable!()
+                    }
+                }
+            }
         )*
     };
 }

@@ -56,6 +56,8 @@ struct Stat {
 
 impl PacketSocket {
 
+    /// Create a packet socket by creating an underlying UDP socket bound to the given
+    /// address.
     pub fn bind(addr: SocketAddr) -> io::Result<Self> {
         Ok(Self {
             inner: Arc::new(Inner {

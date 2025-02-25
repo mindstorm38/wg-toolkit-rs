@@ -256,6 +256,35 @@ fn generate_entities(mod_dir: &Path, model: &Model, state: &mut State) -> io::Re
         generate_entity(&mut writer, model, entity, &mut *state)?;
     }
 
+    writeln!(writer, "// ============================================== //")?;
+    writeln!(writer, "// ====== {:^32} ====== //", "[COLLECTION]")?;
+    writeln!(writer, "// ============================================== //")?;
+    writeln!(writer)?;
+
+    writeln!(writer, "/// This internal trait can be used to visit each entity type in order.")?;
+    writeln!(writer, "pub trait EntityTypeCollection {{")?;
+    writeln!(writer, "    /// Create a new instance of this collection that is expected to have the given")?;
+    writeln!(writer, "    /// number of entity types.")?;
+    writeln!(writer, "    fn new(len: usize) -> Self;")?;
+    writeln!(writer, "    /// Visit the given entity type.")?;
+    writeln!(writer, "    fn add<E: Entity>(&mut self)")?;
+    writeln!(writer, "    where")?;
+    writeln!(writer, "        E: std::fmt::Debug,")?;
+    writeln!(writer, "        E::ClientMethod: std::fmt::Debug,")?;
+    writeln!(writer, "        E::BaseMethod: std::fmt::Debug,")?;
+    writeln!(writer, "        E::CellMethod: std::fmt::Debug;")?;
+    writeln!(writer, "}}")?;
+    writeln!(writer)?;
+
+    writeln!(writer, "/// Visit all entity types in order.")?;
+    writeln!(writer, "pub fn collect_entity_types<C: EntityTypeCollection>() -> C {{")?;
+    writeln!(writer, "    let mut c = C::new({});", model.entities.len())?;
+    for entity in &model.entities {
+        writeln!(writer, "    c.add::<{}>();", entity.interface.name)?;
+    }
+    writeln!(writer, "    c")?;
+    writeln!(writer, "}}")?;
+
     // writeln!(writer, "wgtk::__bootstrap_enum_entities! {{")?;
     // writeln!(writer, "    /// Generic entity type enumeration allowing decoding of any entities.")?;
     // writeln!(writer, "    #[derive(Debug)]")?;
@@ -370,7 +399,6 @@ fn generate_entity_methods(
     });
 
     writeln!(writer, "wgtk::__enum_entity_methods! {{  // Entity methods on {}", app_state.name)?;
-    writeln!(writer, "    #[derive(Debug)]")?;
     writeln!(writer, "    pub enum {}_{} {{", 
         entity.interface.name, app_state.suffix)?;
 
@@ -569,7 +597,6 @@ fn compute_method_stream_size(method: &Method) -> StreamSize {
 fn is_method_exposed(method: &Method) -> bool {
     method.exposed_to_all_clients || method.exposed_to_own_client
 }
-
 
 /// Internal state when bootstrapping.
 #[derive(Debug)]
