@@ -92,6 +92,7 @@ impl PacketSocket {
 
     /// Get a snapshot of this socket's statistics.
     pub fn stat(&self) -> PacketSocketStat {
+        // Write lock because we want to ensure that all stats are coherent.
         let stat = self.inner.stat.write().unwrap();
         PacketSocketStat {
             total_send_size: stat.total_send_size.load(Ordering::Relaxed),
@@ -145,22 +146,22 @@ impl PacketSocket {
         self.inner.socket.send_to(packet.slice(), addr)
     }
 
+    /// Send a packet to the given peer, with the given blowfish encryption.
+    pub fn send_with_encryption(&self, packet: &Packet, addr: SocketAddr, blowfish: &Blowfish) -> io::Result<usize> {
+        let mut dst_packet = encryption_packet::take();
+        encrypt_packet_raw(packet, blowfish, &mut dst_packet);
+        let size = self.send_without_encryption(&dst_packet, addr)?;
+        encryption_packet::put(dst_packet);
+        Ok(size)
+    }
+
     /// Send a packet to the given peer.
     pub fn send(&self, packet: &Packet, addr: SocketAddr) -> io::Result<usize> {
-
-        let size;
-
         if let Some(blowfish) = self.inner.encryption.read().unwrap().get(&addr) {
-            let mut dst_packet = encryption_packet::take();
-            encrypt_packet_raw(packet, &blowfish, &mut dst_packet);
-            size = self.send_without_encryption(&dst_packet, addr)?;
-            encryption_packet::put(dst_packet);
+            self.send_with_encryption(packet, addr, &blowfish)
         } else {
-            size = self.send_without_encryption(packet, addr)?;
+            self.send_without_encryption(packet, addr)
         }
-
-        Ok(size)
-
     }
 
     /// Send all packets in a bundle to the given peer, without encryption if set for the address.
@@ -172,23 +173,28 @@ impl PacketSocket {
         Ok(size)
     }
 
+    /// Send all packets in a bundle to the given peer, with the given blowfish encryption.
+    pub fn send_bundle_with_encryption(&self, bundle: &Bundle, addr: SocketAddr, blowfish: &Blowfish) -> io::Result<usize> {
+
+        let mut dst_packet = encryption_packet::take();
+        let mut size = 0;
+
+        for packet in bundle.iter() {
+            dst_packet.reset();
+            encrypt_packet_raw(packet, &blowfish, &mut dst_packet);
+            size += self.send_without_encryption(&dst_packet, addr)?;
+        }
+
+        encryption_packet::put(dst_packet);
+
+        Ok(size)
+        
+    }
+
     /// Send all packets in a bundle to the given peer.
     pub fn send_bundle(&self, bundle: &Bundle, addr: SocketAddr) -> io::Result<usize> {
         if let Some(blowfish) = self.inner.encryption.read().unwrap().get(&addr) {
-            
-            let mut dst_packet = encryption_packet::take();
-            let mut size = 0;
-
-            for packet in bundle.iter() {
-                dst_packet.reset();
-                encrypt_packet_raw(packet, &blowfish, &mut dst_packet);
-                size += self.send_without_encryption(&dst_packet, addr)?;
-            }
-
-            encryption_packet::put(dst_packet);
-
-            Ok(size)
-
+            self.send_bundle_with_encryption(bundle, addr, &blowfish)
         } else {
             self.send_bundle_without_encryption(bundle, addr)
         }

@@ -17,7 +17,7 @@ use crate::net::socket::PacketSocket;
 use crate::net::proto::Protocol;
 use crate::net::packet::Packet;
 
-use crate::util::thread::{ThreadPoll, ThreadPollHandle};
+use crate::util::thread::{ThreadPoll, ThreadWorker};
 
 pub use super::login::element;  // Re-export the login elements.
 use super::login::element::{LoginError, LoginRequest, LoginResponse, Ping, ChallengeResponse, CuckooCycleResponse};
@@ -64,7 +64,7 @@ struct Inner {
 #[derive(Debug)]
 struct Peer {
     /// Handle for drop-destruction of the poll thread worker, only used for drop.
-    _socket_poll_handle: ThreadPollHandle,
+    _socket_worker: ThreadWorker,
     /// The socket represent this peer for the real application.
     socket: PacketSocket,
     /// The address to send packets to the peer when receiving from real application.
@@ -157,7 +157,7 @@ impl App {
             let now = Instant::now();
             self.peers.retain(|addr, peer| {
                 if now - peer.last_time >= DEAD_PEER_TIMEOUT {
-                    trace!("Dropped dead peer: {addr}");
+                    trace!("Dropped peer due to inactivity: {addr}");
                     false
                 } else {
                     true
@@ -205,13 +205,13 @@ impl App {
                     socket.set_recv_timeout(Some(RECV_TIMEOUT))?;
 
                     let thread_socket = socket.clone();
-                    let _socket_poll_handle = self.inner.socket_poll.spawn_with_handle(move || Some(SocketPollRet {
+                    let _socket_worker = self.inner.socket_poll.spawn_with_handle(move || Some(SocketPollRet {
                         res: thread_socket.recv_without_encryption(),
                         peer: Some(addr),
                     }));
 
                     v.insert(Peer {
-                        _socket_poll_handle,
+                        _socket_worker,
                         socket,
                         addr,
                         last_time: now,
@@ -225,8 +225,9 @@ impl App {
 
         peer.last_time = now;
 
-        let Some(mut channel) = protocol.accept(packet, peer.addr) else {
-            return Ok(());
+        let mut channel = match protocol.accept(packet, peer.addr) {
+            Ok(channel) => channel,
+            Err(_packet) => return Ok(()),
         };
 
         for bundle in channel.pop_bundles() {

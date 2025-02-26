@@ -3,6 +3,7 @@
 
 use std::fmt;
 use std::io::{self, Read, Write};
+use std::net::SocketAddrV4;
 
 use glam::Vec3;
 
@@ -364,7 +365,21 @@ pub type NrlUnreliableMsgToClient = DebugElementVariable16<{ id::NRL_UNRELIABLE_
 pub type ControlEntity = DebugElementFixed<{ id::CONTROL_ENTITY }, 5>;
 pub type VoiceData = DebugElementVariable16<{ id::VOICE_DATA }>;
 pub type RestoreClient = DebugElementVariable16<{ id::RESTORE_CLIENT }>;
-pub type SwitchBaseApp = DebugElementFixed<{ id::SWITCH_BASE_APP }, 9>;
+
+
+crate::__struct_simple_codec! {
+    /// This is used to tell the client to switch control to a new base app address.
+    #[derive(Debug, Clone)]
+    pub struct SwitchBaseApp {
+        pub base_addr: SocketAddrV4,
+        pub reset_entities: bool,
+    }
+}
+
+impl SimpleElement for SwitchBaseApp {
+    const ID: u8 = id::SWITCH_BASE_APP;
+    const LEN: ElementLength = ElementLength::Fixed(9);
+}
 
 
 /// Header describing a resource that will be downloaded in possibly many fragments.

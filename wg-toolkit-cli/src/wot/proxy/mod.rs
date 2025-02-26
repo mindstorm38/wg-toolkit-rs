@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use std::io::Write;
 use std::fs::File;
 
-use tracing::{error, info, warn, info_span};
+use tracing::{error, info, warn, info_span, trace};
 
 use rsa::{RsaPrivateKey, RsaPublicKey};
 use flate2::read::ZlibDecoder;
@@ -190,42 +190,44 @@ impl proxy::Handler for BaseHandler {
     ) -> Result<Option<proxy::PeerConfig>, Self::Error> {
 
         if let Some(pending_client) = self.shared.pending_clients.lock().unwrap().remove(&addr) {
-            info!("Accepted a new peer: {addr} (to {})", pending_client.base_app_addr);
+            info!(%addr, "Forwarding new peer to {}", pending_client.base_app_addr);
             Ok(Some(proxy::PeerConfig {
                 real_addr: SocketAddr::V4(pending_client.base_app_addr),
                 blowfish: Some(pending_client.blowfish),
             }))
         } else {
-            warn!("Rejected an unknown peer: {addr}");
+            warn!(%addr, "Rejected an unknown peer");
             Ok(None)
         }
 
     }
     
     fn receive_invalid_packet_encryption(&mut self,
-        addr: SocketAddr,
+        peer: proxy::Peer,
         _packet: Packet,
         direction: proxy::PacketDirection, 
     ) -> Result<(), Self::Error> {
-        error!(%addr, "Failed to decrypt a packet: ({direction:?})");
+        error!(addr = %peer.addr(), "Failed to decrypt a packet: ({direction:?})");
         Ok(())
     }
     
     fn receive_bundle(&mut self, 
-        addr: SocketAddr, 
+        peer: proxy::Peer, 
         bundle: Bundle, 
         direction: proxy::PacketDirection, 
         _channel: Option<proxy::PacketChannel>,
     ) -> Result<(), Self::Error> {
         
+        let addr = peer.addr();
+
         match direction {
             proxy::PacketDirection::Out => {
-                if let Err(e) = self.read_out_bundle(addr, bundle) {
+                if let Err(e) = self.read_out_bundle(peer, bundle) {
                     error!(%addr, "-> Error while reading bundle: {e}");
                 }
             }
             proxy::PacketDirection::In => {
-                if let Err(e) = self.read_in_bundle(addr, bundle) {
+                if let Err(e) = self.read_in_bundle(peer, bundle) {
                     error!(%addr, "<- Error while reading bundle: {e}");
                 }
             }
@@ -239,20 +241,20 @@ impl proxy::Handler for BaseHandler {
 
 impl BaseHandler {
 
-    fn read_out_bundle(&mut self, addr: SocketAddr, bundle: Bundle) -> io::Result<()> {
+    fn read_out_bundle(&mut self, mut peer: proxy::Peer, bundle: Bundle) -> io::Result<()> {
 
         let mut reader = bundle.element_reader();
         while let Some(elt) = reader.next() {
             match elt {
                 NextElementReader::Element(elt) => {
-                    if !self.read_out_element(addr, elt)? {
+                    if !self.read_out_element(&mut peer, elt)? {
                         break;
                     }
                 }
                 NextElementReader::Reply(reply) => {
                     let request_id = reply.request_id();
                     let _elt = reply.read_simple::<()>()?;
-                    warn!(%addr, "-> Reply #{request_id}");
+                    warn!(addr = %peer.addr(), "-> Reply #{request_id}");
                     break;
                 }
             }
@@ -262,9 +264,11 @@ impl BaseHandler {
 
     }
 
-    fn read_out_element(&mut self, addr: SocketAddr, elt: ElementReader) -> io::Result<bool> {
+    fn read_out_element(&mut self, peer: &mut proxy::Peer, elt: ElementReader) -> io::Result<bool> {
         
         use base::element::*;
+
+        let addr = peer.addr();
 
         match elt.id() {
             // LoginKey::ID => {}  // This should not be encrypted so we just ignore it!
@@ -306,20 +310,20 @@ impl BaseHandler {
 
     }
 
-    fn read_in_bundle(&mut self, addr: SocketAddr, bundle: Bundle) -> io::Result<()> {
+    fn read_in_bundle(&mut self, mut peer: proxy::Peer, bundle: Bundle) -> io::Result<()> {
 
         let mut reader = bundle.element_reader();
         while let Some(elt) = reader.next() {
             match elt {
                 NextElementReader::Element(elt) => {
-                    if !self.read_in_element(addr, elt)? {
+                    if !self.read_in_element(&mut peer, elt)? {
                         break;
                     }
                 }
                 NextElementReader::Reply(reply) => {
                     let request_id = reply.request_id();
                     let _elt = reply.read_simple::<()>()?;
-                    warn!(%addr, "<- Reply #{request_id}");
+                    warn!(addr = %peer.addr(), "<- Reply #{request_id}");
                     break;
                 }
             }
@@ -329,9 +333,11 @@ impl BaseHandler {
 
     }
 
-    fn read_in_element(&mut self, addr: SocketAddr, mut elt: ElementReader) -> io::Result<bool> {
+    fn read_in_element(&mut self, peer: &mut proxy::Peer, mut elt: ElementReader) -> io::Result<bool> {
 
         use client::element::*;
+
+        let addr = peer.addr();
 
         match elt.id() {
             UpdateFrequencyNotification::ID => {
@@ -342,7 +348,7 @@ impl BaseHandler {
                 let ts = elt.read_simple::<TickSync>()?;
                 if let Some(next_tick) = self.next_tick {
                     if next_tick != ts.element.tick {
-                        warn!(%addr, "<- Tick missed, expected {next_tick}, got {}", ts.element.tick);
+                        trace!(%addr, "<- Tick missed, expected {next_tick}, got {}", ts.element.tick);
                     }
                 }
                 self.next_tick = Some(ts.element.tick.wrapping_add(1));
@@ -405,6 +411,28 @@ impl BaseHandler {
                     warn!(%addr, "<- Select player entity: no player entity")
                 }
                 self.selected_entity_id = self.player_entity_id;
+            }
+            SwitchBaseApp::ID => {
+
+                let sba = elt.read_simple::<SwitchBaseApp>()?;
+                info!(%addr, "<- Switch base app to: {:?} (reset entities: {})", sba.element.base_addr, sba.element.reset_entities);
+                
+                // Change the real base address for this peer.
+                peer.set_real_addr(sba.element.base_addr.into());
+                
+                // Immediately send a new switch element to change back the client to use
+                // this proxy instead of the forwarded one.
+                let mut bundle = Bundle::new();
+                bundle.element_writer().write_simple(SwitchBaseApp {
+                    base_addr: self.shared.base_app_addr,
+                    reset_entities: sba.element.reset_entities,
+                });
+
+                peer.off_channel(proxy::PacketDirection::In)
+                    .prepare(&mut bundle, false);
+
+                peer.send_bundle(proxy::PacketDirection::In, &bundle)?;
+
             }
             ResourceHeader::ID => {
 

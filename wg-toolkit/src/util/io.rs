@@ -217,7 +217,7 @@ pub trait WgReadExt: Read {
         String::from_utf8(buf).map_err(|_| io::ErrorKind::InvalidData.into())
     }
 
-    fn read_sock_addr_v4(&mut self) -> io::Result<SocketAddrV4> {
+    fn read_socket_addr_v4(&mut self) -> io::Result<SocketAddrV4> {
         let mut ip_raw = [0; 4];
         self.read_exact(&mut ip_raw[..])?;
         let port = ReadBytesExt::read_u16::<BE>(self)?;
@@ -440,7 +440,7 @@ pub trait WgWriteExt: Write {
         self.write_u32(n as u32)
     }
 
-    fn write_sock_addr_v4(&mut self, addr: SocketAddrV4) -> io::Result<()> {
+    fn write_socket_addr_v4(&mut self, addr: SocketAddrV4) -> io::Result<()> {
         self.write_all(&addr.ip().octets()[..])?;
         WriteBytesExt::write_u16::<BE>(self, addr.port())?;
         WriteBytesExt::write_u16::<LE>(self, 0)?; // Salt

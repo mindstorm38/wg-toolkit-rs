@@ -3,7 +3,8 @@
 //! without being blocking by blowfish cipher.
 
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
-use std::collections::HashMap;
+use std::collections::{hash_map, HashMap};
+use std::num::NonZero;
 use std::time::Duration;
 use std::sync::Arc;
 use std::io;
@@ -12,8 +13,8 @@ use blowfish::Blowfish;
 
 use tracing::{trace, trace_span};
 
-use crate::util::thread::ThreadPoll;
-use crate::net::proto::{ChannelIndex, Protocol};
+use crate::util::thread::{ThreadPoll, ThreadWorker};
+use crate::net::proto::{Channel, ChannelIndex, Protocol};
 use crate::net::socket::{PacketSocket, decrypt_packet};
 use crate::net::packet::Packet;
 use crate::net::bundle::Bundle;
@@ -30,6 +31,15 @@ pub(super) const RECV_TIMEOUT: Duration = Duration::from_secs(5);
 /// The generic proxy application.
 #[derive(Debug)]
 pub struct App {
+    /// Inner state.
+    inner: AppInner,
+    /// Each peer connected and forwarded..
+    peers: HashMap<SocketAddr, PeerInner>,
+}
+
+/// Inner application structure to split from peer.
+#[derive(Debug)]
+struct AppInner {
     /// Thread poll for socket result.
     socket_poll: ThreadPoll<SocketPollRet>,
     /// The main socket receiving peer packets.
@@ -38,13 +48,13 @@ pub struct App {
     out_protocol: Protocol,
     /// Channel tracker for in packets.
     in_protocol: Protocol,
-    /// Each peer connected and forwarded..
-    peers: HashMap<SocketAddr, Arc<Peer>>,
 }
 
 /// A registered peer that can forward and receive packets from the real application.
 #[derive(Debug)]
-struct Peer {
+struct PeerInner {
+    /// Handle for drop-destruction of the poll thread worker, only used for drop.
+    _socket_worker: ThreadWorker,
     /// The socket represent this peer for the real application.
     socket: PacketSocket,
     /// The address to send packets to the peer when receiving from real application.
@@ -61,7 +71,7 @@ struct SocketPollRet {
     /// The raw I/O result containing the packet if successful.
     res: io::Result<(Packet, SocketAddr)>,
     /// The peer address if this is the result of a peer socket.
-    peer: Option<Arc<Peer>>,
+    peer: Option<SocketAddr>,
 }
 
 impl App {
@@ -77,15 +87,17 @@ impl App {
 
         let thread_socket = socket.clone();
         socket_poll.spawn(move || Some(SocketPollRet {
-            peer: None,
             res: thread_socket.recv_without_encryption(),
+            peer: None,
         }));
 
         Ok(Self {
-            socket_poll,
-            socket,
-            out_protocol: Protocol::new(),
-            in_protocol: Protocol::new(),
+            inner: AppInner {
+                socket_poll,
+                socket,
+                out_protocol: Protocol::new(),
+                in_protocol: Protocol::new(),
+            },
             peers: HashMap::new(),
         })
 
@@ -93,13 +105,13 @@ impl App {
 
     /// Get the address this app is bound to.
     pub fn addr(&self) -> io::Result<SocketAddr> {
-        self.socket.addr()
+        self.inner.socket.addr()
     }
 
     /// Blocking poll of this application with the given handler.
     pub fn poll<H: Handler>(&mut self, handler: &mut H) -> Result<(), H::Error> {
 
-        let socket_poll_ret = self.socket_poll.poll();
+        let socket_poll_ret = self.inner.socket_poll.poll();
         let (cipher_packet, addr) = match socket_poll_ret.res {
             Ok(ret) => ret,
             Err(e) if matches!(e.kind(), io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock) => return Ok(()),
@@ -110,56 +122,71 @@ impl App {
         let direction;
         let res;
 
-        if let Some(peer_) = &socket_poll_ret.peer {
+        if let Some(peer_addr) = &socket_poll_ret.peer {
 
             // The packet has been received from the real application and should be
             // forwarded to the peer.
-            peer = &**peer_;
+            peer = match self.peers.get_mut(peer_addr) {
+                Some(peer) => peer,
+                None => return Ok(()),  // Receiving event from a no longer existing peer.
+            };
             direction = PacketDirection::In;
-            res = self.socket.send_without_encryption(&cipher_packet, peer.addr);
-
-        } else if let Some(peer_) = self.peers.get(&addr) {
-
-            // The packet has been received from the peer and should be forwarded to the 
-            // real application.
-            peer = &**peer_;
-            direction = PacketDirection::Out;
-            res = peer.socket.send_without_encryption(&cipher_packet, peer.real_addr);
-
-        } else if let Some(new_peer) = handler.accept_peer(addr)? {
-            
-            // The packet has been received from a peer that we don't know yet, but
-            // the handler has accepted it and to we register it!
-            
-            let socket = PacketSocket::bind(UNSPECIFIED_ADDR)?;
-            socket.set_recv_timeout(Some(RECV_TIMEOUT))?;
-            
-            let peer_ = Arc::new(Peer {
-                socket,
-                addr,
-                real_addr: new_peer.real_addr,
-                blowfish: new_peer.blowfish,
-            });
-            
-            let thread_peer = Arc::clone(&peer_);
-            self.socket_poll.spawn(move || Some(SocketPollRet {
-                peer: Some(Arc::clone(&thread_peer)),
-                res: thread_peer.socket.recv_without_encryption(),
-            }));
-
-            let peer_ = self.peers.entry(addr).insert_entry(peer_).into_mut();
-            peer = &**peer_;
-            direction = PacketDirection::Out;
-            res = peer.socket.send_without_encryption(&cipher_packet, peer.real_addr);
+            res = self.inner.socket.send_without_encryption(&cipher_packet, peer.addr);
 
         } else {
-            // The peer has been rejected! Just ignore it because the handler should
-            // already be aware because it has rejected it.
-            return Ok(());
+
+            // The packet has been received from the peer and should be forwarded to the 
+            // real login application.
+            peer = match self.peers.entry(addr) {
+                hash_map::Entry::Occupied(o) => o.into_mut(),
+                hash_map::Entry::Vacant(v) => {
+
+                    // If we have no peer for this, we ask the handler the initial
+                    // configuration for this peer. If the handle don't accept the peer
+                    // then we just return and ignore the packet.
+                    let Some(peer_config) = handler.accept_peer(addr)? else {
+                        return Ok(());
+                    };
+
+                    let socket = PacketSocket::bind(UNSPECIFIED_ADDR)?;
+                    socket.set_recv_timeout(Some(RECV_TIMEOUT))?;
+
+                    let thread_socket = socket.clone();
+                    let _socket_worker = self.inner.socket_poll.spawn_with_handle(move || Some(SocketPollRet {
+                        res: thread_socket.recv_without_encryption(),
+                        peer: Some(addr),
+                    }));
+
+                    v.insert(PeerInner {
+                        _socket_worker,
+                        socket,
+                        addr,
+                        real_addr: peer_config.real_addr,
+                        blowfish: peer_config.blowfish,
+                    })
+
+                }
+            };
+            direction = PacketDirection::Out;
+            res = peer.socket.send_without_encryption(&cipher_packet, peer.real_addr);
+
         }
 
         // Just ignore the length sent...
-        let _len = res?;
+        match res {
+            Ok(_len) => {}
+            Err(e) if e.kind() == io::ErrorKind::ConnectionReset => {
+                // When forwarding to a local peer, this means that the local client no
+                // longer has a listening socket to send to! Ignore this peer.
+                trace!("Dropped peer due to connection reset: {addr}");
+                // Unwrap because we have this peer and it exists.
+                self.peers.remove(&addr).unwrap();
+                return Ok(());
+            }
+            Err(e) => {
+                return Err(e.into());
+            }
+        }
 
         // Now decrypt packet if the peer has symmetric encryption...
         let packet;
@@ -167,7 +194,11 @@ impl App {
             packet = match decrypt_packet(cipher_packet, blowfish) {
                 Ok(ret) => ret,
                 Err(cipher_packet) => {
-                    handler.receive_invalid_packet_encryption(addr, cipher_packet, direction)?;
+                    let peer_ref = Peer { 
+                        app: &mut self.inner,
+                        peer: &mut *peer,
+                    };
+                    handler.receive_invalid_packet_encryption(peer_ref, cipher_packet, direction)?;
                     return Ok(());
                 }
             };
@@ -181,31 +212,45 @@ impl App {
             accept_out_protocol,
             accept_out_protocol_span,
         ) = match direction {
-            PacketDirection::Out => (&mut self.out_protocol, trace_span!("out"), &mut self.in_protocol, trace_span!("in")),
-            PacketDirection::In => (&mut self.in_protocol, trace_span!("in"), &mut self.out_protocol, trace_span!("out")),
+            PacketDirection::Out => (
+                &mut self.inner.out_protocol, trace_span!("out"), 
+                &mut self.inner.in_protocol, trace_span!("in"),
+            ),
+            PacketDirection::In => (
+                &mut self.inner.in_protocol, trace_span!("in"), 
+                &mut self.inner.out_protocol, trace_span!("out"),
+            ),
         };
 
-        let span = accept_protocol_span.enter();
-        trace!(real_addr = %peer.real_addr, "{:width$?}", packet, width = 0);
-        drop(span);
-        
-        let span = accept_out_protocol_span.enter();
-        if !accept_out_protocol.accept_out(&packet, peer.addr) {
-            return Ok(());
+        {
+            let _span = accept_protocol_span.enter();
+            trace!(real_addr = %peer.real_addr, "{:width$?}", packet, width = 0);
         }
-        drop(span);
+        
+        {
+            let _span = accept_out_protocol_span.enter();
+            if !accept_out_protocol.accept_out(&packet, peer.addr) {
+                return Ok(());
+            }
+        }
         
         let _span = accept_protocol_span.enter();
-        let Some(mut channel) = accept_protocol.accept(packet, peer.addr) else {
-            return Ok(());
+        
+        let mut channel = match accept_protocol.accept(packet, peer.addr) {
+            Ok(channel) => channel,
+            Err(_packet) => return Ok(()),
         };
 
         let packet_channel = channel.is_on().then(|| PacketChannel {
             index: channel.index(),
         });
 
-        while let Some(bundle) = channel.next_bundle() {
-            handler.receive_bundle(addr, bundle, direction, packet_channel.clone())?;
+        for bundle in channel.pop_bundles() {
+            let peer_ref = Peer { 
+                app: &mut self.inner,
+                peer: &mut *peer,
+            };
+            handler.receive_bundle(peer_ref, bundle, direction, packet_channel.clone())?;
         }
 
         Ok(())
@@ -243,11 +288,11 @@ pub trait Handler {
     /// 
     /// The default implementation does nothing.
     fn receive_invalid_packet_encryption(&mut self,
-        addr: SocketAddr,
+        peer: Peer,
         packet: Packet,
         direction: PacketDirection, 
     ) -> Result<(), Self::Error> {
-        let _ = (addr, packet, direction);
+        let _ = (peer, packet, direction);
         Ok(())
     }
 
@@ -255,12 +300,12 @@ pub trait Handler {
     /// 
     /// The default implementation does nothing.
     fn receive_bundle(&mut self, 
-        addr: SocketAddr, 
+        peer: Peer, 
         bundle: Bundle, 
         direction: PacketDirection, 
         channel: Option<PacketChannel>,
     ) -> Result<(), Self::Error> {
-        let _ = (addr, bundle, direction, channel);
+        let _ = (peer, bundle, direction, channel);
         Ok(())
     }
 
@@ -279,6 +324,82 @@ pub struct PeerConfig {
     /// If this peer should use symmetric blowfish encryption for its packets, this will
     /// be used to intercept and read the clear packets before building the bundles.
     pub blowfish: Option<Arc<Blowfish>>,
+}
+
+/// A reference to an internal peer that allows its owner to enable or disable the 
+/// encryption, modify the real address and send bundles.
+#[derive(Debug)]
+pub struct Peer<'a> {
+    app: &'a mut AppInner,
+    peer: &'a mut PeerInner,
+}
+
+impl<'a> Peer<'a> {
+
+    /// Get the address of this peer.
+    #[inline]
+    pub fn addr(&self) -> SocketAddr {
+        self.peer.addr
+    }
+
+    /// Get the real address this peer is currently being forwarded to and from.
+    #[inline]
+    pub fn real_addr(&self) -> SocketAddr {
+        self.peer.real_addr
+    }
+
+    /// Set the real address this peer will be forwarded to and from.
+    #[inline]
+    pub fn set_real_addr(&mut self, real_addr: SocketAddr) {
+        self.peer.real_addr = real_addr;
+    }
+
+    /// Get the currently configured blowfish encryption key for this peer, none if no
+    /// encryption is currently used.
+    #[inline]
+    pub fn blowfish(&self) -> Option<&Blowfish> {
+        self.peer.blowfish.as_deref()
+    }
+
+    /// Set the blowfish encryption key to be used for this peer, none if encryption
+    /// should be disabled.
+    #[inline]
+    pub fn set_blowfish(&mut self, blowfish: Option<Arc<Blowfish>>) {
+        self.peer.blowfish = blowfish;
+    }
+
+    /// Get the protocol off-channel.
+    pub fn off_channel(&mut self, direction: PacketDirection) -> Channel<'_> {
+        match direction {
+            PacketDirection::Out => self.app.out_protocol.off_channel(self.peer.addr),
+            PacketDirection::In => self.app.in_protocol.off_channel(self.peer.addr),
+        }
+    }
+
+    /// Get the protocol channel.
+    pub fn channel(&mut self, direction: PacketDirection, index: Option<NonZero<u32>>) -> Channel<'_> {
+        match direction {
+            PacketDirection::Out => self.app.out_protocol.channel(self.peer.addr, index),
+            PacketDirection::In => self.app.in_protocol.channel(self.peer.addr, index),
+        }
+    }
+
+    /// Immediately send a bundle to the given direction.
+    pub fn send_bundle(&self, direction: PacketDirection, bundle: &Bundle) -> io::Result<usize> {
+        
+        let (socket, addr) = match direction {
+            PacketDirection::Out => (&self.peer.socket, self.peer.real_addr),
+            PacketDirection::In => (&self.app.socket, self.peer.addr),
+        };
+
+        if let Some(blowfish) = self.peer.blowfish.as_deref() {
+            socket.send_bundle_with_encryption(bundle, addr, blowfish)
+        } else {
+            socket.send_bundle_without_encryption(bundle, addr)
+        }
+
+    }
+
 }
 
 /// Represent the forwarding direction of a packet or bundle.

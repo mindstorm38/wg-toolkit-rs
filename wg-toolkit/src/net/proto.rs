@@ -27,8 +27,6 @@ pub struct Protocol {
     off_channels: HashMap<SocketAddr, OffChannel>,
     /// Known channels for each address, with optional channel indexing.
     channels: HashMap<(SocketAddr, Option<NonZero<u32>>), OnChannel>,
-    // /// List of rejected packets.
-    // rejected_packets: Vec<(SocketAddr, Packet, PacketRejectionError)>,
 }
 
 /// A structure referenced by any channel handle, containing shared states.
@@ -53,7 +51,6 @@ impl Protocol {
             },
             off_channels: HashMap::new(),
             channels: HashMap::new(),
-            // rejected_packets: Vec::new(),
         }
     }
 
@@ -121,28 +118,25 @@ impl Protocol {
         // self.shared.prefix_offset = 0x7A11751F;
     }
 
-    /// Accept a new incoming packet and optionally return a bundle if it just completed
-    /// a new bundle.
-    /// 
-    /// If the packet is rejected for any reason listed in [`PacketRejectionError`], none
-    /// is also returned but the packet is internally queued and can later be retrieved 
-    /// with the error using [`Self::take_rejected_packets()`].
+    /// Accept a new incoming packet and return the associated channel where the packet 
+    /// has been accepted. If any error in packet's decoding happens, then it's returned
+    /// as an error and this packet, this packet cannot be accepted as-is. Any piggyback
+    /// packet is still registered but errors are not forwarded.
     #[instrument(name = "accept", level = "trace", skip(self, packet))]
     #[inline(always)]
-    pub fn accept(&mut self, packet: Packet, addr: SocketAddr) -> Option<Channel<'_>> {
+    pub fn accept(&mut self, packet: Packet, addr: SocketAddr) -> Result<Channel<'_>, Packet> {
         self.accept_inner(packet, addr)
     }
 
     /// Internal wrapper used to improve tracing of recursive span with piggybacks.
-    fn accept_inner(&mut self, packet: Packet, addr: SocketAddr) -> Option<Channel<'_>> {
+    fn accept_inner(&mut self, packet: Packet, addr: SocketAddr) -> Result<Channel<'_>, Packet> {
 
         let time = Instant::now();
         let mut packet = match packet.read_config_locked() {
             Ok(packet) => packet,
-            Err((error, _packet)) => {
+            Err((error, packet)) => {
                 warn!("Failed to read config: {error}");
-                // self.rejected_packets.push((addr, packet, PacketRejectionError::Config(error)));
-                return None;
+                return Err(packet);
             }
         };
 
@@ -151,7 +145,8 @@ impl Protocol {
         for piggyback in std::mem::take(packet.piggybacks_mut()) {
             trace!("Processing piggyback packet: {piggyback:?}");
             let _span = trace_span!("pigb").entered();
-            self.accept_inner(piggyback, addr)?;
+            // Ignore any error on channel decoding.
+            let _ = self.accept_inner(piggyback, addr);
         }
 
         self.shared.last_accepted_prefix = packet.packet().read_prefix();
@@ -176,7 +171,7 @@ impl Protocol {
                 if version < current_version {
                     trace!("Outdated, expected v{current_version}");
                     // TODO: outdated packet
-                    return None;
+                    return Err(packet.destruct().0);
                 }
 
             } else {
@@ -214,7 +209,7 @@ impl Protocol {
             // Cumulative ack is not supported off-channel.
             if channel.on.is_none() {
                 warn!("Cumulative ack is not supported off-channel");
-                return None;
+                return Err(packet.destruct().0);
             }
 
             channel.off.ack_out_reliable_packet_cumulative(cumulative_ack);
@@ -232,7 +227,7 @@ impl Protocol {
             
             if packet.config().last_reliable_sequence_num().is_some() {
                 warn!("Last reliable sequence is not support with reliable");
-                return None;
+                return Err(packet.destruct().0);
             }
 
             channel.off.add_in_reliable_packet(packet.config().sequence_num());
@@ -245,7 +240,7 @@ impl Protocol {
                     channel.off.in_bundles.push_back(bundle);
                 }
                 // Shortcut to 
-                return Some(Channel { inner: channel });
+                return Ok(Channel { inner: channel });
             }
 
         } else if let Some(last_reliable_sequence_num) = packet.config().last_reliable_sequence_num() {
@@ -256,11 +251,11 @@ impl Protocol {
                 if last_reliable_sequence_num != on.in_reliable_expected_seq - 1 {
                     warn!("Invalid last reliable sequence number, expected: {}, got: {}",
                         on.in_reliable_expected_seq - 1, last_reliable_sequence_num);
-                    return None;
+                    return Err(packet.destruct().0);
                 }
             } else {
                 warn!("Last reliable sequence is not supported off-channel");
-                return None;
+                return Err(packet.destruct().0);
             }
 
         }
@@ -271,7 +266,7 @@ impl Protocol {
         // be reordered, so the logic is much simpler: we use off-channel fragments map.
         channel.off.add_in_packet(packet, time);
 
-        Some(Channel { inner: channel })
+        Ok(Channel { inner: channel })
 
     }
 
@@ -699,7 +694,7 @@ struct OnChannelData {
     /// Optional index for this channel.
     index: Option<ChannelIndex>,
     /// The next sequence number to return for this channel, **only for reliable 
-    /// packets**, non-reliable packets sent on-channel are using the off-channel .
+    /// packets**, non-reliable packets sent on-channel are using the off-channel alloc.
     seq_alloc: SeqAlloc,
     /// Most of the time, reliable sequence numbers are received in order, and so we can
     /// just increment this counter in order to know that all packets up to (but 

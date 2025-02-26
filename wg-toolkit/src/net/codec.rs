@@ -3,6 +3,7 @@
 
 
 use std::io::{self, Read, Write};
+use std::net::SocketAddrV4;
 use std::borrow::Cow;
 use std::fmt;
 
@@ -157,6 +158,7 @@ impl_builtin_copy!(f64, write_f64, read_f64);
 impl_builtin_copy!(Vec2, write_vec2, read_vec2);
 impl_builtin_copy!(Vec3, write_vec3, read_vec3);
 impl_builtin_copy!(Vec4, write_vec4, read_vec4);
+impl_builtin_copy!(SocketAddrV4, write_socket_addr_v4, read_socket_addr_v4);
 
 
 /// The string data type used by default for all STRING types, it will try to 

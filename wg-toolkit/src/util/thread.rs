@@ -8,10 +8,6 @@ use crossbeam_channel::{Receiver, Sender};
 use tracing::trace;
 
 
-/// Internal counter for unique IDs for thread poll workers.
-static UNIQUE_ID: AtomicUsize = AtomicUsize::new(0);
-
-
 /// This structure is made to block on multiple thread at the same time and repeatedly
 /// in order to aggregate the value they are returning.
 #[derive(Debug)]
@@ -22,6 +18,7 @@ pub struct ThreadPoll<T> {
 
 impl<T: Send + 'static> ThreadPoll<T> {
 
+    /// Create and initialize a new thread poll.
     pub fn new() -> Self {
         let (tx, rx) = crossbeam_channel::bounded(2);
         Self {
@@ -35,6 +32,8 @@ impl<T: Send + 'static> ThreadPoll<T> {
         F: FnMut() -> Option<T>,
         F: Send + 'static,
     {
+
+        static UNIQUE_ID: AtomicUsize = AtomicUsize::new(0);
 
         let tx = self.tx.clone();
         let id = UNIQUE_ID.fetch_add(1, Ordering::Relaxed);
@@ -68,7 +67,7 @@ impl<T: Send + 'static> ThreadPoll<T> {
 
     /// Same as [`Self::spawn`] but also returning a handle that, when dropped, will end
     /// the associated worker thread.
-    pub fn spawn_with_handle<F>(&self, mut producer: F) -> ThreadPollHandle
+    pub fn spawn_with_handle<F>(&self, mut producer: F) -> ThreadWorker
     where 
         F: FnMut() -> Option<T>,
         F: Send + 'static,
@@ -83,7 +82,7 @@ impl<T: Send + 'static> ThreadPoll<T> {
                 None
             }
         }, std::any::type_name::<F>(), true);
-        ThreadPollHandle(alive)
+        ThreadWorker(alive)
     }
 
     /// Block until a new value is available.
@@ -104,4 +103,4 @@ impl<T: Send + 'static> ThreadPoll<T> {
 /// then the producer will be stopped on the next iteration.
 #[derive(Debug, Clone)]
 #[allow(unused)]
-pub struct ThreadPollHandle(Arc<()>);
+pub struct ThreadWorker(Arc<()>);

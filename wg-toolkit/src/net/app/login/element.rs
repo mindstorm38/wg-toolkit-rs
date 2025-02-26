@@ -358,7 +358,7 @@ impl Codec<Blowfish> for LoginResponse {
 /// Internal function for encoding login success. It is extracted here
 /// in order to be usable with optional encryption.
 fn write_login_success(write: &mut dyn Write, success: &LoginSuccess) -> io::Result<()> {
-    write.write_sock_addr_v4(success.addr)?;
+    write.write_socket_addr_v4(success.addr)?;
     write.write_u32(success.login_key)?;
     if !success.server_message.is_empty() {
         write.write_string_variable(&success.server_message)?;
@@ -370,7 +370,7 @@ fn write_login_success(write: &mut dyn Write, success: &LoginSuccess) -> io::Res
 /// in order to be usable with optional encryption.
 fn read_login_success(read: &mut dyn Read) -> io::Result<LoginSuccess> {
     Ok(LoginSuccess { 
-        addr: read.read_sock_addr_v4()?, 
+        addr: read.read_socket_addr_v4()?, 
         login_key: read.read_u32()?, 
         server_message: match read.read_string_variable() {
             Ok(msg) => msg,

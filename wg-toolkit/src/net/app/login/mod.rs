@@ -116,7 +116,7 @@ impl App {
                 Err(error) => return Event::IoError(IoErrorEvent { error, addr: None }),
             };
             
-            let Some(mut channel) = self.protocol.accept(packet, addr) else {
+            let Ok(mut channel) = self.protocol.accept(packet, addr) else {
                 continue;
             };
 

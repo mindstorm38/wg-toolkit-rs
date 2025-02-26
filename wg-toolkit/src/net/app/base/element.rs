@@ -62,7 +62,7 @@ impl SimpleElement for LoginKey {
 
 crate::__struct_simple_codec! {
     /// This element can be used in two cases:
-    /// - As a reply to [`ClientAuth`] from the server to the client in order to give it
+    /// - As a reply to [`LoginKey`] from the server to the client in order to give it
     ///   the initial session key.
     /// - Sent by the client on login (and apparently randomly after login) to return 
     ///   the session key that was sent by the server in the initial reply (first case).
