@@ -388,6 +388,8 @@ impl Channel<'_> {
     /// Pop all the next bundles, in order, and without borrowing the channel, returning
     /// an owned iterator. In general, it's better to use the [`Self::next_bundle`] 
     /// function when borrowing is not an issue.
+    /// 
+    /// This function does not allocate if there is only one (or zero) bundle!
     pub fn pop_bundles(&mut self) -> impl Iterator<Item = Bundle> + use<> {
 
         // Our goal is to avoid allocation when we only have one bundle, so we use a vec
