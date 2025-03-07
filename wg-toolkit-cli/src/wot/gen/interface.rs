@@ -1457,7 +1457,7 @@ wgtk::__struct_simple_codec! {  // Methods on cell
 wgtk::__struct_simple_codec! {
     #[derive(Debug)]
     pub struct AccountVersion {
-        pub requiredVersion_12710: AutoString,
+        pub requiredVersion_12800: AutoString,
     }
 }
 

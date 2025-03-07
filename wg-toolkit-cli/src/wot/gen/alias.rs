@@ -320,6 +320,7 @@ wgtk::__struct_simple_codec! {
         pub overriddenBadge: u8,
         pub dogTag: BATTLE_DOG_TAG,
         pub userExtraSettings: USER_EXTRA_SETTINGS,
+        pub isSsrPlayEnabled: BOOL,
         pub componentsData: Python,
     }
 }

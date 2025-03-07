@@ -213,6 +213,11 @@ wgtk::__struct_simple_codec! {  // Methods on client
         pub notification: AutoString,
     }
 
+    #[derive(Debug)]
+    pub struct Account_receiveConversionResults {
+        pub a0: AutoString,
+    }
+
 }
 
 wgtk::__struct_simple_codec! {  // Methods on base
@@ -302,7 +307,8 @@ wgtk::__enum_entity_methods! {  // Entity methods on client
         Account_onSendPrebattleInvites(0x24, var8),
         Account_onClanInfoReceived(0x25, var8),
         Account_receiveNotification(0x26, var8),
-        Account_showGUI(0x27, var16),
+        Account_receiveConversionResults(0x27, var8),
+        Account_showGUI(0x28, var16),
     }
 }
 
@@ -3315,57 +3321,6 @@ impl SimpleEntity for BasicMine {
 }
 
 // ============================================== //
-// ======         ApplicationPoint         ====== //
-// ============================================== //
-
-wgtk::__struct_simple_codec! {
-    #[derive(Debug)]
-    pub struct ApplicationPoint {
-        pub vehicleID: i32,
-        pub equipmentID: i32,
-        pub launchTime: f32,
-        pub level: i32,
-    }
-}
-
-wgtk::__struct_simple_codec! {  // Methods on client
-
-}
-
-wgtk::__struct_simple_codec! {  // Methods on base
-
-}
-
-wgtk::__struct_simple_codec! {  // Methods on cell
-
-}
-
-wgtk::__enum_entity_methods! {  // Entity methods on client
-    pub enum ApplicationPoint_Client {
-    }
-}
-
-wgtk::__enum_entity_methods! {  // Entity methods on base
-    pub enum ApplicationPoint_Base {
-    }
-}
-
-wgtk::__enum_entity_methods! {  // Entity methods on cell
-    pub enum ApplicationPoint_Cell {
-    }
-}
-
-impl ApplicationPoint {
-    const TYPE_ID: u16 = 0x29;
-}
-
-impl SimpleEntity for ApplicationPoint {
-    type ClientMethod = ApplicationPoint_Client;
-    type BaseMethod = ApplicationPoint_Base;
-    type CellMethod = ApplicationPoint_Cell;
-}
-
-// ============================================== //
 // ======          NetworkEntity           ====== //
 // ============================================== //
 
@@ -3443,61 +3398,13 @@ wgtk::__enum_entity_methods! {  // Entity methods on cell
 }
 
 impl NetworkEntity {
-    const TYPE_ID: u16 = 0x2A;
+    const TYPE_ID: u16 = 0x29;
 }
 
 impl SimpleEntity for NetworkEntity {
     type ClientMethod = NetworkEntity_Client;
     type BaseMethod = NetworkEntity_Base;
     type CellMethod = NetworkEntity_Cell;
-}
-
-// ============================================== //
-// ======          Comp7Lighting           ====== //
-// ============================================== //
-
-wgtk::__struct_simple_codec! {
-    #[derive(Debug)]
-    pub struct Comp7Lighting {
-        pub animationStateMachine: AutoString,
-    }
-}
-
-wgtk::__struct_simple_codec! {  // Methods on client
-
-}
-
-wgtk::__struct_simple_codec! {  // Methods on base
-
-}
-
-wgtk::__struct_simple_codec! {  // Methods on cell
-
-}
-
-wgtk::__enum_entity_methods! {  // Entity methods on client
-    pub enum Comp7Lighting_Client {
-    }
-}
-
-wgtk::__enum_entity_methods! {  // Entity methods on base
-    pub enum Comp7Lighting_Base {
-    }
-}
-
-wgtk::__enum_entity_methods! {  // Entity methods on cell
-    pub enum Comp7Lighting_Cell {
-    }
-}
-
-impl Comp7Lighting {
-    const TYPE_ID: u16 = 0x2B;
-}
-
-impl SimpleEntity for Comp7Lighting {
-    type ClientMethod = Comp7Lighting_Client;
-    type BaseMethod = Comp7Lighting_Base;
-    type CellMethod = Comp7Lighting_Cell;
 }
 
 // ============================================== //
@@ -3520,7 +3427,7 @@ pub trait EntityTypeCollection {
 
 /// Visit all entity types in order.
 pub fn collect_entity_types<C: EntityTypeCollection>() -> C {
-    let mut c = C::new(43);
+    let mut c = C::new(41);
     c.add::<Account>();
     c.add::<Avatar>();
     c.add::<ArenaInfo>();
@@ -3561,8 +3468,6 @@ pub fn collect_entity_types<C: EntityTypeCollection>() -> C {
     c.add::<ClientSelectableHangarsSwitcher>();
     c.add::<StaticDeathZone>();
     c.add::<BasicMine>();
-    c.add::<ApplicationPoint>();
     c.add::<NetworkEntity>();
-    c.add::<Comp7Lighting>();
     c
 }
